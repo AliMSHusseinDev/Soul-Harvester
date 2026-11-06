@@ -58,13 +58,13 @@ it("spawns every enemy inside the fixed tree zone and obeys the pool cap", () =>
   b.startWave();
   for (let i = 0; i < 400; i++) b.update(1 / 60, { x: 0, z: 14 });
   const spawns = b.events.filter((e) => e.kind === "spawn");
-  expect(spawns.length).toBe(11);
+  expect(spawns.length).toBe(8);
   for (const e of spawns) {
     expect(Math.abs(e.x)).toBeLessThanOrEqual(4);
     expect(e.z).toBeGreaterThanOrEqual(-55.5);
     expect(e.z).toBeLessThanOrEqual(-50.5);
   }
-  expect(b.alive.length).toBeLessThanOrEqual(48);
+  expect(b.alive.length).toBeLessThanOrEqual(170);
 });
 it("melee respects range and facing, and releases a defeated enemy", () => {
   const b = new Battle([]),

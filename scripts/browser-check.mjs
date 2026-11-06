@@ -64,15 +64,24 @@ try {
   assert.equal((await state()).skills.athletics, 3);
   assert.equal((await state()).points, 1);
   await page.screenshot({ path: "artifacts/skills.png" });
-  await page.locator('[data-close="skills-dialog"]').click();
+  await page.locator('[data-close="skills-dialog"]').first().click();
   await enter();
   console.log(
     "PASS: upgrades consume points and change actual character stats",
   );
   await page.keyboard.down("Space");
-  await wait(() => window.__soulHarvester().position[1] > 0.2);
+  await wait(
+    () =>
+      window.__soulHarvester().position[1] >
+      window.__soulHarvester().ground + 0.2,
+  );
   await page.keyboard.up("Space");
-  await wait(() => window.__soulHarvester().position[1] === 0);
+  await wait(
+    () =>
+      Math.abs(
+        window.__soulHarvester().position[1] - window.__soulHarvester().ground,
+      ) < 0.02,
+  );
   await page.keyboard.down("KeyW");
   await wait(() => window.__soulHarvester().position[2] < 12);
   await page.keyboard.up("KeyW");
@@ -90,6 +99,13 @@ try {
   await wait(
     () => window.__soulHarvester().aiming && window.__soulHarvester().fov < 60,
   );
+  await wait(() => window.__soulHarvester().aimAmount > 0.999);
+  const sight = (await state()).sightProjection;
+  for (const p of sight) {
+    assert.ok(Math.abs(p[0]) < 0.015);
+    assert.ok(Math.abs(p[1]) < 0.015);
+  }
+  await page.screenshot({ path: "artifacts/ads.png" });
   await page.mouse.up({ button: "right" });
   await page.mouse.down();
   await wait(() => window.__soulHarvester().ammo < 12);
@@ -127,8 +143,16 @@ try {
   );
   const first = (await state()).enemies[0];
   assert.ok(Math.abs(first.x) < 4.5 && first.z < -48);
-  await page.waitForTimeout(800);
-  assert.ok((await state()).enemies[0].z !== first.z);
+  await page.waitForFunction(
+    (before) => {
+      const e = window
+        .__soulHarvester()
+        .enemies.find((e) => e.id === before.id);
+      return e && Math.hypot(e.x - before.x, e.z - before.z) > 0.02;
+    },
+    first,
+    { timeout: 30000 },
+  );
   console.log("PASS: fixed tree spawn and moving enemy");
   // Follow the real moving target using relative mouse inputs; no simulation mutation.
   for (let i = 0; i < 12 && (await state()).souls === 0; i++) {
@@ -158,7 +182,9 @@ try {
   await page.keyboard.up("KeyW");
   await page.keyboard.up("ShiftLeft");
   assert.ok(Math.abs((await state()).position[0]) < 1);
-  assert.ok(Math.abs((await state()).position[1]) < 0.01);
+  assert.ok(
+    Math.abs((await state()).position[1] - (await state()).ground) < 0.03,
+  );
   console.log(
     "PASS: player traverses the real bridge without falling or clipping",
   );
@@ -181,6 +207,46 @@ try {
   await page.keyboard.up("ShiftLeft");
   console.log(
     "PASS: actual enemy acquires the approaching player and returns to the bell after retreat",
+  );
+  const rewardsBefore = await state();
+  const targetDrop = rewardsBefore.drops.find((d) => d.kind === "gold");
+  assert.ok(targetDrop);
+  assert.equal(rewardsBefore.lootRender.cullingDisabled, true);
+  assert.ok(
+    rewardsBefore.lootRender.gold > 0 && rewardsBefore.lootRender.xp > 0,
+  );
+  await aimAt(targetDrop.x, groundYForAim(), targetDrop.z);
+  function groundYForAim() {
+    return (targetDrop.y ?? 0.3) + 1;
+  }
+  await page.keyboard.down("ShiftLeft");
+  await page.keyboard.down("KeyW");
+  await page.waitForFunction(
+    (d) => {
+      const s = window.__soulHarvester();
+      return Math.hypot(s.position[0] - d.x, s.position[2] - d.z) < 6.2;
+    },
+    targetDrop,
+    { timeout: 120000 },
+  );
+  await page.keyboard.up("KeyW");
+  await page.keyboard.up("ShiftLeft");
+  await page.screenshot({ path: "artifacts/loot-field.png" });
+  await page.keyboard.down("KeyW");
+  await page.waitForFunction(
+    (before) => {
+      const s = window.__soulHarvester();
+      return (
+        s.coins > before.coins && (s.xp > before.xp || s.level > before.level)
+      );
+    },
+    rewardsBefore,
+    { timeout: 60000 },
+  );
+  await page.keyboard.up("KeyW");
+  assert.ok((await state()).lootRender.cullingDisabled);
+  console.log(
+    "PASS: gold and XP stay rendered in the field and magnetically collect into real rewards",
   );
   await page.screenshot({ path: "artifacts/courtyard-play.png" });
   await page.keyboard.press("Escape");
@@ -205,9 +271,41 @@ try {
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   );
+  await page.setViewportSize({ width: 960, height: 640 });
+  await page.reload();
+  await wait(() => window.__soulHarvester?.().ready);
+  await page.locator("#loading").waitFor({ state: "detached" });
+  await enter();
+  const bell = (await state()).bellPosition;
+  await aimAt(...bell);
+  await page.mouse.down();
+  await wait(() => window.__soulHarvester().wave === 10);
+  await wait(() => window.__soulHarvester().ammo <= 18);
+  await page.mouse.up();
+  await wait(() => window.__soulHarvester().pending === 0);
+  const stacked = await state();
+  assert.equal(stacked.wave, 10);
+  assert.equal(stacked.enemies.length, 170);
+  assert.equal(stacked.activeWaves.length, 10);
+  assert.equal(new Set(stacked.enemies.map((e) => e.kind)).size, 4);
+  assert.ok(
+    stacked.drawCalls < 100,
+    "instanced crowd should keep draw calls bounded",
+  );
+  await page.screenshot({ path: "artifacts/ten-waves.png" });
+  console.log(
+    "PASS: actual shots stack all ten waves (170 enemies, four types); extra shots do not create wave 11",
+  );
   assert.deepEqual(errors, []);
   console.log("PASS: responsive menu and no browser/renderer errors");
-  console.log("Diagnostics:", await state());
+  const summary = await state();
+  console.log("Diagnostics:", {
+    wave: summary.wave,
+    enemies: summary.enemies.length,
+    drawCalls: summary.drawCalls,
+    fps: summary.fps,
+    health: summary.health,
+  });
 } catch (error) {
   console.error("Failure state:", await state());
   await page.screenshot({ path: "artifacts/browser-failure.png" });

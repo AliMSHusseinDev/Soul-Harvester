@@ -1,6 +1,8 @@
 import { seededRandom, resolveCircle, type Solid } from "./math";
 import { Navigation, SpatialGrid, type Point } from "./navigation";
-import { MAP, inMap, isRiver } from "./terrain";
+import { MAP, inMap, isRiver, groundHeight } from "./terrain";
+import { Loot, type Drop } from "./loot";
+import { ENEMY_TYPES, ENEMY_CAPACITY, WAVE_LIMIT, wavePlan } from "./waves";
 export type Stat =
   "constitution" | "instinct" | "lethality" | "agility" | "magnetism" | "greed";
 export type Skill =
@@ -38,11 +40,7 @@ export interface Enemy extends Point {
   knockZ: number;
   phase: number;
   kind: number;
-}
-export interface Drop extends Point {
-  id: number;
-  active: boolean;
-  age: number;
+  wave: number;
 }
 export type BattleEvent = {
   kind:
@@ -54,7 +52,10 @@ export type BattleEvent = {
     | "wave"
     | "level"
     | "lost"
-    | "cast";
+    | "cast"
+    | "gold"
+    | "xp"
+    | "complete";
   x: number;
   z: number;
   value: number;
@@ -65,33 +66,58 @@ export class Battle {
   private playerField: Float32Array;
   private fieldTimer = 0;
   private playerCell = -1;
-  readonly enemies: Enemy[] = Array.from({ length: 48 }, (_, id) => ({
-    id,
-    active: false,
-    x: 0,
-    z: 0,
-    hp: 0,
-    maxHp: 0,
-    target: "bell",
-    windup: 0,
-    cooldown: 0,
-    knockX: 0,
-    knockZ: 0,
-    phase: id * 2.4,
-    kind: id % 3,
-  }));
-  readonly drops: Drop[] = Array.from({ length: 100 }, (_, id) => ({
-    id,
-    active: false,
-    x: 0,
-    z: 0,
-    age: 0,
-  }));
+  readonly enemies: Enemy[] = Array.from(
+    { length: ENEMY_CAPACITY },
+    (_, id) => ({
+      id,
+      active: false,
+      x: 0,
+      z: 0,
+      hp: 0,
+      maxHp: 0,
+      target: "bell",
+      windup: 0,
+      cooldown: 0,
+      knockX: 0,
+      knockZ: 0,
+      phase: id * 2.4,
+      kind: 0,
+      wave: 1,
+    }),
+  );
+  readonly drops: Drop[];
+  private loot: Loot;
   readonly events: BattleEvent[] = [];
   private grid = new SpatialGrid<Enemy>();
   private rng = seededRandom(744);
-  private spawnClock = 0;
-  private remaining = 0;
+  readonly waveJobs: {
+    wave: number;
+    plan: number[];
+    index: number;
+    clock: number;
+  }[] = [];
+  private completeEmitted = false;
+  readonly missiles: {
+    active: boolean;
+    x: number;
+    y: number;
+    z: number;
+    vx: number;
+    vz: number;
+    life: number;
+    damage: number;
+    target: "player" | "bell";
+  }[] = Array.from({ length: 48 }, () => ({
+    active: false,
+    x: 0,
+    y: 0,
+    z: 0,
+    vx: 0,
+    vz: 0,
+    life: 0,
+    damage: 0,
+    target: "player",
+  }));
   private regenDelay = 0;
   private invulnerable = 0;
   private meleeCooldown = 0;
@@ -104,7 +130,6 @@ export class Battle {
   points = 4;
   wave = 0;
   phase: "peace" | "battle" | "intermission" | "lost" = "peace";
-  nextWave = 0;
   burstCooldown = 0;
   orbCooldown = 0;
   weaponRank = 0;
@@ -127,6 +152,8 @@ export class Battle {
   };
   constructor(readonly solids: Solid[]) {
     this.nav = new Navigation(solids);
+    this.loot = new Loot(this.nav);
+    this.drops = this.loot.drops;
     this.bellField = this.nav.field(MAP.bell);
     this.playerField = this.bellField;
   }
@@ -142,16 +169,32 @@ export class Battle {
   private emit(kind: BattleEvent["kind"], x = 0, z = 0, value = 0) {
     this.events.push({ kind, x, z, value });
   }
+  get pending() {
+    return this.waveJobs.reduce((n, j) => n + j.plan.length - j.index, 0);
+  }
+  get activeWaves() {
+    return this.waveJobs
+      .filter(
+        (j) =>
+          j.index < j.plan.length ||
+          this.enemies.some((e) => e.active && e.wave === j.wave),
+      )
+      .map((j) => j.wave);
+  }
   startWave() {
-    if (this.phase === "lost" || this.phase === "battle") return false;
+    if (this.phase === "lost" || this.wave >= WAVE_LIMIT) return false;
     this.wave++;
     this.phase = "battle";
-    this.remaining = Math.min(8 + this.wave * 3, 48);
-    this.spawnClock = 0;
+    this.waveJobs.push({
+      wave: this.wave,
+      plan: wavePlan(this.wave),
+      index: 0,
+      clock: 0,
+    });
     this.emit("wave", 0, 0, this.wave);
     return true;
   }
-  private spawn() {
+  private spawn(wave: number, kind: number) {
     const e = this.enemies.find((e) => !e.active);
     if (!e) return false;
     let x = 0,
@@ -170,8 +213,10 @@ export class Battle {
       active: true,
       x,
       z,
-      hp: 38 + this.wave * 5,
-      maxHp: 38 + this.wave * 5,
+      hp: ENEMY_TYPES[kind].hp * (1 + (wave - 1) * 0.055),
+      maxHp: ENEMY_TYPES[kind].hp * (1 + (wave - 1) * 0.055),
+      wave,
+      kind,
       target: "bell",
       windup: 0,
       cooldown: 0.4,
@@ -193,15 +238,14 @@ export class Battle {
         this.maxHealth,
         this.health + dt * this.skills.survival * 0.8,
       );
-    if (this.phase === "intermission") {
-      this.nextWave -= dt;
-      if (this.nextWave <= 0) this.startWave();
-    }
-    if (this.phase === "battle" && this.remaining > 0) {
-      this.spawnClock -= dt;
-      if (this.spawnClock <= 0 && this.spawn()) {
-        this.remaining--;
-        this.spawnClock = 0.45;
+    for (const job of this.waveJobs) {
+      job.clock -= dt;
+      let emitted = 0;
+      while (job.index < job.plan.length && job.clock <= 0 && emitted < 4) {
+        if (!this.spawn(job.wave, job.plan[job.index])) break;
+        job.index++;
+        job.clock += 0.075;
+        emitted++;
       }
     }
     this.fieldTimer -= dt;
@@ -227,29 +271,47 @@ export class Battle {
         e.target = "bell";
       const target = e.target === "player" ? player : MAP.bell,
         d = Math.hypot(e.x - target.x, e.z - target.z),
-        range = e.target === "player" ? 1.35 : 2.3;
+        range =
+          e.kind === 3
+            ? 7.5
+            : e.target === "player"
+              ? ENEMY_TYPES[e.kind].range
+              : 2.3;
       e.cooldown = Math.max(0, e.cooldown - dt);
       if (e.windup > 0) {
         e.windup -= dt;
         if (e.windup <= 0) {
           if (d < range + 0.6) {
             if (e.target === "player") {
-              if ((player.y ?? 0) < 1.3) this.hurtPlayer(7 + this.wave * 0.4);
+              if (e.kind === 3) this.castMissile(e, player);
+              else if (
+                (player.y ?? groundHeight(player.x, player.z)) -
+                  groundHeight(e.x, e.z) <
+                1.3
+              )
+                this.hurtPlayer(
+                  ENEMY_TYPES[e.kind].damage * (1 + e.wave * 0.035),
+                );
             } else {
-              this.baseHealth = Math.max(
-                0,
-                this.baseHealth - 5 - this.wave * 0.5,
-              );
-              this.emit("baseHit", e.x, e.z, 5);
-              if (this.baseHealth <= 0) this.lose();
+              if (e.kind === 3) this.castMissile(e, MAP.bell);
+              else {
+                this.baseHealth = Math.max(
+                  0,
+                  this.baseHealth -
+                    ENEMY_TYPES[e.kind].damage * (1 + e.wave * 0.035),
+                );
+                this.emit("baseHit", e.x, e.z, ENEMY_TYPES[e.kind].damage);
+                if (this.baseHealth <= 0) this.lose();
+              }
             }
           }
-          e.cooldown = 0.95;
+          e.cooldown = ENEMY_TYPES[e.kind].interval;
         }
         continue;
       }
       if (d < range) {
-        if (e.cooldown === 0) e.windup = 0.42;
+        if (e.cooldown === 0 && this.nav.lineClear(e, target))
+          e.windup = ENEMY_TYPES[e.kind].windup;
         continue;
       }
       const field = e.target === "player" ? this.playerField : this.bellField;
@@ -272,14 +334,15 @@ export class Battle {
           sz += dz * f;
         }
       }
-      const speed = 1.8 + Math.min(this.wave * 0.065, 0.9) + e.kind * 0.12;
+      const speed =
+        ENEMY_TYPES[e.kind].speed * (1 + Math.min(e.wave * 0.018, 0.18));
       let vx = v.x * speed + Math.max(-1.3, Math.min(1.3, sx)),
         vz = v.z * speed + Math.max(-1.3, Math.min(1.3, sz));
       const p = resolveCircle(
         e.x + (vx + e.knockX) * dt,
         e.z + (vz + e.knockZ) * dt,
         0.34,
-        0,
+        groundHeight(e.x, e.z),
         this.solids,
       );
       if (this.nav.walkable(p.x, p.z)) {
@@ -290,7 +353,7 @@ export class Battle {
           e.x + v.x * speed * dt,
           e.z + v.z * speed * dt,
           0.34,
-          0,
+          groundHeight(e.x, e.z),
           this.solids,
         );
         if (this.nav.walkable(fallback.x, fallback.z)) {
@@ -301,43 +364,83 @@ export class Battle {
       e.knockX *= Math.exp(-dt * 8);
       e.knockZ *= Math.exp(-dt * 8);
     }
-    for (const drop of this.drops) {
-      if (!drop.active) continue;
-      drop.age += dt;
-      const dx = player.x - drop.x,
-        dz = player.z - drop.z,
-        d = Math.hypot(dx, dz);
-      if (d < 2 + this.stats.magnetism * 0.7) {
-        if (d < 0.65) {
-          drop.active = false;
-          this.coins += Math.ceil(4 * (1 + this.stats.greed * 0.15));
-          this.ammoReward += 3 + this.skills.scavenging * 2;
-          this.xp += 12;
-          if (this.xp >= this.level * 40) {
-            this.xp -= this.level * 40;
-            this.level++;
-            this.points += 2;
-            this.health = Math.min(this.maxHealth, this.health + 15);
-            this.emit("level", player.x, player.z, this.level);
-          }
-        } else {
-          const speed = Math.min(d, dt * 8);
-          drop.x += (dx / d) * speed;
-          drop.z += (dz / d) * speed;
+    for (const pickup of this.loot.update(dt, player, this.stats.magnetism)) {
+      this.emit(pickup.kind, pickup.x, pickup.z, pickup.value);
+      if (pickup.kind === "gold")
+        this.coins += Math.ceil(pickup.value * (1 + this.stats.greed * 0.15));
+      else {
+        this.xp += pickup.value;
+        this.ammoReward += 3 + this.skills.scavenging * 2;
+        while (this.xp >= this.level * 40) {
+          this.xp -= this.level * 40;
+          this.level++;
+          this.points += 2;
+          this.health = Math.min(this.maxHealth, this.health + 15);
+          this.emit("level", player.x, player.z, this.level);
         }
       }
-      if (drop.age > 90) drop.active = false;
     }
+    this.updateMissiles(dt, player);
     if (
       this.phase === "battle" &&
-      this.remaining === 0 &&
+      this.pending === 0 &&
       this.enemies.every((e) => !e.active)
     ) {
       this.phase = "intermission";
-      this.nextWave = 10;
       this.coins += 15;
+      if (this.wave === 10 && !this.completeEmitted) {
+        this.completeEmitted = true;
+        this.emit("complete");
+      }
     }
   }
+  private castMissile(enemy: Enemy, target: Point) {
+    const m = this.missiles.find((m) => !m.active);
+    if (!m) return;
+    const d = Math.hypot(target.x - enemy.x, target.z - enemy.z) || 1;
+    Object.assign(m, {
+      active: true,
+      x: enemy.x,
+      z: enemy.z,
+      y: groundHeight(enemy.x, enemy.z) + 1,
+      vx: ((target.x - enemy.x) / d) * 7,
+      vz: ((target.z - enemy.z) / d) * 7,
+      life: 3,
+      damage: ENEMY_TYPES[3].damage * (1 + enemy.wave * 0.035),
+      target: enemy.target,
+    });
+  }
+  private updateMissiles(dt: number, player: Point & { y?: number }) {
+    for (const m of this.missiles) {
+      if (!m.active) continue;
+      const old = { x: m.x, z: m.z };
+      m.x += m.vx * dt;
+      m.z += m.vz * dt;
+      m.y = groundHeight(m.x, m.z) + 0.9;
+      m.life -= dt;
+      const target = m.target === "player" ? player : MAP.bell;
+      if (!this.nav.lineClear(old, m) || m.life <= 0) {
+        m.active = false;
+        continue;
+      }
+      if (Math.hypot(m.x - target.x, m.z - target.z) < 1.15) {
+        if (m.target === "player") {
+          if (
+            (player.y ?? groundHeight(player.x, player.z)) -
+              groundHeight(m.x, m.z) <
+            1.4
+          )
+            this.hurtPlayer(m.damage);
+        } else {
+          this.baseHealth = Math.max(0, this.baseHealth - m.damage);
+          this.emit("baseHit", target.x, target.z, m.damage);
+          if (this.baseHealth === 0) this.lose();
+        }
+        m.active = false;
+      }
+    }
+  }
+
   hurtPlayer(damage: number) {
     if (this.phase === "lost" || this.invulnerable > 0) return false;
     this.health = Math.max(0, this.health - damage);
@@ -364,9 +467,8 @@ export class Battle {
     if (e.hp <= 0) {
       e.active = false;
       this.souls++;
-      this.emit("kill", e.x, e.z, 0);
-      const drop = this.drops.find((d) => !d.active) || this.drops[0];
-      Object.assign(drop, { active: true, x: e.x, z: e.z, age: 0 });
+      this.emit("kill", e.x, e.z, e.kind);
+      this.loot.release(e.x, e.z);
       return true;
     }
     return false;
@@ -470,7 +572,6 @@ export class Battle {
     this.points = 4;
     this.wave = 0;
     this.phase = "peace";
-    this.nextWave = 0;
     this.burstCooldown = 0;
     this.orbCooldown = 0;
     this.weaponRank = 0;
@@ -478,7 +579,9 @@ export class Battle {
     this.invulnerable = 0;
     this.regenDelay = 0;
     this.meleeCooldown = 0;
-    this.remaining = 0;
+    this.waveJobs.length = 0;
+    this.completeEmitted = false;
+    this.missiles.forEach((m) => (m.active = false));
     this.fieldTimer = 0;
     this.playerCell = -1;
     this.rng = seededRandom(744);
@@ -488,9 +591,7 @@ export class Battle {
     this.enemies.forEach((e) => {
       e.active = false;
     });
-    this.drops.forEach((d) => {
-      d.active = false;
-    });
+    this.loot.reset();
     this.events.length = 0;
   }
 }

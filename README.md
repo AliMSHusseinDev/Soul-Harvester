@@ -44,13 +44,15 @@ The browser suite uses `/usr/bin/chromium` by default; set `CHROMIUM_PATH` to an
 
 ## Architecture
 
-- `src/game/battle.ts`: renderer-independent wave, combat, aggro, damage, economy, XP and upgrade simulation.
+- `src/game/battle.ts`: renderer-independent concurrent waves, combat, aggro, damage, economy, XP and upgrade simulation.
 - `src/game/navigation.ts`: shared Dijkstra flow fields with a binary min-heap, non-corner-cutting grid paths, line-of-sight queries, and a spatial hash for local crowd separation.
-- `src/game/terrain.ts`: shared bridge, ravine and map boundaries used by physics and navigation.
+- `src/game/terrain.ts`: a C2-continuous raised-keep ramp shared by scenery, collision, AI, pickups and effects.
 - `src/game/world.ts`: seeded original environment, instanced grass/masonry, merged static props, huge moon, moving cloud shader, lanterns, spawn tree, NPCs and bell.
 - `src/game/player.ts`: fixed-step acceleration, gravity, circle/AABB collision substeps, prop landing, sprint hysteresis, high jump and double jump.
 - `src/game/weapon.ts`: original weapon models, ammunition, reload/weapon switching, critically damped recoil spring, aim-down-sights, melee and casting motion.
-- `src/game/enemies.ts`: pooled original sprite enemies, walk animation and attack windup presentation.
+- `src/game/enemies.ts`: four instanced billboard batches, alpha-aware analytical hit tests, walk animation and telegraphed attacks.
+- `src/game/waves.ts`: deterministic weighted compositions and ten concurrent wave jobs; each enemy retains its source wave.
+- `src/game/loot.ts`: persistent independent gold/XP drops, collision-safe placement and exact spring attraction.
 - `src/game/effects.ts`: pooled impact particles, floating damage numbers, tumbling deaths, instanced coins/crystals, projectile sweeps and expanding spell ring.
 - `src/game/ui.ts`: vitality/base integrity, inventory, skill/stat panels, weapon upgrade shop and death/restart presentation.
 - `src/game/input.ts`: pointer lock, focus cleanup, aim and fire inputs.
@@ -64,7 +66,13 @@ All game visuals and audio are generated locally. Fonts are self-hosted; license
 
 Ring the bell to start. Enemies spawn only in the tree zone and navigate across the bridge toward the bell. Within 9 metres and line of sight they chase the player; beyond 13 metres they return to the bell. Attacks have a 0.42-second windup, and retreating during that window avoids the hit. A global short damage grace period limits simultaneous player damage from a crowd.
 
-Waves are finite and capped by the 48-enemy pool. After clearing a wave, collect drops and use the 10-second interval to regroup. Enemies have a fixed origin per wave, rather than teleporting around the player. Killing enemies releases souls and leaves coins/XP/ammo drops; nearby drops attract to the player. Each level grants two upgrade points. Six stats and six skill disciplines change real simulation values, including high/double jump, damage, pickup range, regeneration and reload speed.
+Every successful bullet hitting the bell calls the next wave immediately, even while earlier waves are fighting. The limit is **ten waves per run**; further bell hits cannot create wave eleven. Waves do not start automatically. All pending wave jobs emit concurrently from the tree zone, and earlier enemies are retained. A pool sized for the complete run holds all **170 enemies** from waves 1–10 without a 48-enemy bottleneck. Enemies keep their own wave's tuning rather than inheriting the latest wave number.
+
+Wave composition evolves deterministically: hollowguards, fast raveners, slow high-health grave brutes and ranged ember witches have distinct silhouettes, speeds, attack timing and damage. The caster fires dodgeable projectiles. Shared navigation and four instanced billboard draws keep the rendering cost of a stacked horde bounded.
+
+Kills leave separate gold and XP objects. Rewards persist until collected or the run is reset; they no longer disappear after ninety seconds. Drops are placed clear of walls and bridge edges, follow the same height field as the ground, and accelerate toward nearby players using an exact critically damped spring. Collecting gives a short trail, spark, chime and counter feedback. Moving instance batches explicitly disable stale frustum-bound culling, so pickups remain visible when viewed from either side of the bridge. Each level grants two upgrade points.
+
+The gameplay HUD uses a self-hosted pixel font and compact corner clusters. Controls live in the pause guide, not in permanent paragraphs over the world. The stats/skills panel uses rank pips, discipline tiers and a single contextual description. Aim-down-sights places both sight tips on the camera's optical axis, suppresses walking bob and hides the crosshair and interaction prompt.
 
 Weapons have separate magazines and reserves; reloading transfers ammunition rather than creating it. Buy rank upgrades or refill ammunition at the Graveforge. Interact with a damaged bell during combat to spend 15 gold repairing 100 integrity. If the player or bell reaches zero, combat stops and a restart resets the run.
 
@@ -92,7 +100,7 @@ In the repository's **Settings → Pages**, set **Source** to **GitHub Actions**
 
 ### Local production build
 
-Run `npm run build` followed by `npm run preview -- --port 4173`. Use the existing browser-check instructions above. `vite.config.ts` makes all built asset paths relative, so the same build can run on a root domain or inside a GitHub Pages project path. The JavaScript bundle is about 158 KB gzipped before fonts; Vite reports its advisory about the uncompressed Three.js bundle size.
+Run `npm run build` followed by `npm run preview -- --port 4173`. Use the existing browser-check instructions above. `vite.config.ts` makes all built asset paths relative, so the same build can run on a root domain or inside a GitHub Pages project path. The JavaScript bundle is about 161 KB gzipped before fonts; Vite reports its advisory about the uncompressed Three.js bundle size.
 
 Public hosting must be verified after the hosting account's deployment succeeds. Do not treat a saved environment draft, a ZIP archive, or a localhost address as a public game link.
 

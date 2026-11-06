@@ -164,7 +164,7 @@ export class Navigation {
         !inMap(x, z) ||
         this.solids.some(
           (s) =>
-            s.height > 1 &&
+            s.height - (s.base ?? 0) > 1 &&
             x > s.minX &&
             x < s.maxX &&
             z > s.minZ &&

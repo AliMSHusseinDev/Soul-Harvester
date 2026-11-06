@@ -178,7 +178,14 @@ export function guardTexture(kind = 0) {
   c.width = 32;
   c.height = 40;
   const g = c.getContext("2d")!;
-  const palette = ["#101f23", "#29464a", "#4a7c70", "#80b59a", "#bdd5ab"];
+  const palette =
+    kind === 2
+      ? ["#241d1b", "#514332", "#806a43", "#af9565", "#d5c593"]
+      : kind === 3
+        ? ["#16172e", "#303454", "#55507c", "#9b81ae", "#d1c5dd"]
+        : kind === 1
+          ? ["#162a29", "#25554d", "#4d9978", "#99c991", "#def2b9"]
+          : ["#101f23", "#29464a", "#4a7c70", "#80b59a", "#bdd5ab"];
   const rng = seededRandom(630 + kind);
   const rows = [
     [12, 19],
@@ -234,6 +241,17 @@ export function guardTexture(kind = 0) {
     g.fillStyle = "#c9ba85";
     g.fillRect(3, 3, 4, 3);
     g.fillRect(25, 3, 4, 3);
+  }
+  if (kind === 3) {
+    g.fillStyle = "#887bb1";
+    g.fillRect(4, 2, 4, 6);
+    g.fillRect(24, 2, 4, 6);
+    g.fillStyle = "#c59ee5";
+    g.fillRect(14, 11, 4, 3);
+    g.fillStyle = "#594566";
+    g.fillRect(27, 15, 2, 24);
+    g.fillStyle = "#fc9363";
+    g.fillRect(25, 13, 6, 4);
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;

@@ -17,7 +17,14 @@ export class Audio {
       this.ctx = new AudioContext();
       this.master = this.ctx.createGain();
       this.master.gain.value = 0;
-      this.master.connect(this.ctx.destination);
+      const limiter = this.ctx.createDynamicsCompressor();
+      limiter.threshold.value = -12;
+      limiter.knee.value = 8;
+      limiter.ratio.value = 8;
+      limiter.attack.value = 0.004;
+      limiter.release.value = 0.2;
+      this.master.connect(limiter);
+      limiter.connect(this.ctx.destination);
       for (const f of [55, 82.5, 110.2]) {
         const o = this.ctx.createOscillator(),
           g = this.ctx.createGain();
@@ -87,6 +94,18 @@ export class Audio {
       [857, 0.035],
     ])
       this.tone(f, 3.3, v);
+  }
+  private lastPickup = 0;
+  pickup(kind: "gold" | "xp") {
+    if (!this.ctx || this.ctx.currentTime - this.lastPickup < 0.035) return;
+    this.lastPickup = this.ctx.currentTime;
+    this.tone(
+      kind === "gold" ? 980 : 1450,
+      0.12,
+      0.045,
+      "sine",
+      kind === "gold" ? 1450 : 1950,
+    );
   }
   melee() {
     this.tone(180, 0.13, 0.08, "triangle", 40);

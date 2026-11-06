@@ -1,6 +1,6 @@
 {
   "name": "soul-harvester",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -15,6 +15,7 @@
   "dependencies": {
     "@fontsource/cormorant-garamond": "^5.3.0",
     "@fontsource/inter": "^5.3.0",
+    "@fontsource/pixelify-sans": "^5.3.0",
     "three": "^0.180.0"
   },
   "devDependencies": {

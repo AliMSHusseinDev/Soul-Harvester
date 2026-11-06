@@ -1,3 +1,5 @@
+import "@fontsource/pixelify-sans/latin-400.css";
+import "@fontsource/pixelify-sans/latin-600.css";
 import "@fontsource/cormorant-garamond/latin-400.css";
 import "@fontsource/cormorant-garamond/latin-400-italic.css";
 import "@fontsource/inter/latin-400.css";
@@ -17,7 +19,7 @@ import { FixedClock, damp, seededRandom } from "./game/math";
 import { Battle } from "./game/battle";
 import { Effects } from "./game/effects";
 import { UI, $ } from "./game/ui";
-import { MAP } from "./game/terrain";
+import { MAP, groundHeight } from "./game/terrain";
 async function boot() {
   const canvas = $<HTMLCanvasElement>("world");
   const renderer = new THREE.WebGLRenderer({
@@ -95,7 +97,7 @@ async function boot() {
   const occluders = world.solids.map(
     (b) =>
       new THREE.Box3(
-        new THREE.Vector3(b.minX, 0, b.minZ),
+        new THREE.Vector3(b.minX, b.base ?? 0, b.minZ),
         new THREE.Vector3(b.maxX, b.height, b.maxZ),
       ),
   );
@@ -143,7 +145,10 @@ async function boot() {
     setActive(locked);
   };
   for (const dialog of document.querySelectorAll("dialog"))
-    dialog.addEventListener("close", () => setActive(input.locked));
+    dialog.addEventListener("close", () => {
+      document.body.classList.toggle("has-panel", ui.dialogOpen);
+      setActive(input.locked);
+    });
   $("enter").onclick = enter;
   $("notes").onclick = () => ui.open("guide");
   $("close-guide").onclick = () => $<HTMLDialogElement>("guide").close();
@@ -168,12 +173,11 @@ async function boot() {
     ui.toast("Allow mouse capture. An embedded host must permit pointer-lock."),
   );
   function ringBell() {
-    if (bellTimer > 0.5 || battle.phase === "lost") return;
-    bellTimer = 1.2;
-    audio.bell();
-    if (battle.startWave())
-      ui.toast("The horde rises beneath the great tree. Defend the bell.");
-    else ui.toast("The bell calls. Hold the bridge.");
+    if (battle.phase === "lost") return;
+    if (battle.startWave()) {
+      bellTimer = 1.2;
+      audio.bell();
+    } else ui.toast("10 / 10");
   }
   function interact() {
     if (player.position.distanceTo(world.skillStation) < 3.5)
@@ -246,24 +250,8 @@ async function boot() {
       camera.position,
       new THREE.Vector3(Math.cos(input.yaw), 0, -Math.sin(input.yaw)),
     );
-    const hits = raycaster.intersectObjects(enemies.visible, false);
+    const hits = enemies.raycast(raycaster.ray);
     for (const hit of hits) {
-      const image = (hit.object as THREE.Sprite).material.map?.image as
-        HTMLCanvasElement | undefined;
-      if (image && hit.uv) {
-        const alpha = image
-          .getContext("2d")!
-          .getImageData(
-            Math.min(image.width - 1, Math.floor(hit.uv.x * image.width)),
-            Math.min(
-              image.height - 1,
-              Math.floor((1 - hit.uv.y) * image.height),
-            ),
-            1,
-            1,
-          ).data[3];
-        if (alpha < 30) continue;
-      }
       const blocked = occluders.some(
         (box) =>
           raycaster.ray.intersectBox(box, intersection) !== null &&
@@ -275,7 +263,7 @@ async function boot() {
       const damage =
         weapon.config.damage * battle.damageMultiplier * (critical ? 1.5 : 1);
       battle.damageEnemy(
-        hit.object.userData.enemyId,
+        hit.enemyId,
         damage,
         player.position,
         weapon.id === "rifle" ? 2 : 4,
@@ -292,6 +280,12 @@ async function boot() {
     if (
       raycaster.ray.distanceToPoint(world.bellPosition) < 0.85 &&
       camera.position.distanceTo(world.bellPosition) < 40 &&
+      !occluders.some(
+        (box) =>
+          raycaster.ray.intersectBox(box, intersection) !== null &&
+          intersection.distanceTo(camera.position) <
+            camera.position.distanceTo(world.bellPosition) - 0.8,
+      ) &&
       world.bellPosition.clone().sub(camera.position).dot(direction) > 0
     )
       ringBell();
@@ -304,15 +298,26 @@ async function boot() {
   }
   function processEvents() {
     for (const event of battle.events) {
-      if (event.kind === "hit") effects.number(event.x, event.z, event.value);
+      if (event.kind === "gold" || event.kind === "xp") {
+        effects.pickup(event.kind, event.x, event.z);
+        audio.pickup(event.kind);
+        ui.pickup(event.kind);
+      } else if (event.kind === "complete") ui.banner("KEEP DEFENDED");
+      else if (event.kind === "hit")
+        effects.number(event.x, event.z, event.value);
       else if (event.kind === "kill") {
-        effects.death(event.x, event.z);
+        effects.death(event.x, event.z, event.value);
         audio.hit();
       } else if (event.kind === "playerHit") {
         ui.hit();
         audio.hurt();
       } else if (event.kind === "baseHit") {
-        effects.burst(new THREE.Vector3(0, 1.4, 19), 0xe9ba6e, 10, 2);
+        effects.burst(
+          new THREE.Vector3(0, groundHeight(0, 19) + 1.4, 19),
+          0xe9ba6e,
+          10,
+          2,
+        );
       } else if (event.kind === "wave") {
         ui.banner(`WAVE ${event.value}`);
       } else if (event.kind === "level") {
@@ -321,7 +326,16 @@ async function boot() {
         audio.hit();
       } else if (event.kind === "lost") ui.lost();
       else if (event.kind === "spawn")
-        effects.burst(new THREE.Vector3(event.x, 0.8, event.z), 0x71c9ae, 8, 2);
+        effects.burst(
+          new THREE.Vector3(
+            event.x,
+            groundHeight(event.x, event.z) + 0.8,
+            event.z,
+          ),
+          0x71c9ae,
+          8,
+          2,
+        );
     }
     battle.events.length = 0;
   }
@@ -363,7 +377,11 @@ async function boot() {
         if (player.position.y < -5) {
           battle.hurtPlayer(20);
           const north = player.position.z < -6;
-          player.position.set(0, 0, north ? -17 : 5);
+          player.position.set(
+            0,
+            groundHeight(0, north ? -17 : 5),
+            north ? -17 : 5,
+          );
           player.previous.copy(player.position);
           player.stop();
           ui.toast("The ravine takes its toll. Stay on the bridge.");
@@ -387,30 +405,27 @@ async function boot() {
       });
       player.render(camera, alpha, reducedMotion);
       camera.rotation.x += kick;
-      enemies.update(time);
+      enemies.update(time, input.yaw);
       const fov =
         input.aiming && weapon.id !== "blade" ? 55 : player.speed > 6 ? 76 : 72;
       camera.fov = damp(camera.fov, fov, 10, dt);
       camera.updateProjectionMatrix();
       $("stamina").style.width = `${player.stamina * 100}%`;
-      $("heading").textContent = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][
-        Math.round(
-          (((((-input.yaw * 180) / Math.PI) % 360) + 360) % 360) / 45,
-        ) % 8
-      ];
       let label = "";
       if (player.position.distanceTo(world.skillStation) < 3.5)
-        label = "SKILLS & STATS";
+        label = "SKILLS";
       else if (player.position.distanceTo(world.weaponStation) < 3.5)
-        label = "VISIT THE GRAVEFORGE";
+        label = "UPGRADE";
       else if (
         Math.hypot(player.position.x, player.position.z - MAP.bell.z) < 6
       )
         label =
           battle.baseHealth < 500 && battle.phase === "battle"
             ? "REPAIR BELL · 15 GOLD"
-            : "RING THE HOLLOW BELL";
-      $("interact").classList.toggle("hidden", !label);
+            : battle.wave < 10
+              ? "CALL NEXT WAVE"
+              : "";
+      $("interact").classList.toggle("hidden", !label || input.aiming);
       $("interact-label").textContent = label;
       if (player.grounded && player.distance - footstep > 2.1) {
         audio.step();
@@ -420,7 +435,7 @@ async function boot() {
       if (!started) {
         camera.position.set(
           10.5 + Math.sin(ambientTime * 0.045) * 0.3,
-          3.8,
+          3.8 + groundHeight(10.5, 16),
           16,
         );
         camera.lookAt(0, 4, -39);
@@ -436,7 +451,11 @@ async function boot() {
     } else world.bell.rotation.z = 0;
     uiTimer -= dt;
     if (uiTimer <= 0) {
-      ui.update(0.08, input.aiming);
+      ui.update(
+        0.08,
+        input.aiming,
+        Math.hypot(player.position.x, player.position.z - MAP.bell.z) < 7,
+      );
       uiTimer = 0.08;
     }
     camera.updateMatrixWorld();
@@ -465,6 +484,9 @@ async function boot() {
       reserve: weapon.reserve,
       weapon: weapon.id,
       aiming: input.aiming,
+      aimAmount: weapon.aimAmount,
+      ground: groundHeight(player.position.x, player.position.z),
+      bellPosition: world.bellPosition.toArray(),
       burstCooldown: battle.burstCooldown,
       orbCooldown: battle.orbCooldown,
       fov: camera.fov,
@@ -477,6 +499,7 @@ async function boot() {
       coins: battle.coins,
       points: battle.points,
       level: battle.level,
+      xp: battle.xp,
       stats: { ...battle.stats },
       skills: { ...battle.skills },
       enemies: battle.alive.map((e) => ({
@@ -486,8 +509,26 @@ async function boot() {
         hp: e.hp,
         target: e.target,
         windup: e.windup,
+        kind: e.kind,
+        wave: e.wave,
       })),
-      targets: enemies.visible.map((s) => s.position.toArray()),
+      targets: enemies.positions,
+      drops: battle.drops
+        .filter((d) => d.active)
+        .map((d) => ({
+          id: d.id,
+          kind: d.kind,
+          x: d.x,
+          y: d.y,
+          z: d.z,
+          magnet: d.magnet,
+        })),
+      lootRender: effects.diagnostics(),
+      activeWaves: battle.activeWaves,
+      pending: battle.pending,
+      sightProjection: weapon
+        .sightPoints()
+        .map((p) => p.project(camera).toArray()),
       colliders: world.solids.length,
       fps,
       drawCalls: renderer.info.render.calls,

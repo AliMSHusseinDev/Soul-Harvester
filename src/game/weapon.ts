@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { damp } from "./math";
+import { damp, aimPose, springStep } from "./math";
 import { glowTexture } from "./textures";
 export type WeaponId = "rifle" | "pistol" | "blade";
 export const WEAPONS = {
@@ -53,6 +53,15 @@ export class Weapon {
   private meleeTime = 0;
   private castTime = 0;
   private aim = 0;
+  get aimAmount() {
+    return this.aim;
+  }
+  sightPoints() {
+    return [
+      new THREE.Vector3(0, 0.22, 0.025),
+      new THREE.Vector3(0, 0.22, this.id === "rifle" ? -0.81 : -0.41),
+    ].map((p) => this.group.localToWorld(p));
+  }
   private switchTime = 0;
   private leftHand: THREE.Group;
   constructor(camera: THREE.PerspectiveCamera) {
@@ -133,10 +142,11 @@ export class Weapon {
         new THREE.MeshStandardMaterial({
           color: 0xb9fce1,
           emissive: 0x39c795,
-          emissiveIntensity: 2,
+          emissiveIntensity: 0.45,
         }),
       );
-      chamber.position.set(0.084, 0.015, -0.05);
+      chamber.scale.set(0.3, 0.6, 0.3);
+      chamber.position.set(0.066, 0.015, -0.05);
       g.add(chamber);
       this.group.add(g);
     }
@@ -186,7 +196,7 @@ export class Weapon {
     this.group.add(this.flash);
     this.light = new THREE.PointLight(0xffd98c, 0, 4);
     this.group.add(this.light);
-    this.group.scale.setScalar(0.72);
+    this.group.scale.setScalar(0.68);
     camera.add(this.group);
     this.update(0, 0, 0, false, false);
   }
@@ -277,8 +287,15 @@ export class Weapon {
     this.flash.position.set(0, 0.035, this.id === "rifle" ? -0.91 : -0.51);
     this.light.position.copy(this.flash.position);
     // Critically damped spring: recoil remains stable across frame rates.
-    this.velocity += (-140 * this.recoil - 22 * this.velocity) * dt;
-    this.recoil += this.velocity * dt;
+    const spring = springStep(
+      this.recoil,
+      this.velocity,
+      0,
+      Math.sqrt(140),
+      dt,
+    );
+    this.recoil = spring.position;
+    this.velocity = spring.velocity;
     if (this.reloading) {
       this.reloadTime -= dt;
       if (this.reloadTime <= 0) {
@@ -305,14 +322,11 @@ export class Weapon {
       melee = Math.sin((this.meleeTime / 0.38) * Math.PI),
       cast = Math.sin((this.castTime / 0.55) * Math.PI),
       bob = reducedMotion ? 0 : Math.sin(time * 8) * Math.min(speed, 5) * 0.003;
+    const pose = aimPose(this.aim);
     this.group.position.set(
-      0.28 * (1 - this.aim),
-      -0.23 * (1 - this.aim) -
-        0.13 * this.aim -
-        reload * 0.14 +
-        melee * 0.12 +
-        bob,
-      -0.52 + this.recoil - melee * 0.35 + this.switchTime * 0.7,
+      pose.x,
+      pose.y - reload * 0.14 + melee * 0.12 + bob * (1 - this.aim) * 0.6,
+      pose.z + this.recoil - melee * 0.35 + this.switchTime * 0.7,
     );
     this.group.rotation.set(
       this.recoil * 0.8 + reload * 0.12,

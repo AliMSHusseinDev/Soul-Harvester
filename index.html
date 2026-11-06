@@ -93,77 +93,78 @@
         </div>
       </main>
       <div id="hud" class="hud hidden">
-        <div class="compass">
-          <span>W</span><i>· · · ·</i><b id="heading">N</b><i>· · · ·</i
-          ><span>E</span>
-        </div>
-        <div class="objective">
-          <span class="tiny-diamond"></span>
-          <div>
-            <small id="objective-title">DEFEND THE HOLLOW BELL</small
-            ><strong id="objective-text"
-              >Ring the bell to begin the harvest.</strong
-            >
+        <div class="player-status">
+          <div class="health-frame" aria-label="Vitality">
+            <i id="health-fill"></i><b class="health-cross">✚</b
+            ><strong id="health-value">100/100</strong>
           </div>
+          <div class="xp-frame">
+            <i id="xp-fill"></i><span id="level-value">LEVEL 1</span>
+          </div>
+          <div class="stamina-frame"><i id="stamina"></i></div>
+        </div>
+        <div class="wallet">
+          <div id="gold-counter">
+            <b id="coins-value">40</b
+            ><svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m12 2 7 4 3 6-3 7-7 3-7-3-3-7 3-6Z" />
+              <path d="m12 6 5 6-5 6-5-6Z" />
+            </svg>
+          </div>
+          <div>
+            <b id="points-value">4</b><span class="crystal-icon">◆</span>
+          </div>
+        </div>
+        <div class="abilities">
+          <div id="burst-status" class="ability" title="F · Soul burst">
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path
+                d="M16 2v5m0 18v5M2 16h5m18 0h5M6 6l4 4m12 12 4 4M6 26l4-4M22 10l4-4"
+              />
+              <circle cx="16" cy="16" r="8" /></svg
+            ><b>F</b><small id="burst-time"></small>
+          </div>
+          <div id="orb-status" class="ability" title="Q · Ember orb">
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path d="m16 1 4 11 11 4-11 4-4 11-4-11-11-4 11-4Z" /></svg
+            ><b>Q</b><small id="orb-time"></small>
+          </div>
+        </div>
+        <div id="wave-status"></div>
+        <div id="base-hud">
+          <span aria-label="Bell integrity">♧</span>
+          <div><i id="base-fill"></i></div>
+          <small id="base-value">500/500</small>
         </div>
         <div id="crosshair" class="crosshair"><i></i><i></i><i></i><i></i></div>
         <div id="hitmarker" class="hitmarker">×</div>
         <div id="interact" class="interaction hidden">
-          <kbd>E</kbd><span id="interact-label">RING THE HOLLOW BELL</span>
+          <kbd>E</kbd><span id="interact-label">RING THE BELL</span>
         </div>
-        <div class="vitality">
-          <div class="health-sigil">♜</div>
-          <div>
-            <div class="hud-label">
-              VITALITY <span id="health-value">100 / 100</span>
-            </div>
-            <div class="health-track"><i id="health-fill"></i></div>
-            <div class="stamina-track"><i id="stamina"></i></div>
+        <div id="weapon-slots" class="inventory">
+          <div data-weapon="blade">
+            <kbd>1</kbd
+            ><svg viewBox="0 0 64 28">
+              <path d="M4 22 18 8l8 7L13 25ZM20 8l7-5 33 2-31 13Z" /></svg
+            ><span>∞</span>
+          </div>
+          <div data-weapon="pistol">
+            <kbd>2</kbd
+            ><svg viewBox="0 0 64 28">
+              <path d="M7 3h42v9H32l-4 14H17l2-14H7Z" /></svg
+            ><span data-ammo="pistol">12/72</span>
+          </div>
+          <div data-weapon="rifle">
+            <kbd>3</kbd
+            ><svg viewBox="0 0 64 28">
+              <path d="M2 7h9V3h31v4h19v5H38l-2 13H25l-3-13h-9v9H2Z" /></svg
+            ><span data-ammo="rifle">30/120</span>
           </div>
         </div>
-        <div class="weapon-hud">
-          <span class="weapon-name" id="weapon-name"
-            >GRAVECALLER <small>ASSAULT RIFLE</small></span
-          ><span class="ammo"
-            ><b id="ammo">30</b><i>/</i><span id="reserve">120</span></span
-          >
-        </div>
-        <div class="hud-help">
-          <span>W A S D <small>MOVE</small></span
-          ><span>SHIFT <small>SPRINT</small></span
-          ><span>SPACE <small>JUMP</small></span
-          ><span>R <small>RELOAD</small></span
-          ><span>1 2 3 <small>WEAPON</small></span
-          ><span>V <small>MELEE</small></span
-          ><span>F / Q <small>MAGIC</small></span
-          ><span>K <small>SKILLS</small></span
-          ><span>ESC <small>PAUSE</small></span>
-        </div>
-        <div class="soul-counter">
-          <span>✧</span> <b id="souls">00</b> <small>SOULS RELEASED</small>
-        </div>
+        <div id="pickup-feedback" aria-live="polite"></div>
       </div>
       <div id="damage-overlay"></div>
       <div id="combat-banner" role="status"></div>
-      <div id="wave-status">THE KEEP IS QUIET</div>
-      <div id="base-hud">
-        <span>HOLLOW BELL</span><strong id="base-value">500 / 500</strong>
-        <div><i id="base-fill"></i></div>
-      </div>
-      <div id="progress-hud">
-        <span id="level-value">LEVEL 1</span>
-        <div><i id="xp-fill"></i></div>
-        <span id="coins-value">40 GOLD</span>
-      </div>
-      <div id="ability-hud">
-        <span id="burst-status">F · SOUL BURST</span
-        ><span id="orb-status">Q · EMBER ORB</span><span>RMB · AIM</span>
-      </div>
-      <div id="weapon-slots">
-        <span data-weapon="blade">1 ◇ EDGE</span
-        ><span data-weapon="pistol">2 ▰ PISTOL</span
-        ><span data-weapon="rifle">3 ▰ RIFLE</span>
-      </div>
       <dialog id="skills-dialog" class="upgrade-dialog">
         <button
           class="close"
@@ -172,23 +173,19 @@
         >
           ×
         </button>
-        <div class="eyebrow">AT THE KEEPER'S FIRE</div>
-        <h2>Shape your harvest.</h2>
-        <p id="skill-points"></p>
-        <div class="upgrade-columns">
-          <section>
-            <h3>STATS</h3>
-            <div id="stat-options"></div>
-          </section>
-          <section>
-            <h3>SKILLS</h3>
-            <div id="skill-options"></div>
-          </section>
+        <div class="skill-heading">
+          <h2>STATS</h2>
+          <span id="skill-points">4 ◆</span>
+          <h2>SKILLS</h2>
         </div>
-        <p class="guide-note">
-          Each upgrade costs one point. Earn two points per level. Close this
-          panel, then return to the keep to resume.
-        </p>
+        <div class="upgrade-columns">
+          <section id="stat-options" aria-label="Stats"></section>
+          <section id="skill-options" aria-label="Skills"></section>
+        </div>
+        <div id="skill-description" class="skill-description">
+          Choose an upgrade · 1 point
+        </div>
+        <button class="back-button" data-close="skills-dialog">BACK</button>
       </dialog>
       <dialog id="shop-dialog">
         <button

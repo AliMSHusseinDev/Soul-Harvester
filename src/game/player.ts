@@ -3,7 +3,7 @@ import { damp, resolveCircle, type Solid } from "./math";
 import type { Input } from "./input";
 import { MAP, groundHeight } from "./terrain";
 export class Player {
-  readonly position = new THREE.Vector3(0, 0, 14);
+  readonly position = new THREE.Vector3(0, groundHeight(0, 14), 14);
   readonly previous = this.position.clone();
   private exhausted = false;
   private vx = 0;
@@ -23,6 +23,11 @@ export class Player {
   ) {}
   update(dt: number) {
     this.previous.copy(this.position);
+    const surfaceAttached =
+      this.grounded &&
+      Math.abs(
+        this.position.y - groundHeight(this.position.x, this.position.z),
+      ) < 0.06;
     let x =
       Number(this.input.keys.has("KeyD")) - Number(this.input.keys.has("KeyA"));
     let z =
@@ -112,6 +117,20 @@ export class Player {
       MAP.minZ + 0.5,
       MAP.maxZ - 0.5,
     );
+    const newFloor = groundHeight(this.position.x, this.position.z);
+    if (
+      surfaceAttached &&
+      !requested &&
+      Math.abs(newFloor - groundHeight(this.previous.x, this.previous.z)) < 0.25
+    ) {
+      this.position.y = newFloor;
+      this.vy = 0;
+      this.grounded = true;
+    } else if (this.position.y < newFloor) {
+      this.position.y = newFloor;
+      this.vy = 0;
+      this.grounded = true;
+    }
     this.speed = Math.hypot(this.vx, this.vz);
     this.distance += this.speed * dt;
   }
@@ -129,7 +148,7 @@ export class Player {
     camera.rotation.set(this.input.pitch, this.input.yaw, 0, "YXZ");
   }
   reset() {
-    this.position.set(0, 0, 14);
+    this.position.set(0, groundHeight(0, 14), 14);
     this.previous.copy(this.position);
     this.vx = 0;
     this.vz = 0;

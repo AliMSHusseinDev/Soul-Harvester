@@ -20,6 +20,7 @@ export interface Solid {
   minZ: number;
   maxZ: number;
   height: number;
+  base?: number;
 }
 /** Circle vs AABB. Vertical filtering allows the player to jump over low props. */
 export function resolveCircle(
@@ -68,4 +69,31 @@ export class FixedClock {
   reset() {
     this.accumulator = 0;
   }
+}
+
+/** Exact critically damped spring step; stable even when render frequency changes. */
+export function springStep(
+  position: number,
+  velocity: number,
+  target: number,
+  omega: number,
+  dt: number,
+) {
+  const d = position - target,
+    c = velocity + omega * d,
+    e = Math.exp(-omega * dt);
+  return {
+    position: target + (d + c * dt) * e,
+    velocity: (velocity - omega * c * dt) * e,
+  };
+}
+
+export const SIGHT_HEIGHT = 0.22;
+/** The sight tips lie on the camera's optical axis at full ADS. */
+export function aimPose(aim: number, scale = 0.68) {
+  return {
+    x: 0.27 * (1 - aim),
+    y: -0.24 * (1 - aim) - SIGHT_HEIGHT * scale * aim,
+    z: -0.52 * (1 - aim) - 0.64 * aim,
+  };
 }

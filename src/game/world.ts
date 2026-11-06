@@ -8,7 +8,7 @@ import {
   npcTexture,
   cloudTexture,
 } from "./textures";
-import { MAP } from "./terrain";
+import { MAP, landHeight, terrainSlope } from "./terrain";
 interface Flame {
   position: THREE.Vector3;
   light: THREE.PointLight;
@@ -103,6 +103,7 @@ export class World {
     this.keep();
     this.field();
     this.forest();
+    this.elevateTerrain();
     this.batchStaticMeshes();
     this.moteBase = new Float32Array(160 * 3);
     for (let i = 0; i < 160; i++) {
@@ -139,7 +140,10 @@ export class World {
       [15, 26],
       [-47, 66],
     ] as const) {
-      const g = new THREE.Mesh(new THREE.PlaneGeometry(120, d), groundMat);
+      const g = new THREE.Mesh(
+        new THREE.PlaneGeometry(120, d, 60, 96),
+        groundMat,
+      );
       g.rotation.x = -Math.PI / 2;
       g.position.z = z;
       g.receiveShadow = true;
@@ -155,6 +159,7 @@ export class World {
         emissiveIntensity: 0.3,
       }),
     );
+    water.userData.terrainExempt = true;
     water.rotation.x = -Math.PI / 2;
     water.position.set(0, -6, -6);
     this.scene.add(water);
@@ -243,7 +248,7 @@ export class World {
       }
       for (const y of [0.4, 0.9])
         this.box(x, y, -6, 0.12, 0.12, 16.2, this.wood);
-      this.solid(x, -6, 0.22, 16, 1.05);
+      for (let z = -13; z < 2; z += 2) this.solid(x, z, 0.22, 2, 1.05);
     }
     for (const x of [-4.2, 4.2]) {
       const arch = new THREE.Mesh(
@@ -475,10 +480,71 @@ export class World {
       positions.setXYZ(
         i,
         this.moteBase[i * 3] + Math.sin(time * 0.3 + i) * 0.3,
-        (this.moteBase[i * 3 + 1] + time * 0.15) % 9,
+        ((this.moteBase[i * 3 + 1] + time * 0.15) % 9) +
+          landHeight(this.moteBase[i * 3], this.moteBase[i * 3 + 2]),
         this.moteBase[i * 3 + 2],
       );
     positions.needsUpdate = true;
+  }
+  private elevateTerrain() {
+    // Bake the same analytical surface into scenery and physics before static batching.
+    this.scene.updateMatrixWorld(true);
+    const matrix = new THREE.Matrix4(),
+      object = new THREE.Object3D();
+    for (const child of [...this.scene.children]) {
+      if (child.userData.terrainExempt) continue;
+      if (child instanceof THREE.InstancedMesh) {
+        for (let i = 0; i < child.count; i++) {
+          child.getMatrixAt(i, matrix);
+          matrix.decompose(object.position, object.quaternion, object.scale);
+          object.position.y += landHeight(object.position.x, object.position.z);
+          object.updateMatrix();
+          child.setMatrixAt(i, object.matrix);
+        }
+        child.instanceMatrix.needsUpdate = true;
+        child.computeBoundingSphere();
+      } else if (child instanceof THREE.Mesh) {
+        const mat = child.material;
+        if (
+          Array.isArray(mat) ||
+          mat instanceof THREE.ShaderMaterial ||
+          ("fog" in mat && !mat.fog)
+        )
+          continue;
+        const g = child.geometry.clone().applyMatrix4(child.matrixWorld),
+          p = g.attributes.position;
+        for (let i = 0; i < p.count; i++)
+          p.setY(i, p.getY(i) + landHeight(p.getX(i), p.getZ(i)));
+        g.computeVertexNormals();
+        g.computeBoundingSphere();
+        child.geometry.dispose();
+        child.geometry = g;
+        child.position.set(0, 0, 0);
+        child.rotation.set(0, 0, 0);
+        child.scale.set(1, 1, 1);
+        child.updateMatrixWorld();
+      } else if (child instanceof THREE.Sprite) {
+        if (child.material.fog)
+          child.position.y += landHeight(child.position.x, child.position.z);
+      } else if (
+        child instanceof THREE.Group ||
+        child instanceof THREE.PointLight
+      ) {
+        child.position.y += landHeight(child.position.x, child.position.z);
+      }
+    }
+    for (const b of this.solids) {
+      const values = [landHeight(b.minX, b.minZ), landHeight(b.maxX, b.maxZ)];
+      b.base = Math.min(...values);
+      b.height += Math.max(...values);
+    }
+    this.bellPosition.copy(this.bell.position);
+    this.skillStation.y = landHeight(this.skillStation.x, this.skillStation.z);
+    this.weaponStation.y = landHeight(
+      this.weaponStation.x,
+      this.weaponStation.z,
+    );
+    for (const f of this.flames) f.position.copy(f.light.position);
   }
   private batchStaticMeshes() {
     // Immutable props sharing materials are merged once; animated objects stay independent.
