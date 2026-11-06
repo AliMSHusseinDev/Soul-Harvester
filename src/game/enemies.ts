@@ -1,104 +1,42 @@
 import * as THREE from "three";
-import { shadeTexture, glowTexture } from "./textures";
-interface Shade {
-  sprite: THREE.Sprite;
-  aura: THREE.Sprite;
-  home: THREE.Vector3;
-  phase: number;
-  hp: number;
-  respawn: number;
-  flash: number;
-}
+import { guardTexture } from "./textures";
+import type { Battle } from "./battle";
 export class Enemies {
-  private shades: Shade[] = [];
   readonly targets: THREE.Sprite[] = [];
-  constructor(scene: THREE.Scene) {
-    const texture = shadeTexture(),
-      glow = glowTexture();
-    const spots = [
-      [-5, -12],
-      [6, -14],
-      [-9, -3],
-      [8, 5],
-      [-6, 8],
-      [1, -16],
-      [-13, -16],
-    ];
-    for (let i = 0; i < spots.length; i++) {
-      const [x, z] = spots[i];
-      const material = new THREE.SpriteMaterial({
-        map: texture,
-        color: 0xc4f2d9,
-        alphaTest: 0.1,
-        transparent: true,
-        depthWrite: true,
-      });
-      const sprite = new THREE.Sprite(material);
-      sprite.scale.set(1.25, 1.8, 1);
-      sprite.position.set(x, 1, z);
-      sprite.userData.shadeIndex = i;
-      sprite.name = "Hollow shade";
-      scene.add(sprite);
-      this.targets.push(sprite);
-      const aura = new THREE.Sprite(
+  constructor(
+    scene: THREE.Scene,
+    private battle: Battle,
+  ) {
+    const textures = [guardTexture(0), guardTexture(1), guardTexture(2)];
+    for (const e of battle.enemies) {
+      const sprite = new THREE.Sprite(
         new THREE.SpriteMaterial({
-          map: glow,
-          color: 0x60dcb6,
-          transparent: true,
-          opacity: 0.12,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
+          map: textures[e.kind],
+          alphaTest: 0.2,
+          transparent: false,
         }),
       );
-      aura.position.set(x, 0.8, z + 0.01);
-      aura.scale.set(2.3, 2.7, 1);
-      scene.add(aura);
-      this.shades.push({
-        sprite,
-        aura,
-        home: new THREE.Vector3(x, 1, z),
-        phase: i * 1.7,
-        hp: 2,
-        respawn: 0,
-        flash: 0,
-      });
+      sprite.scale.set(1.25, 1.65, 1);
+      sprite.visible = false;
+      sprite.userData.enemyId = e.id;
+      sprite.name = "Hollowguard";
+      this.targets.push(sprite);
+      scene.add(sprite);
     }
   }
-  update(dt: number, time: number) {
-    for (const s of this.shades) {
-      if (s.respawn > 0) {
-        s.respawn -= dt;
-        if (s.respawn <= 0) {
-          s.hp = 2;
-          s.sprite.visible = true;
-          s.aura.visible = true;
-        }
-        continue;
-      }
-      s.sprite.position.x = s.home.x + Math.sin(time * 0.3 + s.phase) * 0.3;
-      s.sprite.position.y = s.home.y + Math.sin(time * 1.7 + s.phase) * 0.09;
-      s.aura.position.copy(s.sprite.position);
-      s.aura.material.opacity = 0.1 + Math.sin(time * 2 + s.phase) * 0.035;
-      s.flash = Math.max(0, s.flash - dt * 5);
-      s.sprite.material.color.setRGB(
-        0.76 + s.flash * 0.8,
-        0.95 + s.flash * 0.4,
-        0.85 + s.flash * 0.4,
-      );
+  update(time: number) {
+    for (const e of this.battle.enemies) {
+      const sprite = this.targets[e.id];
+      sprite.visible = e.active;
+      if (!e.active) continue;
+      const bob =
+        e.windup > 0
+          ? Math.sin(e.windup * 18) * 0.06
+          : Math.sin(time * 9 + e.phase) * 0.055;
+      sprite.position.set(e.x, 0.86 + bob, e.z);
+      sprite.scale.set(1.25 + (e.windup > 0 ? 0.12 : 0), 1.65, 1);
+      sprite.material.color.set(e.windup > 0 ? 0xffb78d : 0xc2e4c6);
     }
-  }
-  hit(target: THREE.Object3D) {
-    const s = this.shades[target.userData.shadeIndex];
-    if (!s || s.respawn > 0) return false;
-    s.hp--;
-    s.flash = 1;
-    if (s.hp <= 0) {
-      s.sprite.visible = false;
-      s.aura.visible = false;
-      s.respawn = 12;
-      return true;
-    }
-    return false;
   }
   get visible() {
     return this.targets.filter((t) => t.visible);

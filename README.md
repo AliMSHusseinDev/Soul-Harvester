@@ -1,6 +1,6 @@
 # Soul Harvester
 
-An original first-person dark fantasy browser game built with Three.js, TypeScript, and Vite. The first playable chapter establishes the look and controls in **The Hollow Keep**: a moonlit fortress courtyard with spectral inhabitants, a soul-powered pistol, fog, torches, and a responsive first-person controller.
+An original first-person dark fantasy browser game built with Three.js, TypeScript, and Vite. **The Hollow Keep** now includes a defensive courtyard, wooden bridge over a ravine, moonlit battlefield, and a fixed spawn zone beneath a great tree. Fight hollowguard waves with a rifle, pistol, melee weapon, and two magic abilities while defending both your vitality and the bell.
 
 ## Run
 
@@ -40,27 +40,39 @@ With the production preview running, in another terminal:
 GAME_URL=http://127.0.0.1:4173 npm run test:browser
 ```
 
-The browser suite uses `/usr/bin/chromium` by default; set `CHROMIUM_PATH` to another Chromium executable. It exercises actual pointer capture, movement, jump/landing, aiming, firing, reloading, gate collision, bell interaction, pause/resume, sound controls, and narrow-screen menu layout. Screenshots go to ignored `artifacts/`. Software WebGL is used for automation; those frame rates are not representative of GPU-equipped clients.
+The browser suite uses `/usr/bin/chromium` by default; set `CHROMIUM_PATH` to another Chromium executable. It exercises actual pointer capture, character upgrades, movement, jump/landing, aiming, finite-ammo reloads, weapon switching, magic, bell collision/interaction, fixed spawning, shooting a moving enemy, pause/resume, sound controls, and narrow-screen menu layout. Screenshots go to ignored `artifacts/`. Software WebGL is used for automation; those frame rates are not representative of GPU-equipped clients.
 
 ## Architecture
 
-- `src/main.ts`: application lifecycle, world/viewmodel render passes, UI, interaction and hit detection.
-- `src/game/world.ts`: seeded courtyard generation, static material batching, instanced grass/masonry, lighting and ambient effects.
-- `src/game/player.ts`: fixed-step movement with acceleration smoothing, gravity, sprint exhaustion hysteresis, collision substeps and prop-top landing.
-- `src/game/math.ts`: deterministic random generator, frame-independent damping, bounded fixed-step accumulator and circle/AABB collision.
-- `src/game/input.ts`: pointer lock, mouse look, keyboard input and focus-loss cleanup.
-- `src/game/weapon.ts`: procedural firearm, recoil, muzzle flash and reload state.
-- `src/game/enemies.ts`: original pixel shades, idle animation, hit feedback and timed respawn.
-- `src/game/textures.ts`: locally generated stone, ground, glow and original sprite artwork.
-- `src/game/audio.ts`: opt-in original synthesized ambience, footsteps and effects.
+- `src/game/battle.ts`: renderer-independent wave, combat, aggro, damage, economy, XP and upgrade simulation.
+- `src/game/navigation.ts`: shared Dijkstra flow fields with a binary min-heap, non-corner-cutting grid paths, line-of-sight queries, and a spatial hash for local crowd separation.
+- `src/game/terrain.ts`: shared bridge, ravine and map boundaries used by physics and navigation.
+- `src/game/world.ts`: seeded original environment, instanced grass/masonry, merged static props, huge moon, moving cloud shader, lanterns, spawn tree, NPCs and bell.
+- `src/game/player.ts`: fixed-step acceleration, gravity, circle/AABB collision substeps, prop landing, sprint hysteresis, high jump and double jump.
+- `src/game/weapon.ts`: original weapon models, ammunition, reload/weapon switching, critically damped recoil spring, aim-down-sights, melee and casting motion.
+- `src/game/enemies.ts`: pooled original sprite enemies, walk animation and attack windup presentation.
+- `src/game/effects.ts`: pooled impact particles, floating damage numbers, tumbling deaths, instanced coins/crystals, projectile sweeps and expanding spell ring.
+- `src/game/ui.ts`: vitality/base integrity, inventory, skill/stat panels, weapon upgrade shop and death/restart presentation.
+- `src/game/input.ts`: pointer lock, focus cleanup, aim and fire inputs.
+- `src/game/math.ts`: seeded randomness, fixed-step accumulator and collision helpers.
+- `src/game/audio.ts`: original opt-in synthesized ambience, shots, bell, magic and effects.
+- `src/main.ts`: lifecycle and coordination of these systems, occluded shooting, event handling and separate world/viewmodel rendering.
 
-All game visuals, textures and audio are generated locally. Fonts are self-hosted. Third-party notices are in `public/licenses/` and included in production builds.
+All game visuals and audio are generated locally. Fonts are self-hosted; licenses are in `public/licenses/`. The uploaded reference is analyzed in `docs/reference-analysis.md`; no reference artwork, extracted weapon models or game code is redistributed.
 
-## Current scope
+## Combat and progression
 
-This is the look-and-controls milestone. Shades are stationary practice targets with idle animation; they do not pursue or damage the player. Each takes two hits and returns after 12 active seconds. Released souls are a session counter, not yet currency. The bell currently provides audio/visual feedback. Enemy navigation, combat waves, damage/death, progression, saved games, fort upgrades and monetization are future milestones.
+Ring the bell to start. Enemies spawn only in the tree zone and navigate across the bridge toward the bell. Within 9 metres and line of sight they chase the player; beyond 13 metres they return to the bell. Attacks have a 0.42-second windup, and retreating during that window avoids the hit. A global short damage grace period limits simultaneous player damage from a crowd.
 
-Rendering uses instancing and merged static geometry. The weapon has a separate depth-cleared render pass to avoid clipping into walls while preserving correct depth within the weapon. Software renderers automatically disable world shadows. GPU performance still needs measurement on representative player hardware; no claim of a stable frame rate across all devices is made.
+Waves are finite and capped by the 48-enemy pool. After clearing a wave, collect drops and use the 10-second interval to regroup. Enemies have a fixed origin per wave, rather than teleporting around the player. Killing enemies releases souls and leaves coins/XP/ammo drops; nearby drops attract to the player. Each level grants two upgrade points. Six stats and six skill disciplines change real simulation values, including high/double jump, damage, pickup range, regeneration and reload speed.
+
+Weapons have separate magazines and reserves; reloading transfers ammunition rather than creating it. Buy rank upgrades or refill ammunition at the Graveforge. Interact with a damaged bell during combat to spend 15 gold repairing 100 integrity. If the player or bell reaches zero, combat stops and a restart resets the run.
+
+## Current limits
+
+The map, artwork, sound and tuning are original approximations informed by the video, not a pixel-perfect reconstruction. Exact map dimensions, timing constants and hidden mechanics cannot be recovered from a short screen recording. This version includes three weapons, two active spells, two NPC stations and one map; it does not contain every weapon/level in the reference. Progress is currently per run and is not saved across reloads. Mobile touch controls, multiplayer, a complete campaign and monetization are not implemented.
+
+Rendering uses instancing, material batching and pooled effects. The viewmodel renders separately so it cannot clip into walls. Software renderers disable shadows and use a lower internal resolution. Chromium software rendering in this environment is slow; a stable 60 fps on GPU-equipped player hardware is **not yet verified**. The tests exercise behavior and algorithm invariants rather than proving “100% balance.”
 
 ## Deployment
 
@@ -80,7 +92,7 @@ In the repository's **Settings → Pages**, set **Source** to **GitHub Actions**
 
 ### Local production build
 
-Run `npm run build` followed by `npm run preview -- --port 4173`. Use the existing browser-check instructions above. `vite.config.ts` makes all built asset paths relative, so the same build can run on a root domain or inside a GitHub Pages project path. The JavaScript bundle is about 139 KB gzipped before fonts; Vite reports its advisory about the uncompressed Three.js bundle size.
+Run `npm run build` followed by `npm run preview -- --port 4173`. Use the existing browser-check instructions above. `vite.config.ts` makes all built asset paths relative, so the same build can run on a root domain or inside a GitHub Pages project path. The JavaScript bundle is about 158 KB gzipped before fonts; Vite reports its advisory about the uncompressed Three.js bundle size.
 
 Public hosting must be verified after the hosting account's deployment succeeds. Do not treat a saved environment draft, a ZIP archive, or a localhost address as a public game link.
 

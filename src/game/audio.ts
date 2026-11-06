@@ -88,6 +88,15 @@ export class Audio {
     ])
       this.tone(f, 3.3, v);
   }
+  melee() {
+    this.tone(180, 0.13, 0.08, "triangle", 40);
+  }
+  cast() {
+    this.tone(230, 0.4, 0.1, "sine", 1100);
+  }
+  hurt() {
+    this.tone(75, 0.16, 0.12, "sawtooth", 30);
+  }
   step() {
     this.tone(65, 0.055, 0.035, "triangle", 35);
   }

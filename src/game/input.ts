@@ -4,6 +4,9 @@ export class Input {
   pitch = 0;
   locked = false;
   firing = false;
+  fireQueued = false;
+  jumpQueued = false;
+  aiming = false;
   onLockChange: (locked: boolean) => void = () => {};
   onAction: (action: string) => void = () => {};
   private readonly abort = new AbortController();
@@ -29,7 +32,10 @@ export class Input {
           ].includes(e.code)
         )
           e.preventDefault();
-        if (!this.keys.has(e.code) && this.locked) this.onAction(e.code);
+        if (!this.keys.has(e.code) && this.locked) {
+          if (e.code === "Space") this.jumpQueued = true;
+          this.onAction(e.code);
+        }
         this.keys.add(e.code);
       },
       opts,
@@ -70,11 +76,22 @@ export class Input {
     canvas.addEventListener(
       "mousedown",
       (e) => {
-        if (this.locked && e.button === 0) this.firing = true;
+        if (this.locked && e.button === 0) {
+          this.firing = true;
+          this.fireQueued = true;
+        }
+        if (this.locked && e.button === 2) this.aiming = true;
       },
       opts,
     );
-    window.addEventListener("mouseup", () => (this.firing = false), opts);
+    window.addEventListener(
+      "mouseup",
+      (e) => {
+        if (e.button === 0) this.firing = false;
+        if (e.button === 2) this.aiming = false;
+      },
+      opts,
+    );
     canvas.addEventListener("contextmenu", (e) => e.preventDefault(), opts);
   }
   async capture() {
@@ -83,6 +100,9 @@ export class Input {
   clear() {
     this.keys.clear();
     this.firing = false;
+    this.fireQueued = false;
+    this.jumpQueued = false;
+    this.aiming = false;
   }
   dispose() {
     this.abort.abort();

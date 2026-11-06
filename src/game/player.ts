@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { damp, resolveCircle, type Solid } from "./math";
 import type { Input } from "./input";
+import { MAP, groundHeight } from "./terrain";
 export class Player {
   readonly position = new THREE.Vector3(0, 0, 14);
   readonly previous = this.position.clone();
@@ -12,6 +13,10 @@ export class Player {
   distance = 0;
   grounded = true;
   speed = 0;
+  athletics = 1;
+  moveMultiplier = 1;
+  private jumpCount = 0;
+  private jumpHeld = false;
   constructor(
     private input: Input,
     private solids: Solid[],
@@ -34,7 +39,7 @@ export class Player {
       length > 0 &&
       (this.input.keys.has("ShiftLeft") || this.input.keys.has("ShiftRight")) &&
       this.stamina > 0.06;
-    const speed = sprint ? 7.2 : 4.2;
+    const speed = (sprint ? 7.2 : 4.2) * this.moveMultiplier;
     this.stamina = Math.max(
       0,
       Math.min(1, this.stamina + dt * (sprint ? -0.17 : 0.23)),
@@ -43,10 +48,18 @@ export class Player {
       s = Math.sin(this.input.yaw);
     this.vx = damp(this.vx, (x * c + z * s) * speed, 13, dt);
     this.vz = damp(this.vz, (z * c - x * s) * speed, 13, dt);
-    if (this.grounded && this.input.keys.has("Space")) {
-      this.vy = 6.3;
+    const jump = this.input.keys.has("Space");
+    const requested = this.input.jumpQueued || (jump && !this.jumpHeld);
+    this.input.jumpQueued = false;
+    if (
+      requested &&
+      (this.grounded || (this.athletics >= 3 && this.jumpCount < 2))
+    ) {
+      this.vy = this.athletics >= 2 ? 7.5 : 6.3;
+      this.jumpCount++;
       this.grounded = false;
     }
+    this.jumpHeld = jump;
     const oldY = this.position.y;
     this.grounded = false;
     this.vy -= 18 * dt;
@@ -66,11 +79,13 @@ export class Player {
           this.grounded = true;
         }
       }
-    if (this.position.y <= 0) {
-      this.position.y = 0;
+    const floor = groundHeight(this.position.x, this.position.z);
+    if (this.position.y <= floor) {
+      this.position.y = floor;
       this.vy = 0;
       this.grounded = true;
     }
+    if (this.grounded) this.jumpCount = 0;
     // Fixed timestep + substeps keep displacement below the collision radius.
     const slices = Math.max(
       1,
@@ -87,8 +102,16 @@ export class Player {
       this.position.x = p.x;
       this.position.z = p.z;
     }
-    this.position.x = THREE.MathUtils.clamp(this.position.x, -18.6, 18.6);
-    this.position.z = THREE.MathUtils.clamp(this.position.z, -24, 23);
+    this.position.x = THREE.MathUtils.clamp(
+      this.position.x,
+      MAP.minX + 0.5,
+      MAP.maxX - 0.5,
+    );
+    this.position.z = THREE.MathUtils.clamp(
+      this.position.z,
+      MAP.minZ + 0.5,
+      MAP.maxZ - 0.5,
+    );
     this.speed = Math.hypot(this.vx, this.vz);
     this.distance += this.speed * dt;
   }
@@ -104,6 +127,19 @@ export class Player {
         ? 0
         : Math.sin(this.distance * 2.1) * 0.032 * Math.min(this.speed / 4, 1));
     camera.rotation.set(this.input.pitch, this.input.yaw, 0, "YXZ");
+  }
+  reset() {
+    this.position.set(0, 0, 14);
+    this.previous.copy(this.position);
+    this.vx = 0;
+    this.vz = 0;
+    this.vy = 0;
+    this.jumpCount = 0;
+    this.jumpHeld = false;
+    this.stamina = 1;
+    this.grounded = true;
+    this.distance = 0;
+    this.speed = 0;
   }
   stop() {
     this.vx = 0;

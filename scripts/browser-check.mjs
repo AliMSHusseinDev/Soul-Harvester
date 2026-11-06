@@ -12,141 +12,201 @@ const browser = await chromium.launch({
     "--disable-dev-shm-usage",
   ],
 });
-const context = await browser.newContext({
+const page = await browser.newPage({
   viewport: { width: 960, height: 640 },
   deviceScaleFactor: 1,
 });
-const page = await context.newPage();
 const errors = [];
-page.on("pageerror", (error) => errors.push(error.message));
+page.on("pageerror", (e) => errors.push(e.message));
+page.on("console", (m) => {
+  if (m.type() === "error") errors.push(m.text());
+});
 const state = () => page.evaluate(() => window.__soulHarvester());
-const wait = async (predicate) => {
-  await page.waitForFunction(predicate, undefined, { timeout: 30000 });
-};
+const wait = (p) => page.waitForFunction(p, undefined, { timeout: 60000 });
+let mx = 0,
+  my = 0;
+async function enter() {
+  await page.locator("#enter").waitFor({ state: "visible" });
+  const r = await page.locator("#enter").boundingBox();
+  mx = r.x + r.width / 2;
+  my = r.y + r.height / 2;
+  await page.locator("#enter").click();
+  await wait(() => window.__soulHarvester().active);
+}
+async function aimAt(x, y, z) {
+  const s = await state(),
+    dx = x - s.position[0],
+    dz = z - s.position[2],
+    yaw = Math.atan2(-dx, -dz),
+    pitch = Math.atan2(y - (s.position[1] + 1.72), Math.hypot(dx, dz));
+  mx += (s.yaw - yaw) / 0.002;
+  my += (s.pitch - pitch) / 0.002;
+  await page.mouse.move(mx, my);
+}
 try {
-  await page.goto(process.env.GAME_URL || "http://127.0.0.1:5173/");
+  await page.goto(process.env.GAME_URL || "http://127.0.0.1:4180/");
   await wait(() => window.__soulHarvester?.().ready);
   await page.locator("#loading").waitFor({ state: "detached" });
   await page.evaluate(() => document.fonts.ready);
-  assert.equal((await state()).colliders, 33);
-  assert.equal((await state()).shades, 7);
+  assert.equal((await state()).wave, 0);
   await page.screenshot({ path: "artifacts/courtyard-menu.png" });
   await page.locator("#notes").click();
   assert.equal(await page.locator("#guide").evaluate((el) => el.open), true);
   await page.locator("#close-guide").click();
-  const origin = await page.locator("#enter").boundingBox();
-  await page.locator("#enter").click();
-  await wait(() => window.__soulHarvester().active);
-  console.log("PASS: start menu, instructions, WebGL, pointer lock");
-  const start = await state();
-  await page.keyboard.down("KeyW");
-  await wait(() => window.__soulHarvester().position[2] < 11);
-  await page.keyboard.up("KeyW");
-  assert.ok((await state()).position[2] < start.position[2] - 2);
+  await enter();
+  console.log("PASS: game renders and captures the mouse");
+  await page.keyboard.press("KeyK");
+  await page.locator("#skills-dialog").waitFor({ state: "visible" });
+  await page.locator('[data-stat="constitution"]').click();
+  await page.locator('[data-skill="athletics"]').click();
+  await page.locator('[data-skill="athletics"]').click();
+  assert.equal((await state()).health, 120);
+  assert.equal((await state()).skills.athletics, 3);
+  assert.equal((await state()).points, 1);
+  await page.screenshot({ path: "artifacts/skills.png" });
+  await page.locator('[data-close="skills-dialog"]').click();
+  await enter();
+  console.log(
+    "PASS: upgrades consume points and change actual character stats",
+  );
   await page.keyboard.down("Space");
   await wait(() => window.__soulHarvester().position[1] > 0.2);
   await page.keyboard.up("Space");
   await wait(() => window.__soulHarvester().position[1] === 0);
-  console.log("PASS: movement and jump/landing");
-  const before = await state();
-  await page.mouse.move(
-    origin.x + origin.width / 2 + 120,
-    origin.y + origin.height / 2 - 30,
+  await page.keyboard.down("KeyW");
+  await wait(() => window.__soulHarvester().position[2] < 12);
+  await page.keyboard.up("KeyW");
+  console.log("PASS: movement, upgraded jump and landing");
+  // Return near the base, using its actual collision as a stop.
+  await page.keyboard.down("KeyS");
+  await wait(() => window.__soulHarvester().position[2] > 17.95);
+  await page.waitForTimeout(500);
+  await page.keyboard.up("KeyS");
+  assert.ok((await state()).position[2] <= 18.02);
+  console.log("PASS: actual bell pedestal collision");
+  await page.keyboard.press("Digit2");
+  await wait(() => window.__soulHarvester().weapon === "pistol");
+  await page.mouse.down({ button: "right" });
+  await wait(
+    () => window.__soulHarvester().aiming && window.__soulHarvester().fov < 60,
   );
-  await page.waitForTimeout(150);
-  const after = await state();
-  assert.ok(after.yaw !== before.yaw || after.pitch !== before.pitch);
-  await page.mouse.move(
-    origin.x + origin.width / 2,
-    origin.y + origin.height / 2,
-  );
-  await page.waitForTimeout(150);
+  await page.mouse.up({ button: "right" });
   await page.mouse.down();
-  await wait(() => window.__soulHarvester().ammo < 8);
+  await wait(() => window.__soulHarvester().ammo < 12);
   await page.mouse.up();
+  const reserve = (await state()).reserve;
   await page.keyboard.press("KeyR");
   await wait(() => window.__soulHarvester().reloading);
   await wait(
     () =>
       !window.__soulHarvester().reloading &&
-      window.__soulHarvester().ammo === 8,
+      window.__soulHarvester().ammo === 12,
   );
-  console.log("PASS: mouse look, firing and reload cycle");
-  await page.screenshot({ path: "artifacts/courtyard-play.png" });
-  // Aim at an actual shade using real relative mouse movement, then release it.
-  const aiming = await state(),
-    target = aiming.targets[0];
-  const dx = target[0] - aiming.position[0],
-    dz = target[2] - aiming.position[2];
-  const yaw = Math.atan2(-dx, -dz),
-    pitch = Math.atan2(
-      target[1] - (aiming.position[1] + 1.72),
-      Math.hypot(dx, dz),
-    );
-  const mx = origin.x + origin.width / 2,
-    my = origin.y + origin.height / 2;
-  const ax = (aiming.yaw - yaw) / 0.002,
-    ay = (aiming.pitch - pitch) / 0.002;
-  await page.mouse.move(mx + ax, my + ay);
-  await page.mouse.down();
-  await wait(() => window.__soulHarvester().souls > 0);
-  await page.mouse.up();
-  assert.equal((await state()).shades, 6);
-  console.log("PASS: aiming at and releasing a real shade");
-  await page.keyboard.press("KeyR");
+  assert.ok((await state()).reserve < reserve);
+  console.log(
+    "PASS: pistol, aimed fire, recoil path and finite-reserve reload",
+  );
+  await page.mouse.click(mx, my);
+  await wait(() => window.__soulHarvester().ammo < 12);
+  console.log("PASS: a quick mouse tap is buffered until a simulation update");
+  await page.keyboard.press("Digit1");
+  await wait(() => window.__soulHarvester().weapon === "blade");
+  await page.keyboard.press("KeyV");
+  await page.keyboard.press("Digit3");
+  await wait(() => window.__soulHarvester().weapon === "rifle");
+  await page.keyboard.press("KeyF");
+  await wait(() => window.__soulHarvester().burstCooldown > 0);
+  await page.keyboard.press("KeyQ");
+  await wait(() => window.__soulHarvester().orbCooldown > 0);
+  console.log("PASS: weapon switching, melee and both magic abilities");
+  await page.keyboard.press("KeyE");
   await wait(
     () =>
-      window.__soulHarvester().ammo === 8 &&
-      !window.__soulHarvester().reloading,
+      window.__soulHarvester().wave === 1 &&
+      window.__soulHarvester().enemies.length > 0,
   );
-  await page.mouse.move(mx, my);
-  await page.waitForTimeout(150);
-  // Walk into the real closed gate; the collider must stop the player, not just a unit fixture.
+  const first = (await state()).enemies[0];
+  assert.ok(Math.abs(first.x) < 4.5 && first.z < -48);
+  await page.waitForTimeout(800);
+  assert.ok((await state()).enemies[0].z !== first.z);
+  console.log("PASS: fixed tree spawn and moving enemy");
+  // Follow the real moving target using relative mouse inputs; no simulation mutation.
+  for (let i = 0; i < 12 && (await state()).souls === 0; i++) {
+    const s = await state(),
+      e = s.enemies[0];
+    if (!e) break;
+    await aimAt(e.x, 0.95, e.z);
+    const ammoBefore = (await state()).ammo;
+    await page.mouse.down();
+    await page.waitForFunction(
+      (n) => window.__soulHarvester().ammo < n,
+      ammoBefore,
+      { timeout: 15000 },
+    );
+    await page.mouse.up();
+  }
+  await wait(() => window.__soulHarvester().souls > 0);
+  console.log("PASS: firing hits and releases an actual moving hollowguard");
+  await aimAt(0, 1.72, -65);
   await page.keyboard.down("ShiftLeft");
   await page.keyboard.down("KeyW");
-  await wait(() => window.__soulHarvester().position[2] < -21.2);
-  await page.waitForTimeout(800);
+  await page.waitForFunction(
+    () => window.__soulHarvester().position[2] < -18,
+    undefined,
+    { timeout: 120000 },
+  );
   await page.keyboard.up("KeyW");
   await page.keyboard.up("ShiftLeft");
-  const gate = await state();
-  assert.ok(gate.position[2] >= -21.4, `gate penetration: ${gate.position[2]}`);
-  assert.ok(Math.abs(gate.position[0]) < 2);
-  console.log("PASS: collision against the actual fortress gate");
-  await page.keyboard.press("KeyE");
-  await page.waitForTimeout(150);
-  assert.match(await page.locator("#toast").textContent(), /Keep answers/);
-  console.log("PASS: bell interaction");
+  assert.ok(Math.abs((await state()).position[0]) < 1);
+  assert.ok(Math.abs((await state()).position[1]) < 0.01);
+  console.log(
+    "PASS: player traverses the real bridge without falling or clipping",
+  );
+  await page.keyboard.down("KeyW");
+  await wait(() =>
+    window.__soulHarvester().enemies.some((e) => e.target === "player"),
+  );
+  await page.keyboard.up("KeyW");
+  const chaser = (await state()).enemies.find((e) => e.target === "player").id;
+  await page.keyboard.down("ShiftLeft");
+  await page.keyboard.down("KeyS");
+  await page.waitForFunction(
+    (id) =>
+      window.__soulHarvester().enemies.find((e) => e.id === id)?.target ===
+      "bell",
+    chaser,
+    { timeout: 60000 },
+  );
+  await page.keyboard.up("KeyS");
+  await page.keyboard.up("ShiftLeft");
+  console.log(
+    "PASS: actual enemy acquires the approaching player and returns to the bell after retreat",
+  );
+  await page.screenshot({ path: "artifacts/courtyard-play.png" });
   await page.keyboard.press("Escape");
   await wait(() => !window.__soulHarvester().active);
   const paused = await state();
   await page.keyboard.down("KeyW");
-  await page.waitForTimeout(250);
+  await page.waitForTimeout(300);
   await page.keyboard.up("KeyW");
   assert.deepEqual((await state()).position, paused.position);
-  assert.equal(
-    await page.locator("#enter-label").textContent(),
-    "RETURN TO THE KEEP",
-  );
-  await page.locator("#enter").click();
-  await wait(() => window.__soulHarvester().active);
-  console.log("PASS: pause freezes player; resume captures mouse again");
-  await page.keyboard.press("Escape");
-  await wait(() => !window.__soulHarvester().active);
+  assert.deepEqual((await state()).enemies, paused.enemies);
   await page.locator("#sound").click();
   assert.equal(await page.locator("#sound-state").textContent(), "ON");
   await page.locator("#sound").click();
-  assert.equal(await page.locator("#sound-state").textContent(), "OFF");
+  await enter();
+  await page.keyboard.press("Escape");
+  await wait(() => !window.__soulHarvester().active);
+  console.log("PASS: pause freezes combat; resume and audio controls work");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: "artifacts/courtyard-mobile.png" });
-  assert.equal(await page.locator("#enter").isVisible(), true);
   assert.ok(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   );
-  console.log("PASS: sound toggle and narrow-screen menu");
   assert.deepEqual(errors, []);
-  console.log("PASS: no uncaught browser errors");
+  console.log("PASS: responsive menu and no browser/renderer errors");
   console.log("Diagnostics:", await state());
 } catch (error) {
   console.error("Failure state:", await state());

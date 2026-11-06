@@ -10,14 +10,14 @@ const browser = await chromium.launch({
   ],
 });
 const page = await browser.newPage({
-  viewport: { width: 1440, height: 900 },
+  viewport: { width: 1280, height: 800 },
   deviceScaleFactor: 1,
 });
 page.on("pageerror", (e) => console.log("PAGEERROR", e.message));
 page.on("console", (m) => {
   if (m.type() === "error") console.log("CONSOLE", m.text());
 });
-await page.goto("http://127.0.0.1:5173/");
+await page.goto(process.env.GAME_URL || "http://127.0.0.1:5173/");
 await page.waitForFunction(() => window.__soulHarvester?.().ready);
 await page.waitForTimeout(2000);
 await page.screenshot({ path: "artifacts/courtyard-menu.png" });

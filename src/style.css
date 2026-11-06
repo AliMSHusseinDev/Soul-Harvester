@@ -811,3 +811,257 @@ dialog .primary {
 .primary > span:last-child {
   font-family: Arial, sans-serif;
 }
+/* Combat interface: compact, readable and kept out of the aiming area. */
+#damage-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+  box-shadow: inset 0 0 130px 40px #cf304b;
+  opacity: 0;
+  transition: opacity 0.18s;
+}
+#combat-banner {
+  position: fixed;
+  left: 50%;
+  top: 23%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 6;
+  font:
+    600 30px Georgia,
+    serif;
+  letter-spacing: 4px;
+  color: #d8f9dc;
+  text-shadow: 0 3px 0 #132f28;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+#combat-banner.show {
+  opacity: 1;
+}
+#wave-status {
+  display: none;
+  position: fixed;
+  left: 50%;
+  top: 76px;
+  transform: translateX(-50%);
+  font: 700 15px monospace;
+  color: #dae4c7;
+  z-index: 5;
+  letter-spacing: 2px;
+  pointer-events: none;
+}
+#base-hud {
+  display: none;
+  position: fixed;
+  top: 115px;
+  right: 35px;
+  width: 190px;
+  z-index: 5;
+  font: 10px monospace;
+  color: #bbc8a6;
+  pointer-events: none;
+}
+#base-hud strong {
+  float: right;
+  font-weight: 400;
+}
+#base-hud > div {
+  height: 4px;
+  margin-top: 8px;
+  background: #253f36;
+}
+#base-fill {
+  display: block;
+  height: 100%;
+  background: #c8ae70;
+}
+#progress-hud {
+  display: none;
+  position: fixed;
+  left: 40px;
+  bottom: 164px;
+  width: 200px;
+  z-index: 5;
+  font: 9px monospace;
+  letter-spacing: 1px;
+  color: #b1d7c6;
+  pointer-events: none;
+}
+#progress-hud > div {
+  height: 3px;
+  background: #26443b;
+  margin: 8px 0;
+}
+#xp-fill {
+  display: block;
+  height: 100%;
+  background: #7ebde1;
+  width: 0;
+}
+#coins-value {
+  color: #d4b66c;
+}
+#ability-hud {
+  display: none;
+  position: fixed;
+  left: 40px;
+  top: 175px;
+  z-index: 5;
+  pointer-events: none;
+  gap: 12px;
+  flex-direction: column;
+  font: 9px monospace;
+  color: #a5d5c2;
+}
+#weapon-slots {
+  display: none;
+  position: fixed;
+  right: 40px;
+  bottom: 150px;
+  z-index: 5;
+  gap: 15px;
+  pointer-events: none;
+  color: #728c7b;
+  font: 9px monospace;
+}
+#weapon-slots span.selected {
+  color: #e5d4a1;
+}
+.playing #wave-status,
+.playing #base-hud,
+.playing #progress-hud {
+  display: block;
+}
+.playing #ability-hud,
+.playing #weapon-slots {
+  display: flex;
+}
+.soul-counter {
+  top: 155px;
+}
+.hud-help {
+  gap: 17px;
+  flex-wrap: wrap;
+}
+.upgrade-dialog {
+  width: min(900px, 94vw);
+  max-height: 90vh;
+  overflow: auto;
+}
+.upgrade-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 30px;
+}
+.upgrade-columns h3 {
+  font: 11px monospace;
+  letter-spacing: 3px;
+  color: var(--gold);
+}
+.upgrade-option {
+  width: 100%;
+  text-align: left;
+  background: #16382b30;
+  border: 1px solid #7b9a7127;
+  padding: 11px 12px;
+  margin: 4px 0;
+  display: block;
+}
+.upgrade-option:hover:not(:disabled) {
+  border-color: var(--gold);
+  background: #42673b33;
+}
+.upgrade-option:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.upgrade-option strong {
+  font-size: 11px;
+  text-transform: capitalize;
+  letter-spacing: 1px;
+  font-weight: 500;
+}
+.upgrade-option b {
+  float: right;
+  font: 9px monospace;
+  color: var(--gold);
+}
+.upgrade-option small {
+  display: block;
+  margin-top: 7px;
+  font-size: 9px;
+  color: #91ad99;
+}
+#shop-dialog .secondary {
+  width: 100%;
+  margin-top: 12px;
+}
+.primary:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.objective {
+  max-width: 300px;
+}
+.ammo b {
+  min-width: 42px;
+  text-align: right;
+}
+.health-track i,
+.stamina-track i {
+  transition: width 0.12s linear;
+}
+.crosshair.aiming {
+  opacity: 0.2;
+  transform: translate(-50%, -50%) scale(0.6);
+}
+@media (max-width: 760px) {
+  #base-hud {
+    right: 20px;
+    top: 130px;
+    width: 150px;
+  }
+  #wave-status {
+    top: 88px;
+    font-size: 11px;
+  }
+  .soul-counter {
+    top: 175px;
+  }
+  #ability-hud {
+    left: 20px;
+    top: 195px;
+    font-size: 8px;
+  }
+  #progress-hud {
+    left: 20px;
+    bottom: 185px;
+    width: 120px;
+  }
+  #weapon-slots {
+    right: 20px;
+    bottom: 145px;
+    gap: 7px;
+    font-size: 7px;
+  }
+  .upgrade-columns {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
+  .hud-help {
+    gap: 10px;
+  }
+  .vitality {
+    bottom: 95px;
+  }
+  .weapon-hud {
+    bottom: 95px;
+  }
+  #combat-banner {
+    font-size: 20px;
+    width: 90%;
+    text-align: center;
+  }
+}

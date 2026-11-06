@@ -13,9 +13,11 @@ import { Player } from "./game/player";
 import { Weapon } from "./game/weapon";
 import { Enemies } from "./game/enemies";
 import { Audio } from "./game/audio";
-import { FixedClock } from "./game/math";
-const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
-  document.getElementById(id) as T;
+import { FixedClock, damp, seededRandom } from "./game/math";
+import { Battle } from "./game/battle";
+import { Effects } from "./game/effects";
+import { UI, $ } from "./game/ui";
+import { MAP } from "./game/terrain";
 async function boot() {
   const canvas = $<HTMLCanvasElement>("world");
   const renderer = new THREE.WebGLRenderer({
@@ -24,127 +26,134 @@ async function boot() {
     powerPreference: "high-performance",
   });
   const gl = renderer.getContext(),
-    debug = gl.getExtension("WEBGL_debug_renderer_info");
-  const software = debug
-    ? /swiftshader|llvmpipe|software/i.test(
-        gl.getParameter(debug.UNMASKED_RENDERER_WEBGL),
-      )
-    : false;
-  const pixelLimit = software ? 0.85 : 1.6;
+    debug = gl.getExtension("WEBGL_debug_renderer_info"),
+    software = debug
+      ? /swiftshader|llvmpipe|software/i.test(
+          gl.getParameter(debug.UNMASKED_RENDERER_WEBGL),
+        )
+      : false,
+    pixelLimit = software ? 0.75 : 1.6;
   renderer.setPixelRatio(Math.min(devicePixelRatio, pixelLimit));
   renderer.setSize(innerWidth, innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.15;
+  renderer.toneMappingExposure = 1.18;
   renderer.shadowMap.enabled = !software;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.autoClear = false;
+  renderer.info.autoReset = false;
   const scene = new THREE.Scene(),
     camera = new THREE.PerspectiveCamera(
       72,
       innerWidth / innerHeight,
       0.06,
-      220,
-    );
-  const viewScene = new THREE.Scene();
+      440,
+    ),
+    viewScene = new THREE.Scene();
   viewScene.add(camera);
   const pmrem = new THREE.PMREMGenerator(renderer),
     room = new RoomEnvironment();
   viewScene.environment = pmrem.fromScene(room, 0.04).texture;
   room.dispose();
   pmrem.dispose();
-  viewScene.add(new THREE.HemisphereLight(0xc8dfd1, 0x263528, 2.8));
-  const viewLight = new THREE.DirectionalLight(0xf3d3a0, 3);
+  viewScene.add(new THREE.HemisphereLight(0xd5e6cb, 0x31483b, 2.5));
+  const viewLight = new THREE.DirectionalLight(0xffe2a6, 2);
   viewLight.position.set(-2, 3, 2);
   viewScene.add(viewLight);
-  renderer.autoClear = false;
-  renderer.info.autoReset = false;
   const world = new World(scene),
     input = new Input(canvas),
     player = new Player(input, world.solids),
     weapon = new Weapon(camera),
-    enemies = new Enemies(scene),
+    battle = new Battle(world.solids),
+    enemies = new Enemies(scene, battle),
     audio = new Audio(),
-    clock = new FixedClock();
+    clock = new FixedClock(),
+    effects = new Effects(scene, battle);
+  const ui = new UI(battle, weapon, () => {
+    input.clear();
+    if (document.pointerLockElement) document.exitPointerLock();
+    setActive(false);
+  });
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
   let active = false,
     started = false,
-    elapsed = 0,
+    time = 0,
+    ambientTime = 0,
     last = performance.now(),
-    souls = 0,
-    toastTimer = 0,
-    hitTimer = 0,
-    bellTimer = 0,
-    lastFootstep = 0;
-  let frames = 0,
+    fps = 0,
+    frames = 0,
     frameTime = 0,
-    fps = 0;
-  const raycaster = new THREE.Raycaster(),
-    direction = new THREE.Vector3();
-  const impactGeometry = new THREE.BufferGeometry();
-  const impactPositions = new Float32Array(24 * 3);
-  const velocities = new Float32Array(24 * 3);
-  impactGeometry.setAttribute(
-    "position",
-    new THREE.BufferAttribute(impactPositions, 3),
+    bellTimer = 0,
+    footstep = 0,
+    kick = 0,
+    hitTimer = 0,
+    uiTimer = 0;
+  const rng = seededRandom(92);
+  const direction = new THREE.Vector3(),
+    center = new THREE.Vector2(),
+    raycaster = new THREE.Raycaster();
+  const occluders = world.solids.map(
+    (b) =>
+      new THREE.Box3(
+        new THREE.Vector3(b.minX, 0, b.minZ),
+        new THREE.Vector3(b.maxX, b.height, b.maxZ),
+      ),
   );
-  const impacts = new THREE.Points(
-    impactGeometry,
-    new THREE.PointsMaterial({
-      color: 0xb6ffe0,
-      size: 0.065,
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    }),
-  );
-  scene.add(impacts);
-  let impactLife = 0;
-  function toast(message: string) {
-    $("toast").textContent = message;
-    $("toast").classList.add("show");
-    clearTimeout(toastTimer);
-    toastTimer = window.setTimeout(
-      () => $("toast").classList.remove("show"),
-      3200,
-    );
-  }
+  const intersection = new THREE.Vector3();
   function setActive(value: boolean) {
-    active = value;
+    active = value && !ui.dialogOpen && battle.phase !== "lost";
     clock.reset();
     player.stop();
-    $("menu").classList.toggle("hidden", value);
-    $("hud").classList.toggle("hidden", !value);
-    document.body.classList.toggle("playing", value);
-    $("enter-label").textContent = started
-      ? "RETURN TO THE KEEP"
-      : "ENTER THE COURTYARD";
+    $("menu").classList.toggle("hidden", active || ui.dialogOpen);
+    $("hud").classList.toggle("hidden", !active);
+    document.body.classList.toggle("playing", active);
+    $("enter-label").textContent =
+      battle.phase === "lost"
+        ? "BEGIN ANOTHER HARVEST"
+        : started
+          ? "RETURN TO THE KEEP"
+          : "ENTER THE COURTYARD";
+  }
+  function reset() {
+    battle.reset();
+    weapon.reset();
+    effects.reset();
+    player.reset();
+    input.yaw = 0;
+    input.pitch = 0;
+    input.clear();
+    kick = 0;
+    footstep = 0;
+    bellTimer = 0;
+    time = 0;
+    ui.update(0, false);
   }
   async function enter() {
-    if (innerWidth < 640)
-      toast("Keyboard and mouse are recommended for this chapter.");
+    if (battle.phase === "lost") reset();
     try {
       await input.capture();
       started = true;
       void audio.activate();
     } catch {
-      toast(
-        "Mouse capture was blocked. Open the game in its own browser tab and try again.",
-      );
+      ui.toast("Allow mouse capture or open the game in its own browser tab.");
     }
   }
   input.onLockChange = (locked) => {
+    if (locked) started = true;
     setActive(locked);
-    if (locked && !started) started = true;
   };
-  document.addEventListener("pointerlockerror", () =>
-    toast("Allow mouse capture, or open the game in a separate tab."),
-  );
+  for (const dialog of document.querySelectorAll("dialog"))
+    dialog.addEventListener("close", () => setActive(input.locked));
   $("enter").onclick = enter;
-  $("notes").onclick = () => $<HTMLDialogElement>("guide").showModal();
+  $("notes").onclick = () => ui.open("guide");
   $("close-guide").onclick = () => $<HTMLDialogElement>("guide").close();
   $("guide-enter").onclick = () => {
     $<HTMLDialogElement>("guide").close();
+    void enter();
+  };
+  $("restart").onclick = () => {
+    $<HTMLDialogElement>("lost-dialog").close();
+    reset();
     void enter();
   };
   $("sound").onclick = async () => {
@@ -155,87 +164,166 @@ async function boot() {
       enabled ? "Disable sound" : "Enable sound",
     );
   };
+  document.addEventListener("pointerlockerror", () =>
+    ui.toast("Allow mouse capture. An embedded host must permit pointer-lock."),
+  );
   function ringBell() {
-    if (bellTimer > 0) return;
-    bellTimer = 3.5;
+    if (bellTimer > 0.5 || battle.phase === "lost") return;
+    bellTimer = 1.2;
     audio.bell();
-    toast("The Hollow Keep answers. The harvest is coming.");
+    if (battle.startWave())
+      ui.toast("The horde rises beneath the great tree. Defend the bell.");
+    else ui.toast("The bell calls. Hold the bridge.");
   }
-  function reload() {
-    if (weapon.reload()) audio.reload();
+  function interact() {
+    if (player.position.distanceTo(world.skillStation) < 3.5)
+      ui.open("skills-dialog");
+    else if (player.position.distanceTo(world.weaponStation) < 3.5)
+      ui.open("shop-dialog");
+    else if (
+      Math.hypot(player.position.x, player.position.z - MAP.bell.z) < 6
+    ) {
+      if (battle.baseHealth < 500 && battle.phase === "battle")
+        ui.toast(
+          battle.repair()
+            ? "Bell repaired: +100 integrity."
+            : "Repair requires 15 gold.",
+        );
+      else ringBell();
+    }
+  }
+  function melee() {
+    camera.getWorldDirection(direction);
+    if (battle.melee(player.position, { x: direction.x, z: direction.z })) {
+      weapon.melee();
+      audio.melee();
+    }
   }
   input.onAction = (action) => {
-    if (action === "KeyR") reload();
-    if (
-      action === "KeyE" &&
-      Math.hypot(player.position.x, player.position.z + 20.7) < 6
-    )
-      ringBell();
-  };
-  function burst(point: THREE.Vector3) {
-    impactLife = 0.45;
-    for (let i = 0; i < 24; i++) {
-      impactPositions.set([point.x, point.y, point.z], i * 3);
-      velocities.set(
-        [
-          (Math.random() - 0.5) * 3,
-          Math.random() * 3,
-          (Math.random() - 0.5) * 3,
-        ],
-        i * 3,
-      );
+    if (action === "KeyR") {
+      if (weapon.reload()) audio.reload();
+    } else if (action === "KeyE") interact();
+    else if (action === "KeyV") melee();
+    else if (action === "Digit1") weapon.switch("blade");
+    else if (action === "Digit2") weapon.switch("pistol");
+    else if (action === "Digit3") weapon.switch("rifle");
+    else if (action === "KeyK") ui.open("skills-dialog");
+    else if (action === "KeyF") {
+      if (battle.burst(player.position)) {
+        weapon.cast();
+        audio.cast();
+        effects.pulse(player.position.x, player.position.z);
+      }
+    } else if (action === "KeyQ") {
+      if (battle.canOrb()) {
+        camera.getWorldDirection(direction);
+        effects.orb(camera.position, direction);
+        weapon.cast();
+        audio.cast();
+      }
     }
-    impactGeometry.attributes.position.needsUpdate = true;
-  }
+  };
   function shoot() {
+    if (weapon.id === "blade") {
+      melee();
+      return;
+    }
     if (!weapon.fire()) {
-      if (weapon.ammo === 0 && !weapon.reloading) reload();
+      if (
+        weapon.ammo === 0 &&
+        weapon.reserve > 0 &&
+        !weapon.reloading &&
+        weapon.reload()
+      )
+        audio.reload();
       return;
     }
     audio.shot();
-    camera.getWorldDirection(direction);
-    raycaster.set(camera.position, direction);
-    raycaster.camera = camera;
-    // World occlusion is tested before sprite hits, so targets cannot be shot through walls.
+    camera.updateMatrixWorld();
+    raycaster.setFromCamera(center, camera);
+    direction.copy(raycaster.ray.direction);
+    effects.shell(
+      camera.position,
+      new THREE.Vector3(Math.cos(input.yaw), 0, -Math.sin(input.yaw)),
+    );
     const hits = raycaster.intersectObjects(enemies.visible, false);
-    if (hits.length) {
-      const hit = hits[0];
-      let blocked = false;
-      for (const b of world.solids) {
-        const box = new THREE.Box3(
-          new THREE.Vector3(b.minX, 0, b.minZ),
-          new THREE.Vector3(b.maxX, b.height, b.maxZ),
-        );
-        const point = raycaster.ray.intersectBox(box, new THREE.Vector3());
-        if (point && point.distanceTo(camera.position) < hit.distance) {
-          blocked = true;
-          break;
-        }
+    for (const hit of hits) {
+      const image = (hit.object as THREE.Sprite).material.map?.image as
+        HTMLCanvasElement | undefined;
+      if (image && hit.uv) {
+        const alpha = image
+          .getContext("2d")!
+          .getImageData(
+            Math.min(image.width - 1, Math.floor(hit.uv.x * image.width)),
+            Math.min(
+              image.height - 1,
+              Math.floor((1 - hit.uv.y) * image.height),
+            ),
+            1,
+            1,
+          ).data[3];
+        if (alpha < 30) continue;
       }
-      if (!blocked) {
-        const released = enemies.hit(hit.object);
-        burst(hit.point);
-        audio.hit();
-        $("hitmarker").classList.add("show");
-        clearTimeout(hitTimer);
-        hitTimer = window.setTimeout(
-          () => $("hitmarker").classList.remove("show"),
-          120,
-        );
-        if (released) {
-          souls++;
-          $("souls").textContent = String(souls).padStart(2, "0");
-          toast("A restless soul released.");
-        }
-      }
+      const blocked = occluders.some(
+        (box) =>
+          raycaster.ray.intersectBox(box, intersection) !== null &&
+          intersection.distanceTo(camera.position) < hit.distance,
+      );
+      if (blocked) break;
+      const critical =
+        (hit.uv?.y ?? 0) > 0.73 || rng() < 0.05 + battle.stats.instinct * 0.03;
+      const damage =
+        weapon.config.damage * battle.damageMultiplier * (critical ? 1.5 : 1);
+      battle.damageEnemy(
+        hit.object.userData.enemyId,
+        damage,
+        player.position,
+        weapon.id === "rifle" ? 2 : 4,
+      );
+      effects.burst(hit.point, 0xb9f5ca, 12, 3);
+      $("hitmarker").classList.add("show");
+      clearTimeout(hitTimer);
+      hitTimer = window.setTimeout(
+        () => $("hitmarker").classList.remove("show"),
+        120,
+      );
+      break;
     }
-    const bellDistance = raycaster.ray.distanceToPoint(world.bellPosition);
     if (
-      bellDistance < 0.7 &&
-      camera.position.distanceTo(world.bellPosition) < 35 &&
+      raycaster.ray.distanceToPoint(world.bellPosition) < 0.85 &&
+      camera.position.distanceTo(world.bellPosition) < 40 &&
       world.bellPosition.clone().sub(camera.position).dot(direction) > 0
     )
       ringBell();
+    kick = Math.min(
+      0.12,
+      kick +
+        (weapon.id === "rifle" ? 0.008 : 0.018) /
+          (1 + battle.skills.marksmanship * 0.25),
+    );
+  }
+  function processEvents() {
+    for (const event of battle.events) {
+      if (event.kind === "hit") effects.number(event.x, event.z, event.value);
+      else if (event.kind === "kill") {
+        effects.death(event.x, event.z);
+        audio.hit();
+      } else if (event.kind === "playerHit") {
+        ui.hit();
+        audio.hurt();
+      } else if (event.kind === "baseHit") {
+        effects.burst(new THREE.Vector3(0, 1.4, 19), 0xe9ba6e, 10, 2);
+      } else if (event.kind === "wave") {
+        ui.banner(`WAVE ${event.value}`);
+      } else if (event.kind === "level") {
+        ui.banner(`LEVEL ${event.value} · +2 SKILL POINTS`);
+        effects.pulse(player.position.x, player.position.z);
+        audio.hit();
+      } else if (event.kind === "lost") ui.lost();
+      else if (event.kind === "spawn")
+        effects.burst(new THREE.Vector3(event.x, 0.8, event.z), 0x71c9ae, 8, 2);
+    }
+    battle.events.length = 0;
   }
   function resize() {
     camera.aspect = innerWidth / innerHeight;
@@ -248,7 +336,7 @@ async function boot() {
     event.preventDefault();
     if (document.pointerLockElement) document.exitPointerLock();
     $("fatal-message").textContent =
-      "Graphics context was lost. Reload to restore the courtyard.";
+      "Graphics context was lost. Reload to restore the keep.";
     $("fatal").classList.remove("hidden");
   });
   function animate(now: number) {
@@ -256,7 +344,7 @@ async function boot() {
     const rawDt = (now - last) / 1000,
       dt = Math.min(rawDt, 0.1);
     last = now;
-    elapsed += dt;
+    ambientTime += dt;
     frames++;
     frameTime += rawDt;
     if (frameTime >= 1) {
@@ -266,50 +354,90 @@ async function boot() {
     }
     if (active) {
       const alpha = clock.advance(dt, (step) => {
+        if (!active) return;
+        time += step;
+        player.athletics = battle.skills.athletics;
+        player.moveMultiplier = 1 + battle.stats.agility * 0.04;
+        weapon.reloadMultiplier = 1 / (1 + battle.skills.marksmanship * 0.15);
         player.update(step);
-        enemies.update(step, elapsed);
-        weapon.update(step, elapsed, player.speed, reducedMotion);
-        if (input.firing) shoot();
+        if (player.position.y < -5) {
+          battle.hurtPlayer(20);
+          const north = player.position.z < -6;
+          player.position.set(0, 0, north ? -17 : 5);
+          player.previous.copy(player.position);
+          player.stop();
+          ui.toast("The ravine takes its toll. Stay on the bridge.");
+        }
+        player.render(camera, 1, reducedMotion);
+        kick = damp(kick, 0, 14, step);
+        camera.rotation.x += kick;
+        camera.updateMatrixWorld();
+        weapon.update(step, time, player.speed, reducedMotion, input.aiming);
+        if (input.firing || input.fireQueued) {
+          input.fireQueued = false;
+          shoot();
+        }
+        battle.update(step, player.position);
+        if (battle.ammoReward > 0) {
+          weapon.addAmmo(battle.ammoReward);
+          battle.ammoReward = 0;
+        }
+        effects.update(step, time, true);
+        processEvents();
       });
       player.render(camera, alpha, reducedMotion);
+      camera.rotation.x += kick;
+      enemies.update(time);
+      const fov =
+        input.aiming && weapon.id !== "blade" ? 55 : player.speed > 6 ? 76 : 72;
+      camera.fov = damp(camera.fov, fov, 10, dt);
+      camera.updateProjectionMatrix();
+      $("stamina").style.width = `${player.stamina * 100}%`;
       $("heading").textContent = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][
         Math.round(
           (((((-input.yaw * 180) / Math.PI) % 360) + 360) % 360) / 45,
         ) % 8
       ];
-      $("stamina").style.width = `${player.stamina * 100}%`;
-      $("ammo").textContent = weapon.reloading ? "—" : String(weapon.ammo);
-      $("interact").classList.toggle(
-        "hidden",
-        Math.hypot(player.position.x, player.position.z + 20.7) >= 6,
-      );
-      if (player.grounded && player.distance - lastFootstep > 2.1) {
+      let label = "";
+      if (player.position.distanceTo(world.skillStation) < 3.5)
+        label = "SKILLS & STATS";
+      else if (player.position.distanceTo(world.weaponStation) < 3.5)
+        label = "VISIT THE GRAVEFORGE";
+      else if (
+        Math.hypot(player.position.x, player.position.z - MAP.bell.z) < 6
+      )
+        label =
+          battle.baseHealth < 500 && battle.phase === "battle"
+            ? "REPAIR BELL · 15 GOLD"
+            : "RING THE HOLLOW BELL";
+      $("interact").classList.toggle("hidden", !label);
+      $("interact-label").textContent = label;
+      if (player.grounded && player.distance - footstep > 2.1) {
         audio.step();
-        lastFootstep = player.distance;
+        footstep = player.distance;
       }
-    } else if (!started) {
-      camera.position.set(5.8 + Math.sin(elapsed * 0.055) * 0.35, 2.7, 18.5);
-      camera.lookAt(-1.5, 4.1, -18);
-      weapon.group.visible = false;
-      enemies.update(dt, elapsed);
+    } else {
+      if (!started) {
+        camera.position.set(
+          10.5 + Math.sin(ambientTime * 0.045) * 0.3,
+          3.8,
+          16,
+        );
+        camera.lookAt(0, 4, -39);
+      }
+      effects.update(0, time, false);
     }
-    weapon.group.visible = started && active;
-    world.update(elapsed);
+    weapon.group.visible = active;
+    world.update(ambientTime);
     if (bellTimer > 0) {
-      bellTimer -= dt;
+      bellTimer = Math.max(0, bellTimer - dt);
       world.bell.rotation.z =
-        Math.sin(elapsed * 16) * Math.min(bellTimer * 0.12, 0.25);
+        Math.sin(ambientTime * 15) * Math.min(0.3, bellTimer * 0.3);
     } else world.bell.rotation.z = 0;
-    if (impactLife > 0) {
-      impactLife -= dt;
-      for (let i = 0; i < 24; i++) {
-        impactPositions[i * 3] += velocities[i * 3] * dt;
-        impactPositions[i * 3 + 1] += velocities[i * 3 + 1] * dt;
-        impactPositions[i * 3 + 2] += velocities[i * 3 + 2] * dt;
-        velocities[i * 3 + 1] -= dt * 3;
-      }
-      impactGeometry.attributes.position.needsUpdate = true;
-      impacts.material.opacity = Math.max(0, impactLife / 0.45);
+    uiTimer -= dt;
+    if (uiTimer <= 0) {
+      ui.update(0.08, input.aiming);
+      uiTimer = 0.08;
     }
     camera.updateMatrixWorld();
     renderer.info.reset();
@@ -324,7 +452,6 @@ async function boot() {
   requestAnimationFrame(animate);
   $("loading").classList.add("done");
   window.setTimeout(() => $("loading").remove(), 800);
-  // Read-only diagnostics for automated browser checks and performance inspection.
   Object.defineProperty(window, "__soulHarvester", {
     value: () => ({
       ready: true,
@@ -335,10 +462,32 @@ async function boot() {
       yaw: input.yaw,
       pitch: input.pitch,
       ammo: weapon.ammo,
+      reserve: weapon.reserve,
+      weapon: weapon.id,
+      aiming: input.aiming,
+      burstCooldown: battle.burstCooldown,
+      orbCooldown: battle.orbCooldown,
+      fov: camera.fov,
       reloading: weapon.reloading,
-      souls,
-      shades: enemies.visible.length,
-      targets: enemies.visible.map((shade) => shade.position.toArray()),
+      health: battle.health,
+      baseHealth: battle.baseHealth,
+      phase: battle.phase,
+      wave: battle.wave,
+      souls: battle.souls,
+      coins: battle.coins,
+      points: battle.points,
+      level: battle.level,
+      stats: { ...battle.stats },
+      skills: { ...battle.skills },
+      enemies: battle.alive.map((e) => ({
+        id: e.id,
+        x: e.x,
+        z: e.z,
+        hp: e.hp,
+        target: e.target,
+        windup: e.windup,
+      })),
+      targets: enemies.visible.map((s) => s.position.toArray()),
       colliders: world.solids.length,
       fps,
       drawCalls: renderer.info.render.calls,

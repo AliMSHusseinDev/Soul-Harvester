@@ -62,3 +62,12 @@ it("exhausts sprint stamina and restores it at rest", () => {
   for (let i = 0; i < 360; i++) player.update(1 / 60);
   expect(player.stamina).toBe(1);
 });
+
+it("buffers a jump tap that was released before the simulation update", () => {
+  const { input, player } = setup();
+  input.jumpQueued = true;
+  expect(input.keys.has("Space")).toBe(false);
+  player.update(1 / 60);
+  expect(player.position.y).toBeGreaterThan(0);
+  expect(input.jumpQueued).toBe(false);
+});

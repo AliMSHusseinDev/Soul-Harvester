@@ -139,3 +139,141 @@ export function glowTexture() {
   g.fillRect(0, 0, 64, 64);
   return new THREE.CanvasTexture(c);
 }
+
+export function npcTexture(kind: number) {
+  const c = document.createElement("canvas");
+  c.width = 32;
+  c.height = 48;
+  const g = c.getContext("2d")!;
+  g.fillStyle = kind ? "#72442b" : "#817151";
+  g.fillRect(8, 19, 17, 23);
+  g.fillStyle = "#deb180";
+  g.fillRect(10, 8, 13, 12);
+  g.fillStyle = "#302f27";
+  g.fillRect(8, 5, 17, 6);
+  g.fillRect(7, 8, 19, 3);
+  g.fillStyle = "#131e1d";
+  g.fillRect(12, 13, 2, 2);
+  g.fillRect(19, 13, 2, 2);
+  g.fillStyle = "#d0a569";
+  g.fillRect(4, 22, 5, 12);
+  g.fillRect(24, 22, 5, 12);
+  g.fillStyle = kind ? "#463124" : "#213c35";
+  g.fillRect(11, 38, 5, 8);
+  g.fillRect(19, 38, 5, 8);
+  g.fillStyle = "#dbc97e";
+  g.fillRect(10, 30, 13, 3);
+  if (!kind) {
+    g.fillStyle = "#dcdfc2";
+    g.fillRect(14, 18, 8, 8);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.magFilter = t.minFilter = THREE.NearestFilter;
+  return t;
+}
+
+export function guardTexture(kind = 0) {
+  const c = document.createElement("canvas");
+  c.width = 32;
+  c.height = 40;
+  const g = c.getContext("2d")!;
+  const palette = ["#101f23", "#29464a", "#4a7c70", "#80b59a", "#bdd5ab"];
+  const rng = seededRandom(630 + kind);
+  const rows = [
+    [12, 19],
+    [9, 22],
+    [7, 24],
+    [6, 25],
+    [6, 25],
+    [5, 26],
+    [5, 26],
+    [6, 25],
+    [7, 24],
+    [9, 22],
+    [8, 23],
+    [5, 26],
+    [4, 27],
+    [3, 28],
+    [3, 28],
+    [4, 27],
+    [7, 24],
+    [8, 23],
+    [7, 24],
+    [7, 24],
+  ];
+  for (let y = 0; y < 20; y++) {
+    const [a, b] = rows[y];
+    for (let x = a; x <= b; x++) {
+      const edge = Math.min(x - a, b - x),
+        shade = Math.min(4, Math.floor(edge / 3 + rng() * 2));
+      g.fillStyle = palette[shade];
+      g.fillRect(x, y * 2, 1, 2);
+    }
+  }
+  g.fillStyle = "#081c21";
+  g.fillRect(8, 9, 16, 7);
+  g.fillStyle = kind === 2 ? "#ffaf48" : "#def38b";
+  g.fillRect(9, 11, 5, 2);
+  g.fillRect(18, 11, 5, 2);
+  g.fillStyle = "#152b30";
+  g.fillRect(13, 16, 6, 3);
+  g.fillStyle = "#afc29a";
+  g.fillRect(12, 19, 8, 2);
+  g.fillRect(15, 21, 2, 11);
+  for (let i = 0; i < 3; i++) {
+    g.fillRect(10, 23 + i * 3, 12, 1);
+  }
+  g.fillStyle = kind === 1 ? "#977045" : "#28554a";
+  g.fillRect(7, 30, 18, 4);
+  g.clearRect(14, 34, 4, 6);
+  g.fillStyle = "#2b4846";
+  g.fillRect(7, 36, 7, 4);
+  g.fillRect(18, 36, 7, 4);
+  if (kind === 2) {
+    g.fillStyle = "#c9ba85";
+    g.fillRect(3, 3, 4, 3);
+    g.fillRect(25, 3, 4, 3);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.magFilter = t.minFilter = THREE.NearestFilter;
+  return t;
+}
+
+export function cloudTexture() {
+  const c = document.createElement("canvas");
+  c.width = 1024;
+  c.height = 512;
+  const g = c.getContext("2d")!,
+    r = seededRandom(992);
+  g.fillStyle = "#000";
+  g.fillRect(0, 0, 1024, 512);
+  g.lineCap = "round";
+  for (let i = 0; i < 55; i++) {
+    const x = r() * 1250 - 150,
+      y = 80 + r() * 190,
+      len = 120 + r() * 500,
+      bend = (r() - 0.5) * 90;
+    g.beginPath();
+    g.moveTo(x, y);
+    g.bezierCurveTo(
+      x + len * 0.28,
+      y + bend,
+      x + len * 0.7,
+      y - bend * 0.8,
+      x + len,
+      y - 15 - r() * 35,
+    );
+    g.lineWidth = 2 + r() * 13;
+    g.strokeStyle = `rgba(220,240,225,${0.06 + r() * 0.19})`;
+    g.shadowColor = "#dcefe6";
+    g.shadowBlur = 12 + r() * 20;
+    g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.RepeatWrapping;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.magFilter = THREE.LinearFilter;
+  return t;
+}

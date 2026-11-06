@@ -55,7 +55,17 @@
             <button id="enter" class="primary">
               <span class="button-diamond">◇</span
               ><span id="enter-label">ENTER THE COURTYARD</span
-              ><span class="arrow">↗</span></button
+              ><span class="arrow" aria-hidden="true"
+                ><svg
+                  width="17"
+                  height="17"
+                  viewBox="0 0 20 20"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.4"
+                >
+                  <path d="M4 16 16 4M4 4h12v12" /></svg
+              ></span></button
             ><button id="notes" class="secondary">
               HOW TO PLAY <span>＋</span>
             </button>
@@ -90,41 +100,124 @@
         <div class="objective">
           <span class="tiny-diamond"></span>
           <div>
-            <small>EXPLORE THE KEEP</small
-            ><strong>Something stirs beyond the gate.</strong>
+            <small id="objective-title">DEFEND THE HOLLOW BELL</small
+            ><strong id="objective-text"
+              >Ring the bell to begin the harvest.</strong
+            >
           </div>
         </div>
         <div id="crosshair" class="crosshair"><i></i><i></i><i></i><i></i></div>
         <div id="hitmarker" class="hitmarker">×</div>
         <div id="interact" class="interaction hidden">
-          <kbd>E</kbd><span>RING THE HOLLOW BELL</span>
+          <kbd>E</kbd><span id="interact-label">RING THE HOLLOW BELL</span>
         </div>
         <div class="vitality">
           <div class="health-sigil">♜</div>
           <div>
             <div class="hud-label">
-              VITALITY <span>100 <small>/ 100</small></span>
+              VITALITY <span id="health-value">100 / 100</span>
             </div>
-            <div class="health-track"><i></i></div>
+            <div class="health-track"><i id="health-fill"></i></div>
             <div class="stamina-track"><i id="stamina"></i></div>
           </div>
         </div>
         <div class="weapon-hud">
-          <span class="weapon-name"
-            >THE RECLAIMER <small>SOULLOCK PISTOL</small></span
-          ><span class="ammo"><b id="ammo">8</b><i>/</i><span>∞</span></span>
+          <span class="weapon-name" id="weapon-name"
+            >GRAVECALLER <small>ASSAULT RIFLE</small></span
+          ><span class="ammo"
+            ><b id="ammo">30</b><i>/</i><span id="reserve">120</span></span
+          >
         </div>
         <div class="hud-help">
           <span>W A S D <small>MOVE</small></span
           ><span>SHIFT <small>SPRINT</small></span
           ><span>SPACE <small>JUMP</small></span
           ><span>R <small>RELOAD</small></span
+          ><span>1 2 3 <small>WEAPON</small></span
+          ><span>V <small>MELEE</small></span
+          ><span>F / Q <small>MAGIC</small></span
+          ><span>K <small>SKILLS</small></span
           ><span>ESC <small>PAUSE</small></span>
         </div>
         <div class="soul-counter">
           <span>✧</span> <b id="souls">00</b> <small>SOULS RELEASED</small>
         </div>
       </div>
+      <div id="damage-overlay"></div>
+      <div id="combat-banner" role="status"></div>
+      <div id="wave-status">THE KEEP IS QUIET</div>
+      <div id="base-hud">
+        <span>HOLLOW BELL</span><strong id="base-value">500 / 500</strong>
+        <div><i id="base-fill"></i></div>
+      </div>
+      <div id="progress-hud">
+        <span id="level-value">LEVEL 1</span>
+        <div><i id="xp-fill"></i></div>
+        <span id="coins-value">40 GOLD</span>
+      </div>
+      <div id="ability-hud">
+        <span id="burst-status">F · SOUL BURST</span
+        ><span id="orb-status">Q · EMBER ORB</span><span>RMB · AIM</span>
+      </div>
+      <div id="weapon-slots">
+        <span data-weapon="blade">1 ◇ EDGE</span
+        ><span data-weapon="pistol">2 ▰ PISTOL</span
+        ><span data-weapon="rifle">3 ▰ RIFLE</span>
+      </div>
+      <dialog id="skills-dialog" class="upgrade-dialog">
+        <button
+          class="close"
+          data-close="skills-dialog"
+          aria-label="Close skills"
+        >
+          ×
+        </button>
+        <div class="eyebrow">AT THE KEEPER'S FIRE</div>
+        <h2>Shape your harvest.</h2>
+        <p id="skill-points"></p>
+        <div class="upgrade-columns">
+          <section>
+            <h3>STATS</h3>
+            <div id="stat-options"></div>
+          </section>
+          <section>
+            <h3>SKILLS</h3>
+            <div id="skill-options"></div>
+          </section>
+        </div>
+        <p class="guide-note">
+          Each upgrade costs one point. Earn two points per level. Close this
+          panel, then return to the keep to resume.
+        </p>
+      </dialog>
+      <dialog id="shop-dialog">
+        <button
+          class="close"
+          data-close="shop-dialog"
+          aria-label="Close armoury"
+        >
+          ×
+        </button>
+        <div class="eyebrow">THE GRAVEFORGE</div>
+        <h2>Steel against the dark.</h2>
+        <p id="shop-summary"></p>
+        <button id="upgrade-weapon" class="primary">UPGRADE WEAPONS</button
+        ><button id="buy-ammo" class="secondary">
+          REFILL AMMUNITION · 10 GOLD
+        </button>
+        <p class="guide-note">
+          Upgrades strengthen both firearms. Ammunition is shared as pickups but
+          stored separately for each weapon.
+        </p>
+      </dialog>
+      <dialog id="lost-dialog">
+        <div class="eyebrow">THE HARVEST ENDS</div>
+        <h2 id="lost-title">The bell falls silent.</h2>
+        <p id="lost-summary"></p>
+        <button id="restart" class="primary">
+          BEGIN ANOTHER HARVEST <span>↗</span>
+        </button>
+      </dialog>
       <div id="toast" class="toast" role="status"></div>
       <dialog id="guide">
         <button id="close-guide" class="close" aria-label="Close instructions">
@@ -133,8 +226,9 @@
         <div class="eyebrow">A SURVIVOR'S FIELD NOTES</div>
         <h2>Know the keep.</h2>
         <p>
-          A quiet moment before the harvest. Explore the courtyard, find the
-          bell, and test your weapon against the wandering shades.
+          Ring the bell to call a wave. Hollowguards emerge beneath the great
+          tree and cross the bridge toward your base. Draw them away, defeat
+          them, and collect their souls.
         </p>
         <dl>
           <div>
@@ -143,7 +237,7 @@
           </div>
           <div>
             <dt>MOUSE</dt>
-            <dd>Look around · left click to fire</dd>
+            <dd>Look · left click fire · right click aim</dd>
           </div>
           <div>
             <dt>SHIFT / SPACE</dt>
@@ -151,7 +245,7 @@
           </div>
           <div>
             <dt>R / E</dt>
-            <dd>Reload / interact with the bell</dd>
+            <dd>Reload / interact, repair, or visit a station</dd>
           </div>
           <div>
             <dt>ESC</dt>
@@ -159,8 +253,9 @@
           </div>
         </dl>
         <p class="guide-note">
-          Desktop keyboard and mouse recommended. This chapter establishes the
-          world and controls; waves and progression arrive in later milestones.
+          Desktop keyboard and mouse recommended. 1: blade · 2: pistol · 3:
+          rifle · V: melee · F: soul burst · Q: ember orb · K: skills. Defend
+          yourself and the bell.
         </p>
         <button id="guide-enter" class="primary">
           ENTER THE COURTYARD <span>↗</span>

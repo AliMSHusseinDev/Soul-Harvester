@@ -1,8 +1,15 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { seededRandom, type Solid } from "./math";
-import { stoneTexture, groundTexture, glowTexture } from "./textures";
-export interface Flame {
+import {
+  stoneTexture,
+  groundTexture,
+  glowTexture,
+  npcTexture,
+  cloudTexture,
+} from "./textures";
+import { MAP } from "./terrain";
+interface Flame {
   position: THREE.Vector3;
   light: THREE.PointLight;
   sprite: THREE.Sprite;
@@ -12,79 +19,466 @@ export class World {
   readonly solids: Solid[] = [];
   readonly flames: Flame[] = [];
   readonly bell = new THREE.Group();
-  readonly bellPosition = new THREE.Vector3(0, 4.9, -20.7);
-  private readonly rng = seededRandom(6601);
-  private readonly dummy = new THREE.Object3D();
-  private readonly stone = new THREE.MeshStandardMaterial({
+  readonly bellPosition = new THREE.Vector3(0, 3.65, MAP.bell.z);
+  readonly skillStation = new THREE.Vector3(9, 0, 11);
+  readonly weaponStation = new THREE.Vector3(-9, 0, 11);
+  private rng = seededRandom(6601);
+  private dummy = new THREE.Object3D();
+  private stone = new THREE.MeshStandardMaterial({
     map: stoneTexture(),
-    color: 0xa8b5a8,
-    roughness: 0.96,
-  });
-  private readonly darkStone = new THREE.MeshStandardMaterial({
-    color: 0x283934,
-    roughness: 1,
-  });
-  private readonly wood = new THREE.MeshStandardMaterial({
-    color: 0x30291c,
+    color: 0x8bada1,
     roughness: 0.95,
   });
-  private readonly metal = new THREE.MeshStandardMaterial({
-    color: 0x172b29,
-    metalness: 0.7,
-    roughness: 0.55,
+  private darkStone = new THREE.MeshStandardMaterial({
+    color: 0x263c38,
+    roughness: 1,
   });
-  private readonly glow = glowTexture();
-  private readonly fireGeometry = new THREE.BufferGeometry();
-  private readonly motes: THREE.Points;
-  private readonly moteBase: Float32Array;
+  private wood = new THREE.MeshStandardMaterial({
+    color: 0x4b4934,
+    roughness: 0.9,
+  });
+  private metal = new THREE.MeshStandardMaterial({
+    color: 0x293f3a,
+    metalness: 0.5,
+    roughness: 0.5,
+  });
+  private glow = glowTexture();
+  private skyMaterial: THREE.ShaderMaterial;
+  private particles: THREE.Points;
+  private moteBase: Float32Array;
   constructor(readonly scene: THREE.Scene) {
-    scene.background = new THREE.Color(0x132a29);
-    scene.fog = new THREE.FogExp2(0x19332f, 0.018);
-    scene.add(new THREE.HemisphereLight(0xa2c6bd, 0x17231a, 2.15));
-    const moonlight = new THREE.DirectionalLight(0xc7e1d0, 2.7);
-    moonlight.position.set(-18, 35, -22);
+    scene.background = new THREE.Color(0x103c3f);
+    scene.fog = new THREE.FogExp2(0x123c3e, 0.012);
+    scene.add(new THREE.HemisphereLight(0xa0e5d9, 0x263c21, 2.3));
+    const moonlight = new THREE.DirectionalLight(0xa2eee0, 2.8);
+    moonlight.position.set(-8, 35, -60);
     moonlight.castShadow = true;
     moonlight.shadow.mapSize.set(2048, 2048);
-    moonlight.shadow.camera.left = -30;
-    moonlight.shadow.camera.right = 30;
-    moonlight.shadow.camera.top = 30;
-    moonlight.shadow.camera.bottom = -30;
-    moonlight.shadow.camera.far = 95;
+    Object.assign(moonlight.shadow.camera, {
+      left: -35,
+      right: 35,
+      top: 50,
+      bottom: -50,
+      far: 160,
+    });
     moonlight.shadow.bias = -0.001;
     scene.add(moonlight);
-    const front = new THREE.DirectionalLight(0x9bb4a2, 0.55);
-    front.position.set(8, 8, 18);
-    scene.add(front);
-    this.sky();
+    const fill = new THREE.DirectionalLight(0x8da89c, 0.65);
+    fill.position.set(5, 15, 25);
+    scene.add(fill);
+    this.skyMaterial = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      depthWrite: false,
+      uniforms: { time: { value: 0 }, clouds: { value: cloudTexture() } },
+      vertexShader:
+        "varying vec3 p; varying vec2 skyUv; void main(){p=position;skyUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}",
+      fragmentShader: `varying vec3 p;varying vec2 skyUv;uniform float time;uniform sampler2D clouds;void main(){float h=normalize(p).y;vec3 c=mix(vec3(.065,.20,.215),vec3(.008,.065,.09),smoothstep(-.1,.8,h));float cloud=texture2D(clouds,vec2(skyUv.x+time*.0006,skyUv.y)).r;c+=vec3(.14,.24,.22)*cloud*smoothstep(-.05,.15,h);gl_FragColor=vec4(c,1.);}`,
+      fog: false,
+    });
+    scene.add(
+      new THREE.Mesh(new THREE.SphereGeometry(390, 32, 16), this.skyMaterial),
+    );
+    const moon = new THREE.Mesh(
+      new THREE.SphereGeometry(34, 48, 32),
+      new THREE.MeshBasicMaterial({ color: 0xd4ffe0, fog: false }),
+    );
+    moon.position.set(0, 52, -220);
+    scene.add(moon);
+    const halo = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: this.glow,
+        color: 0x8affd3,
+        opacity: 0.32,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        fog: false,
+      }),
+    );
+    halo.position.set(0, 52, -221);
+    halo.scale.set(140, 140, 1);
+    scene.add(halo);
     this.ground();
-    this.fortress();
-    this.details();
+    this.bridge();
+    this.keep();
+    this.field();
     this.forest();
-    const n = 150;
-    this.moteBase = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) {
-      this.moteBase[i * 3] = (this.rng() - 0.5) * 36;
-      this.moteBase[i * 3 + 1] = this.rng() * 8 + 0.2;
-      this.moteBase[i * 3 + 2] = (this.rng() - 0.5) * 43;
-    }
     this.batchStaticMeshes();
-    this.fireGeometry.setAttribute(
+    this.moteBase = new Float32Array(160 * 3);
+    for (let i = 0; i < 160; i++) {
+      this.moteBase[i * 3] = (this.rng() - 0.5) * 50;
+      this.moteBase[i * 3 + 1] = this.rng() * 9;
+      this.moteBase[i * 3 + 2] = 25 - this.rng() * 90;
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
       "position",
       new THREE.BufferAttribute(this.moteBase.slice(), 3),
     );
-    this.motes = new THREE.Points(
-      this.fireGeometry,
+    this.particles = new THREE.Points(
+      geometry,
       new THREE.PointsMaterial({
-        color: 0x9bdab7,
-        size: 0.045,
+        map: this.glow,
+        color: 0x80efd0,
+        size: 0.07,
         transparent: true,
-        opacity: 0.65,
+        opacity: 0.5,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
-        map: this.glow,
       }),
     );
-    scene.add(this.motes);
+    scene.add(this.particles);
+  }
+  private ground() {
+    const groundMat = new THREE.MeshStandardMaterial({
+      map: groundTexture(),
+      color: 0x92b577,
+      roughness: 1,
+    });
+    for (const [z, d] of [
+      [15, 26],
+      [-47, 66],
+    ] as const) {
+      const g = new THREE.Mesh(new THREE.PlaneGeometry(120, d), groundMat);
+      g.rotation.x = -Math.PI / 2;
+      g.position.z = z;
+      g.receiveShadow = true;
+      this.scene.add(g);
+    }
+    const water = new THREE.Mesh(
+      new THREE.PlaneGeometry(110, 16),
+      new THREE.MeshStandardMaterial({
+        color: 0x095f66,
+        metalness: 0.3,
+        roughness: 0.28,
+        emissive: 0x073038,
+        emissiveIntensity: 0.3,
+      }),
+    );
+    water.rotation.x = -Math.PI / 2;
+    water.position.set(0, -6, -6);
+    this.scene.add(water);
+    for (const z of [2, -14])
+      this.box(0, -3.7, z, 100, 7.2, 1.5, this.darkStone);
+    const path = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(0.9, 0.045, 1.05),
+      new THREE.MeshStandardMaterial({ color: 0x5c7362, roughness: 1 }),
+      500,
+    );
+    let n = 0;
+    for (let z = -60; z < 25; z += 1.15) {
+      if (z < 2 && z > -14) continue;
+      for (let x = -2.5; x <= 2.5; x += 1.05) {
+        if (this.rng() < 0.13) continue;
+        this.dummy.position.set(x + (this.rng() - 0.5) * 0.12, 0.02, z);
+        this.dummy.rotation.set(0, (this.rng() - 0.5) * 0.15, 0);
+        this.dummy.scale.set(1, 1, 1);
+        this.dummy.updateMatrix();
+        path.setMatrixAt(n, this.dummy.matrix);
+        path.setColorAt(
+          n,
+          new THREE.Color().setHSL(0.24, 0.12, 0.26 + this.rng() * 0.1),
+        );
+        n++;
+      }
+    }
+    path.count = n;
+    path.receiveShadow = true;
+    this.scene.add(path);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(
+        [
+          -0.055, 0, 0, 0.055, 0, 0, 0.02, 0.35, 0, 0, 0, -0.05, 0, 0, 0.05, 0,
+          0.28, 0,
+        ],
+        3,
+      ),
+    );
+    geo.computeVertexNormals();
+    const grass = new THREE.InstancedMesh(
+      geo,
+      new THREE.MeshStandardMaterial({
+        color: 0x5e8b44,
+        side: THREE.DoubleSide,
+        roughness: 1,
+      }),
+      10000,
+    );
+    n = 0;
+    for (let i = 0; i < 14000 && n < 10000; i++) {
+      const x = (this.rng() - 0.5) * 70,
+        z = 28 - this.rng() * 106;
+      if ((z < 2 && z > -14) || (Math.abs(x) < 3.2 && z > -62)) continue;
+      this.dummy.position.set(x, 0.015, z);
+      this.dummy.rotation.set(0, this.rng() * 6, 0);
+      const scale = 0.5 + this.rng();
+      this.dummy.scale.set(scale, scale, scale);
+      this.dummy.updateMatrix();
+      grass.setMatrixAt(n, this.dummy.matrix);
+      grass.setColorAt(
+        n,
+        new THREE.Color().setHSL(
+          0.25 + this.rng() * 0.03,
+          0.28,
+          0.24 + this.rng() * 0.16,
+        ),
+      );
+      n++;
+    }
+    grass.count = n;
+    this.scene.add(grass);
+  }
+  private bridge() {
+    this.box(0, -0.3, -6, 6.5, 0.35, 16.5, this.wood);
+    for (let i = 0; i < 32; i++) {
+      const p = this.box(0, -0.07, 1.75 - i * 0.5, 6.3, 0.14, 0.46, this.wood);
+      p.rotation.z = (this.rng() - 0.5) * 0.008;
+    }
+    for (const x of [-3.25, 3.25]) {
+      for (let z = 2; z >= -14; z -= 2) {
+        this.box(x, 0.55, z, 0.2, 1.1, 0.2, this.wood);
+        this.box(x, -1.3, z, 0.24, 2.4, 0.24, this.wood);
+      }
+      for (const y of [0.4, 0.9])
+        this.box(x, y, -6, 0.12, 0.12, 16.2, this.wood);
+      this.solid(x, -6, 0.22, 16, 1.05);
+    }
+    for (const x of [-4.2, 4.2]) {
+      const arch = new THREE.Mesh(
+        new THREE.TorusGeometry(8.3, 0.35, 4, 24, Math.PI),
+        this.darkStone,
+      );
+      arch.position.set(x, -0.5, -6);
+      arch.rotation.z = Math.PI;
+      arch.rotation.y = Math.PI / 2;
+      this.scene.add(arch);
+    }
+    for (const [x, z] of [
+      [-3.65, 1],
+      [3.65, -13],
+    ] as const) {
+      this.box(x, 1.7, z, 0.15, 3.4, 0.15, this.wood);
+      this.box(x + 0.4, 3.35, z, 0.9, 0.13, 0.13, this.wood);
+      this.torch(x + 0.75, 2.75, z);
+    }
+  }
+  private keep() {
+    this.blockWall(-17, 14, 22, 5, "z");
+    this.blockWall(17, 14, 22, 4, "z");
+    this.blockWall(0, 26, 34, 6);
+    this.tower(-10, 25, 9);
+    this.tower(10, 25, 8);
+    // Broken gate pillars give a clear, traversable route onto the bridge.
+    for (const x of [-5.4, 5.4]) {
+      this.box(x, 2, 3, 2.4, 4, 2.4, this.stone, true);
+      this.box(x, 4.1, 3, 2.8, 0.35, 2.8);
+      this.torch(x, 2.5, 1.6);
+    }
+    this.box(0, 0.15, 19, 6, 0.3, 5, this.stone);
+    for (const x of [-2.2, 2.2]) {
+      this.box(x, 2.5, 19, 0.3, 5, 0.3, this.wood);
+      this.banner(x + (x < 0 ? -0.7 : 0.7), 3.3, 19, 1.1, 3);
+    }
+    this.box(0, 5, 19, 5.2, 0.3, 0.35, this.wood);
+    const brass = new THREE.MeshStandardMaterial({
+      color: 0xb6a06a,
+      metalness: 0.6,
+      roughness: 0.4,
+    });
+    this.bell.add(
+      new THREE.Mesh(
+        new THREE.CylinderGeometry(0.35, 0.76, 1.05, 16, 1, true),
+        brass,
+      ),
+    );
+    const lip = new THREE.Mesh(
+      new THREE.TorusGeometry(0.75, 0.07, 8, 24),
+      brass,
+    );
+    lip.rotation.x = Math.PI / 2;
+    lip.position.y = -0.5;
+    this.bell.add(lip);
+    const clapper = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 8), brass);
+    clapper.position.y = -0.6;
+    this.bell.add(clapper);
+    this.bell.position.copy(this.bellPosition);
+    this.scene.add(this.bell);
+    this.solid(0, 19, 1.3, 1.3, 2.8);
+    for (const [x, z, kind] of [
+      [9, 11, 0],
+      [-9, 11, 1],
+    ] as const) {
+      const npc = new THREE.Sprite(
+        new THREE.SpriteMaterial({ map: npcTexture(kind), alphaTest: 0.2 }),
+      );
+      npc.position.set(x, 1.1, z);
+      npc.scale.set(1.5, 2, 1);
+      this.scene.add(npc);
+      this.box(x, 0.25, z + 0.5, 1.5, 0.5, 0.8, this.darkStone, true);
+      this.torch(x + 1.8, 1, z);
+      if (kind === 1) {
+        this.box(x, 0.9, z, 1.5, 0.2, 0.65, this.metal);
+        this.box(x, 0.65, z, 0.5, 0.5, 0.5, this.metal);
+      } else {
+        const fire = new THREE.PointLight(0xffae42, 35, 10, 2);
+        fire.position.set(x, 0.8, z + 1.3);
+        this.scene.add(fire);
+      }
+    }
+  }
+  private banner(x: number, y: number, z: number, w: number, h: number) {
+    const cloth = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, h),
+      new THREE.MeshStandardMaterial({
+        color: 0x215335,
+        side: THREE.DoubleSide,
+      }),
+    );
+    cloth.position.set(x, y, z);
+    this.scene.add(cloth);
+    const emblem = new THREE.Mesh(
+      new THREE.RingGeometry(0.2, 0.25, 4),
+      new THREE.MeshStandardMaterial({
+        color: 0xbac685,
+        side: THREE.DoubleSide,
+      }),
+    );
+    emblem.position.set(x, y, z - 0.025);
+    this.scene.add(emblem);
+  }
+  private field() {
+    // Spawn tree sits directly below the lunar disk, beyond the bridge.
+    const bark = new THREE.MeshStandardMaterial({
+      color: 0x384237,
+      roughness: 1,
+    });
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.7, 1.5, 9, 7),
+      bark,
+    );
+    trunk.position.set(0, 4.4, -57);
+    this.scene.add(trunk);
+    this.solid(0, -57, 2.5, 2.5, 9);
+    const leaves = new THREE.MeshStandardMaterial({
+      color: 0x20563b,
+      roughness: 1,
+    });
+    for (let i = 0; i < 9; i++) {
+      const a = (i * Math.PI * 2) / 8,
+        rad = i === 8 ? 0 : 4;
+      const crown = new THREE.Mesh(new THREE.DodecahedronGeometry(3.8), leaves);
+      crown.position.set(
+        Math.sin(a) * rad,
+        8 + (i % 3) * 0.9,
+        -57 + Math.cos(a) * rad,
+      );
+      crown.scale.set(1.15, 0.8, 1.1);
+      this.scene.add(crown);
+      const branch = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.14, 0.45, 5, 5),
+        bark,
+      );
+      branch.position.set(Math.sin(a) * 1.5, 5, -57 + Math.cos(a) * 1.5);
+      branch.rotation.z = Math.sin(a) * 0.7;
+      branch.rotation.x = Math.cos(a) * 0.7;
+      this.scene.add(branch);
+    }
+    // Portal sparks identify the fixed spawning area without borrowing reference art.
+    const circle = new THREE.Mesh(
+      new THREE.RingGeometry(2.5, 2.6, 48),
+      new THREE.MeshBasicMaterial({
+        color: 0x40bd8c,
+        transparent: true,
+        opacity: 0.45,
+        side: THREE.DoubleSide,
+      }),
+    );
+    circle.rotation.x = -Math.PI / 2;
+    circle.position.set(0, 0.04, -53);
+    this.scene.add(circle);
+    for (const [x, z, l, h] of [
+      [-23, -28, 11, 3.5],
+      [24, -42, 12, 4],
+      [-13, -19, 7, 2],
+      [15, -23, 5, 2.6],
+      [-22, -57, 8, 3],
+    ] as const)
+      this.blockWall(x, z, l, h, "z");
+    for (let i = 0; i < 55; i++) {
+      const x = (i % 2 ? 1 : -1) * (9 + this.rng() * 15),
+        z = -17 - this.rng() * 46;
+      const rock = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(0.4 + this.rng() * 0.8),
+        this.darkStone,
+      );
+      rock.position.set(x, 0.3, z);
+      rock.scale.y = 0.6;
+      this.scene.add(rock);
+    }
+    for (const [x, z] of [
+      [-11, -24],
+      [13, -46],
+      [-10, 7],
+      [12, 20],
+    ]) {
+      const stone = this.box(x, 0.6, z, 0.8, 1.2, 0.3, this.stone, true);
+      stone.rotation.z = 0.1;
+      this.box(x, 1, z - 0.17, 0.35, 0.07, 0.04, this.darkStone);
+      this.box(x, 0.95, z - 0.17, 0.06, 0.4, 0.04, this.darkStone);
+    }
+  }
+  private forest() {
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x173f35,
+      roughness: 1,
+    });
+    const trees = new THREE.InstancedMesh(
+      new THREE.ConeGeometry(3, 14, 7),
+      mat,
+      180,
+    );
+    for (let i = 0; i < 180; i++) {
+      const x =
+          i < 110
+            ? (this.rng() - 0.5) * 180
+            : (i % 2 ? 1 : -1) * (32 + this.rng() * 20),
+        z = i < 110 ? -74 - this.rng() * 25 : 25 - this.rng() * 100;
+      const s = 0.7 + this.rng() * 0.8;
+      this.dummy.position.set(x, 6 * s, z);
+      this.dummy.rotation.set(0, this.rng() * 6, 0);
+      this.dummy.scale.set(s, s, s);
+      this.dummy.updateMatrix();
+      trees.setMatrixAt(i, this.dummy.matrix);
+    }
+    this.scene.add(trees);
+    for (let i = 0; i < 12; i++) {
+      const m = new THREE.Mesh(
+        new THREE.ConeGeometry(20, 35 + this.rng() * 25, 4),
+        new THREE.MeshBasicMaterial({ color: 0x123337 }),
+      );
+      m.position.set((i - 6) * 24, 8, -125 - this.rng() * 20);
+      this.scene.add(m);
+    }
+  }
+  update(time: number) {
+    this.skyMaterial.uniforms.time.value = time;
+    for (const f of this.flames) {
+      const flicker = 1 + Math.sin(time * 9 + f.phase) * 0.07;
+      f.light.intensity = 24 * flicker;
+      f.sprite.scale.set(0.9 * flicker, 1.4 * flicker, 1);
+    }
+    const positions = this.particles.geometry.attributes
+      .position as THREE.BufferAttribute;
+    for (let i = 0; i < positions.count; i++)
+      positions.setXYZ(
+        i,
+        this.moteBase[i * 3] + Math.sin(time * 0.3 + i) * 0.3,
+        (this.moteBase[i * 3 + 1] + time * 0.15) % 9,
+        this.moteBase[i * 3 + 2],
+      );
+    positions.needsUpdate = true;
   }
   private batchStaticMeshes() {
     // Immutable props sharing materials are merged once; animated objects stay independent.
@@ -121,7 +515,10 @@ export class World {
         batches.set(key, batch);
       }
       batch.geometries.push(
-        object.geometry.clone().applyMatrix4(object.matrixWorld),
+        (object.geometry.index
+          ? object.geometry.toNonIndexed()
+          : object.geometry.clone()
+        ).applyMatrix4(object.matrixWorld),
       );
       batch.objects.push(object);
     }
@@ -170,159 +567,6 @@ export class World {
       maxZ: z + d / 2,
       height,
     });
-  }
-  private sky() {
-    const sky = new THREE.Mesh(
-      new THREE.SphereGeometry(190, 32, 16),
-      new THREE.ShaderMaterial({
-        side: THREE.BackSide,
-        depthWrite: false,
-        uniforms: {},
-        vertexShader:
-          "varying vec3 vPosition; void main(){vPosition=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}",
-        fragmentShader:
-          "varying vec3 vPosition; void main(){float h=normalize(vPosition).y; vec3 c=mix(vec3(.16,.24,.21),vec3(.025,.075,.085),smoothstep(-.1,.8,h));gl_FragColor=vec4(c,1.);}",
-        fog: false,
-      }),
-    );
-    this.scene.add(sky);
-    const moon = new THREE.Mesh(
-      new THREE.SphereGeometry(7.3, 48, 32),
-      new THREE.MeshBasicMaterial({ color: 0xdee5b6, fog: false }),
-    );
-    moon.position.set(-18, 33, -85);
-    this.scene.add(moon);
-    // Soft lunar halo; the disk remains crisp against the haze.
-    const halo = new THREE.Sprite(
-      new THREE.SpriteMaterial({
-        map: this.glow,
-        color: 0xc3d4a0,
-        transparent: true,
-        opacity: 0.24,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        fog: false,
-      }),
-    );
-    halo.position.copy(moon.position).add(new THREE.Vector3(0, 0, -1));
-    halo.scale.set(44, 44, 1);
-    this.scene.add(halo);
-    const stars = new Float32Array(250 * 3);
-    for (let i = 0; i < 250; i++) {
-      stars[i * 3] = (this.rng() - 0.5) * 260;
-      stars[i * 3 + 1] = 30 + this.rng() * 100;
-      stars[i * 3 + 2] = -80 - this.rng() * 60;
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(stars, 3));
-    this.scene.add(
-      new THREE.Points(
-        g,
-        new THREE.PointsMaterial({
-          color: 0xbdd4c6,
-          size: 0.16,
-          fog: false,
-          transparent: true,
-          opacity: 0.55,
-        }),
-      ),
-    );
-    for (let i = 0; i < 16; i++) {
-      const mountain = new THREE.Mesh(
-        new THREE.ConeGeometry(14 + this.rng() * 15, 25 + this.rng() * 23, 4),
-        new THREE.MeshBasicMaterial({ color: i % 2 ? 0x1c3330 : 0x142c2a }),
-      );
-      mountain.position.set((i - 8) * 18, -2, -100 - this.rng() * 30);
-      mountain.rotation.y = this.rng() * 3;
-      this.scene.add(mountain);
-    }
-  }
-  private ground() {
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(160, 170),
-      new THREE.MeshStandardMaterial({ map: groundTexture(), roughness: 1 }),
-    );
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    this.scene.add(ground);
-    // Broken flagstone path, deliberately irregular rather than a perfect grid.
-    const count = 440;
-    const path = new THREE.InstancedMesh(
-      new THREE.BoxGeometry(1, 0.055, 1),
-      new THREE.MeshStandardMaterial({ color: 0x646b57, roughness: 1 }),
-      count,
-    );
-    let n = 0;
-    for (let z = -24; z < 25; z += 1.02)
-      for (let x = -3.8; x < 4; x += 0.92) {
-        if (this.rng() < 0.08) continue;
-        this.dummy.position.set(
-          x + (this.rng() - 0.5) * 0.15,
-          0.015,
-          z + (this.rng() - 0.5) * 0.15,
-        );
-        this.dummy.rotation.set(0, (this.rng() - 0.5) * 0.13, 0);
-        this.dummy.scale.set(
-          0.78 + this.rng() * 0.13,
-          1,
-          0.85 + this.rng() * 0.1,
-        );
-        this.dummy.updateMatrix();
-        path.setMatrixAt(n, this.dummy.matrix);
-        path.setColorAt(
-          n,
-          new THREE.Color().setHSL(0.14, 0.1, 0.23 + this.rng() * 0.11),
-        );
-        n++;
-      }
-    path.count = n;
-    path.receiveShadow = true;
-    this.scene.add(path);
-    // Instanced crossed grass blades, one draw call for the whole courtyard.
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(
-        [
-          -0.06, 0, 0, 0.06, 0, 0, 0.01, 0.45, 0, 0, 0, -0.06, 0, 0, 0.06, 0,
-          0.4, 0,
-        ],
-        3,
-      ),
-    );
-    geo.computeVertexNormals();
-    const grass = new THREE.InstancedMesh(
-      geo,
-      new THREE.MeshStandardMaterial({
-        color: 0x63794b,
-        side: THREE.DoubleSide,
-        roughness: 1,
-      }),
-      9000,
-    );
-    let j = 0;
-    for (let i = 0; i < 11000 && j < 9000; i++) {
-      const x = (this.rng() - 0.5) * 46,
-        z = (this.rng() - 0.5) * 62;
-      if (Math.abs(x) < 4.3 && Math.abs(z) < 26) continue;
-      this.dummy.position.set(x, 0.01, z);
-      this.dummy.rotation.set(0, this.rng() * Math.PI, 0);
-      const s = 0.4 + this.rng() * 0.9;
-      this.dummy.scale.set(s, s, s);
-      this.dummy.updateMatrix();
-      grass.setMatrixAt(j, this.dummy.matrix);
-      grass.setColorAt(
-        j,
-        new THREE.Color().setHSL(
-          0.23 + this.rng() * 0.05,
-          0.19,
-          0.19 + this.rng() * 0.12,
-        ),
-      );
-      j++;
-    }
-    grass.count = j;
-    this.scene.add(grass);
   }
   private blockWall(
     x: number,
@@ -413,112 +657,6 @@ export class World {
       this.box(x + dx, height * 0.63, z + 3.79, 0.13, 1.2, 0.04, wm);
     }
   }
-  private fortress() {
-    this.blockWall(-13, -22, 12, 7);
-    this.blockWall(13, -22, 12, 7);
-    this.tower(-7.1, -22, 11.5);
-    this.tower(7.1, -22, 10.5);
-    this.blockWall(-20, 0, 44, 5.4, "z");
-    this.blockWall(20, 0, 44, 5.4, "z");
-    this.blockWall(-12, 24, 16, 3.5);
-    this.blockWall(12, 24, 16, 3.5);
-    // Arched gate, built from a real ring segment and wedge stones.
-    const archMat = this.stone;
-    const arch = new THREE.Mesh(
-      new THREE.TorusGeometry(3.55, 0.65, 4, 18, Math.PI),
-      archMat,
-    );
-    arch.position.set(0, 4.4, -21.8);
-    arch.castShadow = true;
-    this.scene.add(arch);
-    this.box(-3.55, 2.2, -21.8, 1.3, 4.4, 1.7, this.stone, true);
-    this.box(3.55, 2.2, -21.8, 1.3, 4.4, 1.7, this.stone, true);
-    this.box(0, 8.5, -22, 7.3, 1.2, 1.9);
-    this.box(0, 9.15, -22, 7.8, 0.22, 2.2, this.darkStone);
-    for (const x of [-2.8, -1.9, -0.95, 0, 0.95, 1.9, 2.8]) {
-      this.box(x, 2.4, -21.9, 0.11, 4.8, 0.16, this.metal);
-      const tip = new THREE.Mesh(
-        new THREE.ConeGeometry(0.17, 0.45, 4),
-        this.metal,
-      );
-      tip.position.set(x, 4.9, -21.9);
-      this.scene.add(tip);
-    }
-    this.box(0, 1.4, -21.9, 6.5, 0.13, 0.2, this.metal);
-    this.box(0, 3.3, -21.9, 6.5, 0.13, 0.2, this.metal);
-    this.solid(0, -21.9, 6.6, 0.3, 5.2);
-    const darkness = new THREE.Mesh(
-      new THREE.PlaneGeometry(6.1, 6.5),
-      new THREE.MeshBasicMaterial({ color: 0x031310 }),
-    );
-    darkness.position.set(0, 3.1, -23);
-    this.scene.add(darkness);
-    // Bell mounted in front of the gate's arch.
-    const brass = new THREE.MeshStandardMaterial({
-      color: 0x9b8551,
-      metalness: 0.75,
-      roughness: 0.38,
-    });
-    const bellBody = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.25, 0.49, 0.62, 12, 1, true),
-      brass,
-    );
-    this.bell.add(bellBody);
-    const lip = new THREE.Mesh(
-      new THREE.TorusGeometry(0.48, 0.06, 6, 16),
-      brass,
-    );
-    lip.rotation.x = Math.PI / 2;
-    lip.position.y = -0.3;
-    this.bell.add(lip);
-    const clapper = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), brass);
-    clapper.position.y = -0.36;
-    this.bell.add(clapper);
-    this.bell.position.copy(this.bellPosition);
-    this.scene.add(this.bell);
-    this.box(0, 5.7, -20.8, 1.8, 0.17, 0.3, this.wood);
-    this.box(-0.85, 5.25, -20.8, 0.16, 1, 0.3, this.wood);
-    this.box(0.85, 5.25, -20.8, 0.16, 1, 0.3, this.wood);
-    for (const x of [-11, 11]) this.banner(x, 7.1, -17.9);
-    for (const x of [-4.4, 4.4]) this.torch(x, 3.1, -20.8);
-    this.torch(-18.9, 2.8, -7);
-    this.torch(18.9, 2.8, -7);
-    this.torch(-18.9, 2.8, 12);
-    this.torch(18.9, 2.8, 12);
-  }
-  private banner(x: number, y: number, z: number) {
-    const cloth = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.4, 3.8, 1, 6),
-      new THREE.MeshStandardMaterial({
-        color: 0x23453b,
-        side: THREE.DoubleSide,
-        roughness: 1,
-      }),
-    );
-    cloth.position.set(x, y, z);
-    this.scene.add(cloth);
-    this.box(x, y + 2, z, 0.055, 0.055, 1, this.metal);
-    this.box(x, y + 1.95, z, 1.8, 0.08, 0.08, this.metal);
-    const emblem = new THREE.Mesh(
-      new THREE.RingGeometry(0.27, 0.32, 4),
-      new THREE.MeshStandardMaterial({
-        color: 0xb3a474,
-        side: THREE.DoubleSide,
-      }),
-    );
-    emblem.position.set(x, y + 0.3, z + 0.02);
-    emblem.rotation.z = Math.PI / 4;
-    this.scene.add(emblem);
-    this.box(
-      x,
-      y + 0.3,
-      z + 0.03,
-      0.035,
-      1.4,
-      0.01,
-      new THREE.MeshStandardMaterial({ color: 0xb3a474 }),
-    );
-  }
   private torch(x: number, y: number, z: number) {
     const h = this.box(x, y - 0.5, z, 0.15, 1.1, 0.15, this.wood);
     h.rotation.z = 0.1;
@@ -556,186 +694,5 @@ export class World {
       sprite,
       phase: this.rng() * 10,
     });
-  }
-  private details() {
-    // Broken columns and stone piles, with collision matching their footprint.
-    for (const [x, z, h] of [
-      [-11, 5, 2.2],
-      [12, 8, 1.4],
-      [-13, -5, 3.2],
-      [13, -12, 2.1],
-    ] as const) {
-      this.box(x, 0.18, z, 2.2, 0.36, 2.2, this.darkStone, true);
-      this.box(x, h / 2 + 0.3, z, 1.35, h, 1.35, this.stone, true);
-      this.box(x, h + 0.35, z, 1.75, 0.25, 1.75);
-      for (let i = 0; i < 3; i++) {
-        const m = this.box(
-          x + 1.5 + this.rng(),
-          0.25,
-          z + this.rng() * 2,
-          1,
-          0.5,
-          0.7,
-        );
-        m.rotation.y = this.rng() * 3;
-      }
-    }
-    // Memorial plot to the right of the path.
-    for (let i = 0; i < 9; i++) {
-      const x = 9 + (i % 3) * 2.35,
-        z = -2 - Math.floor(i / 3) * 3;
-      const g = new THREE.Group();
-      const head = new THREE.Mesh(
-        new THREE.BoxGeometry(0.9, 1.05, 0.22),
-        this.darkStone,
-      );
-      head.position.y = 0.8;
-      g.add(head);
-      const top = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.45, 0.45, 0.22, 12, 1, false, 0, Math.PI),
-        this.darkStone,
-      );
-      top.rotation.x = Math.PI / 2;
-      top.position.y = 1.32;
-      g.add(top);
-      const crossMat = new THREE.MeshStandardMaterial({ color: 0x667668 });
-      const cross = new THREE.Mesh(
-        new THREE.BoxGeometry(0.06, 0.4, 0.025),
-        crossMat,
-      );
-      cross.position.set(0, 0.95, 0.13);
-      g.add(cross);
-      const bar = new THREE.Mesh(
-        new THREE.BoxGeometry(0.28, 0.06, 0.025),
-        crossMat,
-      );
-      bar.position.set(0, 1.02, 0.13);
-      g.add(bar);
-      g.position.set(x, 0, z);
-      g.rotation.z = (this.rng() - 0.5) * 0.2;
-      this.scene.add(g);
-      this.solid(x, z, 1, 0.4, 1.65);
-    }
-    // Supply crates near the left wall.
-    for (const [x, z, s] of [
-      [-15, 12, 1.2],
-      [-16.3, 10, 1],
-      [-14, 10, 1.35],
-    ] as const) {
-      this.box(x, s / 2, z, s, s, s, this.wood, true);
-      for (const offset of [-0.38, 0.38])
-        this.box(
-          x + offset * s,
-          s / 2,
-          z + s / 2 + 0.02,
-          0.07,
-          s,
-          0.05,
-          this.metal,
-        );
-      this.box(x, s / 2, z + s / 2 + 0.05, s, 0.07, 0.04, this.metal);
-    }
-    // A dead tree, angular branches framing the courtyard.
-    for (const [x, z] of [
-      [-15, -13],
-      [15, 15],
-    ]) {
-      const bark = new THREE.MeshStandardMaterial({
-        color: 0x253129,
-        roughness: 1,
-      });
-      const trunk = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.18, 0.6, 6, 6),
-        bark,
-      );
-      trunk.position.set(x, 3, z);
-      trunk.rotation.z = 0.08;
-      this.scene.add(trunk);
-      this.solid(x, z, 1, 1, 6);
-      for (let i = 0; i < 5; i++) {
-        const branch = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.035, 0.19, 3, 5),
-          bark,
-        );
-        branch.position.set(
-          x + (i % 2 ? 1 : -1) * 0.85,
-          3 + i * 0.6,
-          z + (this.rng() - 0.5),
-        );
-        branch.rotation.z = (i % 2 ? 1 : -1) * 0.75;
-        branch.rotation.x = this.rng() * 0.8;
-        this.scene.add(branch);
-      }
-    }
-    // Small stones scattered in grassy areas, rendered as instances.
-    const stones = new THREE.InstancedMesh(
-      new THREE.DodecahedronGeometry(0.22, 0),
-      this.darkStone,
-      170,
-    );
-    for (let i = 0; i < 170; i++) {
-      let x = (this.rng() - 0.5) * 36;
-      if (Math.abs(x) < 4) x += Math.sign(x || 1) * 5;
-      this.dummy.position.set(x, 0.1, (this.rng() - 0.5) * 42);
-      this.dummy.rotation.set(this.rng(), this.rng() * 6, this.rng());
-      this.dummy.scale.set(1 + this.rng(), 0.4 + this.rng(), 1);
-      this.dummy.updateMatrix();
-      stones.setMatrixAt(i, this.dummy.matrix);
-    }
-    this.scene.add(stones);
-  }
-  private forest() {
-    const trunks = new THREE.InstancedMesh(
-      new THREE.CylinderGeometry(0.1, 0.22, 8, 5),
-      new THREE.MeshStandardMaterial({ color: 0x152a25 }),
-      120,
-    );
-    const trees = new THREE.InstancedMesh(
-      new THREE.ConeGeometry(2.6, 12, 7),
-      new THREE.MeshStandardMaterial({ color: 0x18372d, roughness: 1 }),
-      240,
-    );
-    for (let i = 0; i < 120; i++) {
-      const x = (this.rng() - 0.5) * 160,
-        z = i < 80 ? -32 - this.rng() * 45 : 5 - this.rng() * 70;
-      const sx = i < 80 ? x : (i % 2 ? -1 : 1) * (28 + this.rng() * 25);
-      const s = 0.65 + this.rng() * 0.8;
-      this.dummy.position.set(sx, 4 * s, z);
-      this.dummy.scale.set(s, s, s);
-      this.dummy.rotation.set(0, this.rng() * 6, 0);
-      this.dummy.updateMatrix();
-      trunks.setMatrixAt(i, this.dummy.matrix);
-      for (let j = 0; j < 2; j++) {
-        this.dummy.position.y = (7 + j * 3) * s;
-        this.dummy.scale.set(
-          s * (1 - j * 0.25),
-          s * (1 - j * 0.2),
-          s * (1 - j * 0.25),
-        );
-        this.dummy.updateMatrix();
-        trees.setMatrixAt(i * 2 + j, this.dummy.matrix);
-      }
-    }
-    this.scene.add(trunks, trees);
-  }
-  update(time: number) {
-    for (const f of this.flames) {
-      const flicker =
-        1 +
-        Math.sin(time * 9 + f.phase) * 0.07 +
-        Math.sin(time * 17 + f.phase) * 0.04;
-      f.light.intensity = 30 * flicker;
-      f.sprite.scale.set(0.95 * flicker, 1.6 * flicker, 1);
-    }
-    const p = this.fireGeometry.attributes.position as THREE.BufferAttribute;
-    for (let i = 0; i < p.count; i++) {
-      p.setXYZ(
-        i,
-        this.moteBase[i * 3] + Math.sin(time * 0.2 + i) * 0.4,
-        (this.moteBase[i * 3 + 1] + time * 0.12) % 8,
-        this.moteBase[i * 3 + 2] + Math.cos(time * 0.15 + i) * 0.25,
-      );
-    }
-    p.needsUpdate = true;
   }
 }

@@ -1,170 +1,332 @@
 import * as THREE from "three";
 import { damp } from "./math";
 import { glowTexture } from "./textures";
+export type WeaponId = "rifle" | "pistol" | "blade";
+export const WEAPONS = {
+  rifle: {
+    name: "GRAVECALLER",
+    type: "ASSAULT RIFLE",
+    capacity: 30,
+    reserve: 120,
+    damage: 19,
+    interval: 0.105,
+    reload: 1.8,
+    kick: 0.035,
+  },
+  pistol: {
+    name: "THE RECLAIMER",
+    type: "SOULLOCK PISTOL",
+    capacity: 12,
+    reserve: 72,
+    damage: 34,
+    interval: 0.27,
+    reload: 1.25,
+    kick: 0.065,
+  },
+  blade: {
+    name: "REAPING EDGE",
+    type: "MELEE · CLOSE QUARTERS",
+    capacity: 0,
+    reserve: 0,
+    damage: 42,
+    interval: 0.6,
+    reload: 0,
+    kick: 0,
+  },
+} as const;
 export class Weapon {
   readonly group = new THREE.Group();
-  ammo = 8;
+  id: WeaponId = "rifle";
+  readonly magazines = { rifle: 30, pistol: 12, blade: 0 };
+  readonly reserves = { rifle: 120, pistol: 72, blade: 0 };
   reloading = false;
-  private reloadTime = 0;
-  private cooldown = 0;
-  private recoil = 0;
-  private flashTime = 0;
+  reloadMultiplier = 1;
+  private models: Record<WeaponId, THREE.Group>;
   private flash: THREE.Sprite;
   private light: THREE.PointLight;
+  private recoil = 0;
+  private velocity = 0;
+  private cooldown = 0;
+  private reloadTime = 0;
+  private reloadDuration = 0;
+  private flashTime = 0;
+  private meleeTime = 0;
+  private castTime = 0;
+  private aim = 0;
+  private switchTime = 0;
+  private leftHand: THREE.Group;
   constructor(camera: THREE.PerspectiveCamera) {
     const steel = new THREE.MeshStandardMaterial({
-      color: 0x66746b,
-      metalness: 0.7,
-      roughness: 0.32,
-    });
-    const black = new THREE.MeshStandardMaterial({
-      color: 0x202c2b,
-      metalness: 0.3,
-      roughness: 0.5,
-    });
-    const brass = new THREE.MeshStandardMaterial({
-      color: 0xab8e56,
-      metalness: 0.8,
-      roughness: 0.35,
-    });
-    const wood = new THREE.MeshStandardMaterial({
-      color: 0x372c25,
-      roughness: 0.85,
-    });
-    const glove = new THREE.MeshStandardMaterial({
-      color: 0x202b28,
-      roughness: 0.9,
-    });
-    const add = (
+        color: 0x384b43,
+        metalness: 0.7,
+        roughness: 0.32,
+      }),
+      gold = new THREE.MeshStandardMaterial({
+        color: 0xc1a25b,
+        metalness: 0.65,
+        roughness: 0.32,
+      }),
+      wood = new THREE.MeshStandardMaterial({
+        color: 0x452b27,
+        roughness: 0.8,
+      }),
+      skin = new THREE.MeshStandardMaterial({
+        color: 0xbda28d,
+        roughness: 0.9,
+      }),
+      glove = new THREE.MeshStandardMaterial({
+        color: 0x292e29,
+        roughness: 0.9,
+      });
+    const box = (
+      g: THREE.Group,
       w: number,
       h: number,
       d: number,
       x: number,
       y: number,
       z: number,
-      mat: THREE.Material,
+      m: THREE.Material,
     ) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-      m.position.set(x, y, z);
-      this.group.add(m);
-      return m;
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+      mesh.position.set(x, y, z);
+      g.add(mesh);
+      return mesh;
     };
-    // Long squared barrel, raised sights, bronze receiver and etched soul chamber.
-    add(0.11, 0.13, 0.55, 0, 0.015, -0.28, steel);
-    add(0.14, 0.035, 0.45, 0, 0.095, -0.27, black);
-    add(0.15, 0.045, 0.32, 0, -0.065, -0.13, brass);
-    add(0.17, 0.18, 0.23, 0, -0.015, 0.06, steel);
-    const muzzle = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.06, 0.06, 0.06, 12),
-      brass,
+    this.models = {
+      rifle: new THREE.Group(),
+      pistol: new THREE.Group(),
+      blade: new THREE.Group(),
+    };
+    for (const id of ["rifle", "pistol"] as const) {
+      const g = this.models[id],
+        rifle = id === "rifle",
+        len = rifle ? 0.85 : 0.45;
+      box(g, 0.13, 0.13, len, 0, 0.02, -len / 2, steel);
+      box(g, 0.15, 0.08, 0.28, 0, -0.06, 0, gold);
+      box(g, 0.14, 0.22, 0.14, 0, -0.17, 0.12, wood).rotation.x = -0.2;
+      box(g, 0.16, 0.06, len * 0.85, 0, 0.1, -len * 0.42, gold);
+      for (let i = 0; i < (rifle ? 13 : 5); i++)
+        box(
+          g,
+          0.17,
+          0.025,
+          0.022,
+          0,
+          0.145,
+          -0.06 - i * ((len * 0.8) / (rifle ? 13 : 5)),
+          steel,
+        );
+      box(g, 0.025, 0.06, 0.03, 0, 0.19, -len + 0.04, gold);
+      box(g, 0.025, 0.06, 0.03, -0.055, 0.19, 0.025, gold);
+      box(g, 0.025, 0.06, 0.03, 0.055, 0.19, 0.025, gold);
+      if (rifle) {
+        box(g, 0.11, 0.28, 0.2, 0, -0.24, -0.2, steel).rotation.x = 0.12;
+        box(g, 0.15, 0.13, 0.24, 0, -0.02, 0.23, wood);
+      }
+      box(g, 0.15, 0.15, 0.22, 0.02, -0.18, 0.16, glove);
+      box(g, 0.17, 0.16, 0.65, 0.025, -0.3, 0.46, skin).rotation.x = -0.15;
+      for (let i = 0; i < 4; i++)
+        box(g, 0.027, 0.08, 0.13, -0.05 + i * 0.035, -0.12, 0.08, glove);
+      const chamber = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.032),
+        new THREE.MeshStandardMaterial({
+          color: 0xb9fce1,
+          emissive: 0x39c795,
+          emissiveIntensity: 2,
+        }),
+      );
+      chamber.position.set(0.084, 0.015, -0.05);
+      g.add(chamber);
+      this.group.add(g);
+    }
+    const blade = this.models.blade;
+    box(blade, 0.07, 0.07, 1.1, 0, 0, -0.2, wood);
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0);
+    shape.lineTo(0.5, 0.12);
+    shape.quadraticCurveTo(0.8, 0.05, 0.9, -0.2);
+    shape.quadraticCurveTo(0.45, 0.1, 0.2, -0.2);
+    shape.lineTo(0, -0.12);
+    const edge = new THREE.Mesh(
+      new THREE.ExtrudeGeometry(shape, { depth: 0.025, bevelEnabled: false }),
+      gold,
     );
-    muzzle.rotation.x = Math.PI / 2;
-    muzzle.position.set(0, 0.015, -0.58);
-    this.group.add(muzzle);
-    const hole = new THREE.Mesh(new THREE.CircleGeometry(0.037, 12), black);
-    hole.rotation.y = Math.PI;
-    hole.position.set(0, 0.015, -0.612);
-    this.group.add(hole);
-    add(0.025, 0.06, 0.04, 0, 0.15, -0.49, brass);
-    add(0.13, 0.045, 0.035, 0, 0.12, 0.06, black);
-    add(0.025, 0.04, 0.04, -0.055, 0.14, 0.06, brass);
-    add(0.025, 0.04, 0.04, 0.055, 0.14, 0.06, brass);
-    const grip = add(0.12, 0.25, 0.14, 0, -0.19, 0.12, wood);
-    grip.rotation.x = -0.22;
-    for (let i = 0; i < 5; i++)
-      add(0.125, 0.012, 0.14, 0, -0.1 - i * 0.035, 0.13, black);
-    // A bright crystal set into the chamber creates the weapon's own identity.
-    const crystal = new THREE.Mesh(
-      new THREE.OctahedronGeometry(0.055),
-      new THREE.MeshStandardMaterial({
-        color: 0x9ce5cc,
-        emissive: 0x55c6aa,
-        emissiveIntensity: 1.8,
-        metalness: 0.2,
-        roughness: 0.15,
-      }),
-    );
-    crystal.position.set(0.09, 0.015, 0.045);
-    crystal.scale.y = 1.7;
-    this.group.add(crystal);
-    const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(0.09, 0.016, 6, 16, Math.PI * 1.5),
-      brass,
-    );
-    ring.rotation.y = Math.PI / 2;
-    ring.position.set(0, -0.15, -0.035);
-    this.group.add(ring);
-    // Gloved hand and sleeve, modeled in the same angular style as the firearm.
-    const hand = add(0.17, 0.15, 0.23, 0.015, -0.19, 0.15, glove);
-    hand.rotation.x = -0.22;
-    for (let i = 0; i < 3; i++)
-      add(0.035, 0.09, 0.13, -0.06 + i * 0.044, -0.14, 0.04, glove);
-    const sleeve = add(0.22, 0.22, 0.55, 0.035, -0.31, 0.47, black);
-    sleeve.rotation.x = -0.15;
-    add(0.23, 0.06, 0.17, 0.025, -0.26, 0.28, brass);
+    edge.position.set(0, 0.08, -0.7);
+    edge.rotation.x = -Math.PI / 2;
+    blade.add(edge);
+    box(blade, 0.15, 0.14, 0.2, 0, -0.08, 0.12, glove);
+    box(blade, 0.17, 0.16, 0.6, 0, -0.2, 0.45, skin);
+    this.group.add(blade);
+    this.leftHand = new THREE.Group();
+    box(this.leftHand, 0.17, 0.14, 0.2, 0, 0, 0, glove);
+    box(this.leftHand, 0.16, 0.16, 0.5, 0, -0.07, 0.25, skin);
+    for (let i = 0; i < 4; i++)
+      box(
+        this.leftHand,
+        0.028,
+        0.14,
+        0.04,
+        -0.05 + i * 0.035,
+        0.06,
+        -0.06,
+        skin,
+      );
+    this.group.add(this.leftHand);
     this.flash = new THREE.Sprite(
       new THREE.SpriteMaterial({
         map: glowTexture(),
-        color: 0xc6ffe0,
+        color: 0xffe69a,
         transparent: true,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       }),
     );
-    this.flash.position.set(0, 0.015, -0.65);
-    this.flash.scale.set(0.65, 0.65, 1);
-    this.flash.visible = false;
+    this.flash.scale.set(0.5, 0.5, 1);
     this.group.add(this.flash);
-    this.light = new THREE.PointLight(0xa9ffd6, 0, 5);
-    this.light.position.set(0, 0.1, -0.75);
+    this.light = new THREE.PointLight(0xffd98c, 0, 4);
     this.group.add(this.light);
-    this.group.scale.setScalar(0.68);
-    this.group.position.set(0.28, -0.24, -0.55);
-    this.group.rotation.y = -0.025;
+    this.group.scale.setScalar(0.72);
     camera.add(this.group);
+    this.update(0, 0, 0, false, false);
+  }
+  get config() {
+    return WEAPONS[this.id];
+  }
+  get ammo() {
+    return this.magazines[this.id];
+  }
+  get reserve() {
+    return this.reserves[this.id];
+  }
+  switch(id: WeaponId) {
+    if (id === this.id) return;
+    this.id = id;
+    this.reloading = false;
+    this.switchTime = 0.25;
+    this.cooldown = 0.2;
   }
   fire() {
-    if (this.cooldown > 0 || this.reloading || this.ammo <= 0) return false;
-    this.ammo--;
-    this.cooldown = 0.29;
-    this.recoil = 0.11;
-    this.flashTime = 0.055;
+    if (
+      this.id === "blade" ||
+      this.cooldown > 0 ||
+      this.reloading ||
+      this.ammo <= 0 ||
+      this.meleeTime > 0 ||
+      this.castTime > 0
+    )
+      return false;
+    this.magazines[this.id]--;
+    this.cooldown = this.config.interval;
+    this.velocity += this.config.kick * 25;
+    this.flashTime = 0.04;
     return true;
   }
   reload() {
-    if (this.reloading || this.ammo === 8) return false;
+    if (
+      this.id === "blade" ||
+      this.reloading ||
+      this.ammo === this.config.capacity ||
+      this.reserve === 0
+    )
+      return false;
     this.reloading = true;
-    this.reloadTime = 1.25;
+    this.reloadDuration = this.config.reload * this.reloadMultiplier;
+    this.reloadTime = this.reloadDuration;
     return true;
   }
-  update(dt: number, time: number, speed: number, reducedMotion: boolean) {
+  melee() {
+    this.meleeTime = 0.38;
+    this.reloading = false;
+  }
+  cast() {
+    this.castTime = 0.55;
+    this.reloading = false;
+  }
+  addAmmo(amount: number) {
+    this.reserves.rifle = Math.min(240, this.reserves.rifle + amount);
+    this.reserves.pistol = Math.min(
+      120,
+      this.reserves.pistol + Math.ceil(amount / 2),
+    );
+  }
+  reset() {
+    this.id = "rifle";
+    this.magazines.rifle = 30;
+    this.magazines.pistol = 12;
+    this.reserves.rifle = 120;
+    this.reserves.pistol = 72;
+    this.reloading = false;
+    this.recoil = 0;
+    this.velocity = 0;
+    this.cooldown = 0;
+    this.meleeTime = 0;
+    this.castTime = 0;
+  }
+  update(
+    dt: number,
+    time: number,
+    speed: number,
+    reducedMotion: boolean,
+    aiming = false,
+  ) {
     this.cooldown = Math.max(0, this.cooldown - dt);
-    this.recoil = damp(this.recoil, 0, 16, dt);
     this.flashTime -= dt;
     this.flash.visible = this.flashTime > 0;
-    this.light.intensity = this.flash.visible ? 5 : 0;
+    this.light.intensity = this.flash.visible ? 4 : 0;
+    this.flash.position.set(0, 0.035, this.id === "rifle" ? -0.91 : -0.51);
+    this.light.position.copy(this.flash.position);
+    // Critically damped spring: recoil remains stable across frame rates.
+    this.velocity += (-140 * this.recoil - 22 * this.velocity) * dt;
+    this.recoil += this.velocity * dt;
     if (this.reloading) {
       this.reloadTime -= dt;
       if (this.reloadTime <= 0) {
+        const transfer = Math.min(
+          this.config.capacity - this.ammo,
+          this.reserve,
+        );
+        this.magazines[this.id] += transfer;
+        this.reserves[this.id] -= transfer;
         this.reloading = false;
-        this.ammo = 8;
       }
     }
-    const reload = this.reloading
-      ? Math.sin(((1.25 - this.reloadTime) / 1.25) * Math.PI)
-      : 0;
+    this.meleeTime = Math.max(0, this.meleeTime - dt);
+    this.castTime = Math.max(0, this.castTime - dt);
+    this.switchTime = Math.max(0, this.switchTime - dt);
+    this.aim = damp(
+      this.aim,
+      aiming && !this.reloading && this.id !== "blade" ? 1 : 0,
+      14,
+      dt,
+    );
+    const rp = this.reloading ? 1 - this.reloadTime / this.reloadDuration : 0,
+      reload = Math.sin(rp * Math.PI),
+      melee = Math.sin((this.meleeTime / 0.38) * Math.PI),
+      cast = Math.sin((this.castTime / 0.55) * Math.PI),
+      bob = reducedMotion ? 0 : Math.sin(time * 8) * Math.min(speed, 5) * 0.003;
     this.group.position.set(
-      0.28 +
-        (reducedMotion ? 0 : Math.sin(time * 7) * 0.007 * Math.min(speed, 4)),
-      -0.24 -
-        reload * 0.28 +
-        (reducedMotion ? 0 : Math.cos(time * 14) * 0.006 * Math.min(speed, 4)),
-      -0.55 + this.recoil,
+      0.28 * (1 - this.aim),
+      -0.23 * (1 - this.aim) -
+        0.13 * this.aim -
+        reload * 0.14 +
+        melee * 0.12 +
+        bob,
+      -0.52 + this.recoil - melee * 0.35 + this.switchTime * 0.7,
     );
     this.group.rotation.set(
-      this.recoil * 0.8 - reload * 0.6,
-      -0.025,
-      reload * -0.35,
+      this.recoil * 0.8 + reload * 0.12,
+      -reload * 0.45,
+      melee * -0.8 + reload * 0.5,
     );
+    for (const id of Object.keys(this.models) as WeaponId[])
+      this.models[id].visible = id === this.id;
+    this.leftHand.position.set(
+      this.id === "rifle" && !this.reloading ? -0.07 : -0.2 - cast * 0.18,
+      -0.1 + reload * 0.24 + cast * 0.25,
+      this.id === "rifle" ? -0.4 : -0.05,
+    );
+    this.leftHand.rotation.set(cast * -0.9, reload * 0.6, -cast * 0.2);
+    this.leftHand.visible = this.id === "rifle" || this.reloading || cast > 0;
   }
 }
