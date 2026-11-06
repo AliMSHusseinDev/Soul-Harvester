@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#091311" />
+    <meta
+      name="description"
+      content="Enter the Hollow Keep. Soul Harvester is an atmospheric first-person dark fantasy browser game."
+    />
+    <title>Soul Harvester — The Hollow Keep</title>
+    <link rel="icon" type="image/svg+xml" href="/sigil.svg" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas
+        id="world"
+        aria-label="Soul Harvester 3D fortress courtyard"
+      ></canvas>
+      <div class="vignette"></div>
+      <div class="grain"></div>
+      <header class="masthead">
+        <a class="brand" href="./" aria-label="Soul Harvester home"
+          ><svg viewBox="0 0 40 48" aria-hidden="true">
+            <path d="M20 2 35 18 29 37 20 46 11 37 5 18Z" />
+            <path d="m20 9 8 12-8 17-8-17Z" />
+            <path d="M20 2v44M5 18h30" /></svg
+          ><span>SOUL<span class="brand-bottom">HARVESTER</span></span></a
+        >
+        <div class="chapter">
+          <span class="tiny-diamond"></span> THE HOLLOW KEEP
+          <span class="chapter-no">/ 01</span>
+        </div>
+        <button
+          id="sound"
+          class="icon-button"
+          aria-label="Enable sound"
+          title="Toggle sound"
+        >
+          SOUND <span id="sound-state">OFF</span
+          ><span class="sound-bars">▂▅▃</span>
+        </button>
+      </header>
+      <main id="menu" class="menu">
+        <div class="intro">
+          <div class="eyebrow">
+            <span></span> WHERE THE LIVING DARE NOT TREAD
+          </div>
+          <h1>Death is only<br />the <em>beginning.</em></h1>
+          <p class="lede">
+            The gates have fallen. The souls remain.<br />Enter the keep.
+            Reclaim what death has taken.
+          </p>
+          <div class="menu-actions">
+            <button id="enter" class="primary">
+              <span class="button-diamond">◇</span
+              ><span id="enter-label">ENTER THE COURTYARD</span
+              ><span class="arrow">↗</span></button
+            ><button id="notes" class="secondary">
+              HOW TO PLAY <span>＋</span>
+            </button>
+          </div>
+          <div class="build-note">
+            <span class="status-dot"></span> PLAYABLE CHAPTER
+            <span class="build-divider">/</span> EARLY DEVELOPMENT
+          </div>
+        </div>
+        <div class="scene-label">
+          <span class="location-line"></span>
+          <div>
+            <span class="location-small">YOUR FIRST DESCENT</span
+            ><strong>The Hollow Keep</strong
+            ><span class="location-detail"
+              >NORTHERN REACHES · AFTER THE FALL</span
+            >
+          </div>
+        </div>
+        <div class="menu-footer">
+          <span>CLAIM THE SOULS. DEFY THE DARK.</span
+          ><span
+            >HEADPHONES RECOMMENDED <span class="footer-cross">✦</span></span
+          >
+        </div>
+      </main>
+      <div id="hud" class="hud hidden">
+        <div class="compass">
+          <span>W</span><i>· · · ·</i><b id="heading">N</b><i>· · · ·</i
+          ><span>E</span>
+        </div>
+        <div class="objective">
+          <span class="tiny-diamond"></span>
+          <div>
+            <small>EXPLORE THE KEEP</small
+            ><strong>Something stirs beyond the gate.</strong>
+          </div>
+        </div>
+        <div id="crosshair" class="crosshair"><i></i><i></i><i></i><i></i></div>
+        <div id="hitmarker" class="hitmarker">×</div>
+        <div id="interact" class="interaction hidden">
+          <kbd>E</kbd><span>RING THE HOLLOW BELL</span>
+        </div>
+        <div class="vitality">
+          <div class="health-sigil">♜</div>
+          <div>
+            <div class="hud-label">
+              VITALITY <span>100 <small>/ 100</small></span>
+            </div>
+            <div class="health-track"><i></i></div>
+            <div class="stamina-track"><i id="stamina"></i></div>
+          </div>
+        </div>
+        <div class="weapon-hud">
+          <span class="weapon-name"
+            >THE RECLAIMER <small>SOULLOCK PISTOL</small></span
+          ><span class="ammo"><b id="ammo">8</b><i>/</i><span>∞</span></span>
+        </div>
+        <div class="hud-help">
+          <span>W A S D <small>MOVE</small></span
+          ><span>SHIFT <small>SPRINT</small></span
+          ><span>SPACE <small>JUMP</small></span
+          ><span>R <small>RELOAD</small></span
+          ><span>ESC <small>PAUSE</small></span>
+        </div>
+        <div class="soul-counter">
+          <span>✧</span> <b id="souls">00</b> <small>SOULS RELEASED</small>
+        </div>
+      </div>
+      <div id="toast" class="toast" role="status"></div>
+      <dialog id="guide">
+        <button id="close-guide" class="close" aria-label="Close instructions">
+          ×
+        </button>
+        <div class="eyebrow">A SURVIVOR'S FIELD NOTES</div>
+        <h2>Know the keep.</h2>
+        <p>
+          A quiet moment before the harvest. Explore the courtyard, find the
+          bell, and test your weapon against the wandering shades.
+        </p>
+        <dl>
+          <div>
+            <dt>W A S D</dt>
+            <dd>Move through the keep</dd>
+          </div>
+          <div>
+            <dt>MOUSE</dt>
+            <dd>Look around · left click to fire</dd>
+          </div>
+          <div>
+            <dt>SHIFT / SPACE</dt>
+            <dd>Sprint / jump</dd>
+          </div>
+          <div>
+            <dt>R / E</dt>
+            <dd>Reload / interact with the bell</dd>
+          </div>
+          <div>
+            <dt>ESC</dt>
+            <dd>Release the mouse and pause</dd>
+          </div>
+        </dl>
+        <p class="guide-note">
+          Desktop keyboard and mouse recommended. This chapter establishes the
+          world and controls; waves and progression arrive in later milestones.
+        </p>
+        <button id="guide-enter" class="primary">
+          ENTER THE COURTYARD <span>↗</span>
+        </button>
+      </dialog>
+      <div id="loading" class="loading">
+        <div class="loading-sigil">◇</div>
+        <span>AWAKENING THE KEEP</span>
+        <div class="load-line"></div>
+      </div>
+      <div id="fatal" class="fatal hidden">
+        <h2>The keep could not awaken.</h2>
+        <p id="fatal-message"></p>
+        <button onclick="location.reload()">TRY AGAIN</button>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
