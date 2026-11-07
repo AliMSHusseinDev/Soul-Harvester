@@ -3,14 +3,17 @@ import { damp, resolveCircle, type Solid } from "./math";
 import type { Input } from "./input";
 import { MAP, groundHeight } from "./terrain";
 import { Handling } from "./handling";
+import { Stamina } from "./stamina";
 export class Player {
   readonly position = new THREE.Vector3(0, groundHeight(0, 14), 14);
   readonly previous = this.position.clone();
-  private exhausted = false;
+  readonly endurance = new Stamina();
   private vx = 0;
   private vz = 0;
   private vy = 0;
-  stamina = 1;
+  get stamina() {
+    return this.endurance.value;
+  }
   distance = 0;
   grounded = true;
   speed = 0;
@@ -43,8 +46,6 @@ export class Player {
       x /= length;
       z /= length;
     }
-    if (this.stamina <= 0.06) this.exhausted = true;
-    if (this.stamina >= 0.3) this.exhausted = false;
     const jump = this.input.keys.has("Space");
     const requested = this.input.jumpQueued || (jump && !this.jumpHeld);
     this.crouching =
@@ -52,12 +53,11 @@ export class Player {
       this.grounded &&
       (this.input.keys.has("KeyC") || this.input.keys.has("ControlLeft"));
     const sprintWanted =
-      !this.exhausted &&
+      this.endurance.available &&
       z < 0 &&
       !this.crouching &&
-      !requested &&
       (this.input.keys.has("ShiftLeft") || this.input.keys.has("ShiftRight")) &&
-      this.stamina > 0.06;
+      this.stamina > 0;
     this.handling.update(dt, {
       sprint: sprintWanted,
       fire: !!(this.input.firing || this.input.fireQueued),
@@ -67,14 +67,21 @@ export class Player {
       verticalSpeed: requested ? 1 : this.vy,
       moving: length > 0,
     });
-    const sprint = this.handling.sprinting;
+    const sprint = this.handling.sprintPose;
     const speed =
       (sprint ? 7.2 : this.crouching ? 2.3 : this.input.aiming ? 3 : 4.2) *
       this.moveMultiplier;
-    this.stamina = Math.max(
-      0,
-      Math.min(1, this.stamina + dt * (sprint ? -0.17 : 0.23)),
-    );
+    this.endurance.update(dt, sprint);
+    if (sprint && !this.endurance.available)
+      this.handling.update(0, {
+        sprint: false,
+        fire: false,
+        aim: false,
+        busy: false,
+        grounded: this.grounded,
+        verticalSpeed: this.vy,
+        moving: length > 0,
+      });
     const c = Math.cos(this.input.yaw),
       s = Math.sin(this.input.yaw);
     this.vx = damp(this.vx, (x * c + z * s) * speed, 13, dt);
@@ -172,7 +179,7 @@ export class Player {
     camera.position.lerpVectors(this.previous, this.position, alpha);
     camera.position.y +=
       this.eyeHeight +
-      (reducedMotion
+      (reducedMotion || !this.grounded
         ? 0
         : Math.sin(this.distance * 2.1) *
           (this.handling.sprinting ? 0.024 : 0.018) *
@@ -188,7 +195,7 @@ export class Player {
     this.velocity.set(0, 0, 0);
     this.jumpCount = 0;
     this.jumpHeld = false;
-    this.stamina = 1;
+    this.endurance.reset();
     this.grounded = true;
     this.distance = 0;
     this.speed = 0;

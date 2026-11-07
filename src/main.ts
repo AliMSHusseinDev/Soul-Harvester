@@ -27,6 +27,8 @@ import { surfaceSummary } from "./game/surfaces";
 import { AbilityPresentation } from "./game/presentation";
 import { HipAccuracy, ACCURACY } from "./game/handling";
 import { GunVFX } from "./game/gun-vfx";
+import { CinematicTime } from "./game/cinematic-time";
+import { ENEMY_TYPES } from "./game/waves";
 async function boot() {
   const canvas = $<HTMLCanvasElement>("world");
   const renderer = new THREE.WebGLRenderer({
@@ -83,6 +85,7 @@ async function boot() {
     abilityPresentation = new AbilityPresentation(),
     feedback = new HitFeedback();
   const accuracy = new HipAccuracy();
+  const cinematic = new CinematicTime();
   const gunFX = new GunVFX(scene, camera);
   gunFX.resize(innerHeight);
   effects.resize(innerHeight);
@@ -99,6 +102,19 @@ async function boot() {
     setActive(false);
   });
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let reducedEffects = reducedMotion;
+  effects.reduced = world.reducedEffects = reducedEffects;
+  $("comfort").textContent = reducedEffects
+    ? "EFFECTS · REDUCED"
+    : "EFFECTS · FULL";
+  $("comfort").onclick = () => {
+    reducedEffects = !reducedEffects;
+    effects.reduced = world.reducedEffects = reducedEffects;
+    $("comfort").textContent = reducedEffects
+      ? "EFFECTS · REDUCED"
+      : "EFFECTS · FULL";
+    if (reducedEffects) cinematic.reset();
+  };
   let active = false,
     started = false,
     time = 0,
@@ -169,6 +185,7 @@ async function boot() {
     ui.update(0, false);
     feedback.reset();
     abilityPresentation.reset();
+    cinematic.reset();
     hurtKick = 0;
     hurtVelocity = 0;
     shotSerial = 0;
@@ -343,6 +360,9 @@ async function boot() {
           critical,
           headshot,
           bullet: true,
+          incomingX: direction.x,
+          incomingY: direction.y,
+          incomingZ: direction.z,
         },
       );
       feedback.confirm(killed);
@@ -399,13 +419,22 @@ async function boot() {
           headshot: event.headshot,
           killed: event.killed,
         });
-        effects.impact(
-          event.x,
-          event.y ?? groundHeight(event.x, event.z) + 0.9,
-          event.z,
-          event.critical,
-          event.bullet === true,
-        );
+        if (!event.killed)
+          effects.impact(
+            event.x,
+            event.y ?? groundHeight(event.x, event.z) + 0.9,
+            event.z,
+            event.critical,
+            event.bullet === true,
+            ENEMY_TYPES[event.enemyKind ?? 0].scale,
+            event.incomingX === undefined
+              ? undefined
+              : {
+                  x: event.incomingX,
+                  y: event.incomingY ?? 0,
+                  z: event.incomingZ ?? 0,
+                },
+          );
       } else if (event.kind === "kill") {
         effects.death(event.x, event.z, event.value);
         audio.death();
@@ -427,6 +456,8 @@ async function boot() {
         ui.banner(`WAVE ${event.value}`);
       } else if (event.kind === "level") {
         ui.levelUp(event.value);
+        if (!reducedEffects) cinematic.trigger();
+        ui.levelHighlight(reducedEffects);
         effects.levelUp(player.position.x, player.position.z);
         audio.level();
       } else if (event.kind === "lost") ui.lost();
@@ -443,6 +474,7 @@ async function boot() {
     renderer.setPixelRatio(Math.min(devicePixelRatio, pixelLimit));
     gunFX.resize(innerHeight);
     effects.resize(innerHeight);
+    world.resize(innerHeight);
     for (const el of [crosshair, $("hitmarker")]) {
       el.style.left = `${Math.round(innerWidth / 2)}px`;
       el.style.top = `${Math.round(innerHeight / 2)}px`;
@@ -476,7 +508,8 @@ async function boot() {
       frameTime = 0;
     }
     if (active) {
-      const alpha = clock.advance(dt, (step) => {
+      cinematic.update(rawDt);
+      const alpha = clock.advance(dt * cinematic.scale, (step) => {
         if (!active) return;
         time += step;
         feedback.update(step);
@@ -486,9 +519,9 @@ async function boot() {
         player.busy =
           weapon.reloading || weapon.casting || weapon.attacking || meleeQueued;
         player.handling.sprintOutTime = ACCURACY[weapon.id].sprintOut;
-        const wasSprinting = player.handling.sprinting;
+        const wasSprinting = player.handling.sprintPose;
         player.update(step);
-        if (wasSprinting && !player.handling.sprinting) lastSprintExit = time;
+        if (wasSprinting && !player.handling.sprintPose) lastSprintExit = time;
         effectiveAim = input.aiming && player.handling.ready && !player.busy;
         accuracy.update(
           step,
@@ -496,7 +529,7 @@ async function boot() {
           player.speed,
           player.grounded,
           player.crouching,
-          player.handling.state === "SprintOut",
+          player.handling.weaponPose === "SprintOut",
         );
         if (player.position.y < -5) {
           battle.hurtPlayer(20);
@@ -523,8 +556,9 @@ async function boot() {
           player.speed,
           reducedMotion,
           effectiveAim,
-          player.handling.sprinting,
+          player.handling.sprintPose,
           player.distance,
+          !player.grounded,
         );
         for (const ability of abilityPresentation.update(step)) {
           const origin = weapon.castOrigin();
@@ -575,7 +609,7 @@ async function boot() {
       const fov =
         effectiveAim && weapon.id !== "blade"
           ? 55
-          : player.handling.sprinting
+          : player.handling.sprintPose
             ? 76
             : 72;
       camera.fov = damp(camera.fov, fov, 10, dt);
@@ -615,7 +649,7 @@ async function boot() {
     weapon.present(viewAlpha);
     $("hitmarker").classList.toggle("show", feedback.remaining > 0);
     $("hitmarker").classList.toggle("kill", feedback.kill);
-    crosshair.classList.toggle("sprinting", player.handling.sprinting);
+    crosshair.classList.toggle("sprinting", player.handling.sprintPose);
     crosshair.classList.toggle("aiming", effectiveAim && weapon.id !== "blade");
     const gap = accuracy.gap(innerHeight, camera.fov);
     if (gap !== lastGap) {
@@ -658,7 +692,15 @@ async function boot() {
   Object.defineProperty(window, "__soulHarvester", {
     value: () => ({
       ready: true,
-      version: "0.7.0",
+      version: "0.8.0",
+      timeScale: cinematic.scale,
+      cinematicActive: cinematic.active,
+      stamina: player.stamina,
+      weaponPose: player.handling.weaponPose,
+      muzzleLocal: weapon.muzzleLocalPoint(),
+      muzzleProjection: weapon.muzzlePoint().project(camera).toArray(),
+      reducedEffects,
+      environment: world.diagnostics(),
       simulationTime: time,
       lastShotAt,
       lastSprintExit,

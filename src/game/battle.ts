@@ -89,6 +89,10 @@ export type BattleEvent = {
   bullet?: boolean;
   headshot?: boolean;
   killed?: boolean;
+  enemyKind?: number;
+  incomingX?: number;
+  incomingY?: number;
+  incomingZ?: number;
 };
 export class Battle {
   readonly nav: Navigation;
@@ -230,6 +234,10 @@ export class Battle {
       bullet?: boolean;
       headshot?: boolean;
       killed?: boolean;
+      enemyKind?: number;
+      incomingX?: number;
+      incomingY?: number;
+      incomingZ?: number;
     },
   ) {
     this.events.push({ kind, x, z, value, y, ...details });
@@ -689,6 +697,9 @@ export class Battle {
       critical?: boolean;
       bullet?: boolean;
       headshot?: boolean;
+      incomingX?: number;
+      incomingY?: number;
+      incomingZ?: number;
     },
   ) {
     const e = this.enemies[id];
@@ -715,6 +726,10 @@ export class Battle {
         bullet: impact?.bullet,
         headshot: impact?.headshot,
         killed: e.hp <= 0,
+        enemyKind: e.kind,
+        incomingX: impact?.incomingX,
+        incomingY: impact?.incomingY,
+        incomingZ: impact?.incomingZ,
       },
     );
     if (e.hp <= 0) {

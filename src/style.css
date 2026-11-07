@@ -375,10 +375,19 @@ h1 em {
   background: #142c24;
 }
 .stamina-frame i {
+  min-width: 0;
   height: 100%;
   display: block;
   background: #9fae76;
   width: 100%;
+}
+#level-highlight {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, transparent 35%, #b0ebdd 100%);
 }
 .wallet {
   position: absolute;

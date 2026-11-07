@@ -7,12 +7,10 @@ import { FOREST_TREES, forestSolids } from "./forest";
 import { LIGHTING } from "./tuning";
 import { surface, surfaceUV } from "./surfaces";
 import { Sky } from "./sky";
-import {
-  coniferGeometry,
-  tuftGeometry,
-  backdropHeight,
-  backdropGeometry,
-} from "./scenery";
+import { Water } from "./water";
+import { Atmosphere } from "./atmosphere";
+import { islandGeometry } from "./island";
+import { coniferGeometry, tuftGeometry, backdropHeight } from "./scenery";
 interface Flame {
   position: THREE.Vector3;
   light: THREE.PointLight;
@@ -58,8 +56,22 @@ export class World {
   });
   private glow = glowTexture();
   private sky: Sky;
-  private particles: THREE.Points;
-  private moteBase: Float32Array;
+  private water!: Water;
+  private atmosphere: Atmosphere;
+  reducedEffects = false;
+  private viewportHeight = 720;
+  private terrainVertices = 0;
+  resize(height: number) {
+    this.viewportHeight = height;
+  }
+  diagnostics() {
+    return {
+      terrainVertices: this.terrainVertices,
+      ambientBudget: this.atmosphere.budget,
+      waterTime: this.water.mesh.material.uniforms.uTime.value,
+      waterLevel: this.water.mesh.position.y,
+    };
+  }
   constructor(readonly scene: THREE.Scene) {
     scene.background = new THREE.Color(0x123e46);
     scene.fog = new THREE.FogExp2(0x205655, LIGHTING.fogDensity);
@@ -88,67 +100,42 @@ export class World {
     this.forest();
     this.elevateTerrain();
     this.batchStaticMeshes();
-    this.moteBase = new Float32Array(160 * 3);
-    for (let i = 0; i < 160; i++) {
-      this.moteBase[i * 3] = (this.rng() - 0.5) * 50;
-      this.moteBase[i * 3 + 1] = this.rng() * 9;
-      this.moteBase[i * 3 + 2] = 25 - this.rng() * 90;
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute(
-      "position",
-      new THREE.BufferAttribute(this.moteBase.slice(), 3),
-    );
-    this.particles = new THREE.Points(
-      geometry,
-      new THREE.PointsMaterial({
-        map: this.glow,
-        color: 0x80efd0,
-        size: 0.07,
-        transparent: true,
-        opacity: 0.5,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      }),
-    );
-    scene.add(this.particles);
+    this.atmosphere = new Atmosphere(scene);
   }
   private ground() {
-    const groundMat = new THREE.MeshStandardMaterial({
+    const material = new THREE.MeshStandardMaterial({
       map: surface("grass"),
-      color: 0xc2d4b0,
+      vertexColors: true,
       roughness: 1,
     });
-    for (const [z, d] of [
-      [15, 26],
-      [-47, 66],
-    ] as const) {
-      const g = new THREE.Mesh(
-        surfaceUV(
-          new THREE.PlaneGeometry(120, d, 60, 96).rotateX(-Math.PI / 2),
-        ),
-        groundMat,
-      );
-      g.position.z = z;
-      g.receiveShadow = true;
-      this.scene.add(g);
-    }
-    const water = new THREE.Mesh(
-      new THREE.PlaneGeometry(110, 16),
-      new THREE.MeshStandardMaterial({
-        color: 0x095f66,
-        metalness: 0.3,
-        roughness: 0.28,
-        emissive: 0x073038,
-        emissiveIntensity: 0.3,
-      }),
-    );
-    water.userData.terrainExempt = true;
-    water.rotation.x = -Math.PI / 2;
-    water.position.set(0, -6, -6);
-    this.scene.add(water);
-    for (const z of [2, -14])
-      this.box(0, -3.7, z, 100, 7.2, 1.5, this.darkStone);
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.uShoreRock = { value: surface("rock") };
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          "#include <common>",
+          "#include <common>\nvarying float vTerrainHeight; varying float vTerrainSlope; varying vec3 vTerrainPosition; varying vec3 vTerrainNormal;",
+        )
+        .replace(
+          "#include <begin_vertex>",
+          "#include <begin_vertex>\nvTerrainHeight=position.y;vTerrainSlope=1.-abs(normal.y);vTerrainPosition=position;vTerrainNormal=normal;",
+        );
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          "#include <common>",
+          "#include <common>\nuniform sampler2D uShoreRock;varying float vTerrainHeight; varying float vTerrainSlope; varying vec3 vTerrainPosition; varying vec3 vTerrainNormal;",
+        )
+        .replace(
+          "#include <map_fragment>",
+          "#include <map_fragment>\nvec3 weights=pow(abs(normalize(vTerrainNormal)),vec3(4.));weights/=max(.001,weights.x+weights.y+weights.z);float shore=max(1.-smoothstep(-4.,.6,vTerrainHeight),smoothstep(.2,.55,vTerrainSlope));diffuseColor.rgb=mix(diffuseColor.rgb,diffuse*(texture2D(uShoreRock,vTerrainPosition.zy*.5).rgb*weights.x+texture2D(uShoreRock,vTerrainPosition.xz*.5).rgb*weights.y+texture2D(uShoreRock,vTerrainPosition.xy*.5).rgb*weights.z),shore*.85);",
+        );
+    };
+    const terrain = new THREE.Mesh(islandGeometry(), material);
+    this.terrainVertices = terrain.geometry.attributes.position.count;
+    terrain.userData.terrainExempt = true;
+    terrain.receiveShadow = true;
+    terrain.name = "Continuous island terrain";
+    this.scene.add(terrain);
+    this.water = new Water(this.scene);
     const trailGeometry = new THREE.PlaneGeometry(5.7, 45, 8, 45).rotateX(
         -Math.PI / 2,
       ),
@@ -476,17 +463,6 @@ export class World {
     trees.castShadow = trees.receiveShadow = true;
     this.scene.add(trees, trunks);
     this.solids.push(...forestSolids());
-    const mountains = new THREE.Mesh(
-      surfaceUV(backdropGeometry(), 3),
-      new THREE.MeshStandardMaterial({
-        map: surface("rock"),
-        color: 0x687f72,
-        roughness: 1,
-      }),
-    );
-    mountains.userData.terrainExempt = true;
-    mountains.receiveShadow = true;
-    this.scene.add(mountains);
   }
 
   update(time: number, eye: THREE.Vector3) {
@@ -496,17 +472,8 @@ export class World {
       f.light.intensity = LIGHTING.torch * flicker;
       f.sprite.scale.set(0.65 * flicker, 0.9 * flicker, 1);
     }
-    const positions = this.particles.geometry.attributes
-      .position as THREE.BufferAttribute;
-    for (let i = 0; i < positions.count; i++)
-      positions.setXYZ(
-        i,
-        this.moteBase[i * 3] + Math.sin(time * 0.3 + i) * 0.3,
-        ((this.moteBase[i * 3 + 1] + time * 0.15) % 9) +
-          landHeight(this.moteBase[i * 3], this.moteBase[i * 3 + 2]),
-        this.moteBase[i * 3 + 2],
-      );
-    positions.needsUpdate = true;
+    this.water.update(time, eye);
+    this.atmosphere.update(time, this.viewportHeight, this.reducedEffects);
   }
   private elevateTerrain() {
     // Bake the same analytical surface into scenery and physics before static batching.

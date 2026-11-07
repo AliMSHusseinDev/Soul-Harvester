@@ -6,10 +6,10 @@ import {
   damageLabel,
 } from "./presentation";
 import { PRESENTATION as P } from "./tuning";
-it("preserves fractional damage labels instead of reporting a different integer hit", () => {
-  expect(damageLabel(28.5)).toBe("28.5");
+it("uses one integer display policy while combat retains fractional health", () => {
+  expect(damageLabel(28.5)).toBe("29");
   expect(damageLabel(19)).toBe("19");
-  expect(damageLabel(31.34999999999)).toBe("31.35");
+  expect(damageLabel(31.34999999999)).toBe("31");
 });
 it("distinguishes normal and critical numbers by metadata, scales criticals by thirty percent and fades", () => {
   for (const age of [0.02, 0.1, 0.3])

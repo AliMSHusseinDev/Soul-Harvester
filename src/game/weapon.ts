@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { damp, aimPose, springStep } from "./math";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { surface, surfaceUV } from "./surfaces";
-import { glowTexture } from "./textures";
+import { Muzzle, muzzleOpening } from "./muzzle";
 export type WeaponId = "rifle" | "pistol" | "blade";
 export const WEAPONS = {
   rifle: {
@@ -44,10 +44,7 @@ export class Weapon {
   reloading = false;
   reloadMultiplier = 1;
   private models: Record<WeaponId, THREE.Group>;
-  private flash: THREE.Sprite;
-  private flashCore: THREE.Sprite;
-  private flashHalo: THREE.Sprite;
-  private light: THREE.PointLight;
+  private muzzles: Partial<Record<WeaponId, Muzzle>> = {};
   private recoil = 0;
   private velocity = 0;
   private cooldown = 0;
@@ -65,7 +62,6 @@ export class Weapon {
   private poseRotation = new THREE.Quaternion();
   private priorRotation = new THREE.Quaternion();
   private poseReady = false;
-  private muzzleLocal = new THREE.Vector3();
   private arms: {
     mesh: THREE.Mesh;
     parent: THREE.Group;
@@ -96,11 +92,12 @@ export class Weapon {
     return this.castHand.localToWorld(new THREE.Vector3(0, 0.13, -0.06));
   }
   muzzlePoint() {
-    return this.group
-      .localToWorld(
-        this.muzzleLocal.set(0, 0.02, this.id === "rifle" ? -0.94 : -0.54),
-      )
-      .clone();
+    return (
+      this.muzzles[this.id]?.worldPoint() ?? this.muzzles.rifle!.worldPoint()
+    );
+  }
+  muzzleLocalPoint() {
+    return this.muzzles[this.id]?.socket.position.toArray() ?? [0, 0, 0];
   }
   private addArm(
     parent: THREE.Group,
@@ -149,13 +146,15 @@ export class Weapon {
       alpha,
     );
     this.placeArms();
-    this.flash.visible =
+    const visible =
       this.id !== "blade" &&
       (this.flashTime > 0 || this.fireStamp !== this.presentedStamp);
-    this.light.intensity = this.flash.visible ? 1.5 : 0;
-    this.flashCore.visible = this.flashHalo.visible = this.flash.visible;
-    this.flashCore.position.copy(this.flash.position);
-    this.flashHalo.position.copy(this.flash.position);
+    for (const id of ["rifle", "pistol"] as const)
+      this.muzzles[id]?.present(
+        visible && this.id === id,
+        this.aim,
+        this.fireStamp,
+      );
     this.presentedStamp = this.fireStamp;
   }
   hurt() {
@@ -244,8 +243,20 @@ export class Weapon {
         steel,
       );
       muzzle.rotation.x = Math.PI / 2;
-      muzzle.position.set(0, 0.02, -len - 0.015);
+      muzzle.position.copy(muzzleOpening(rifle));
+      muzzle.position.z += 0.06;
       g.add(muzzle);
+      box(
+        g,
+        0.105,
+        0.15,
+        0.1,
+        0,
+        muzzleOpening(rifle).y - 0.07,
+        -len + 0.04,
+        steel,
+      );
+      this.muzzles[id] = new Muzzle(g, rifle);
       box(g, 0.15, 0.08, 0.28, 0, -0.06, 0, gold);
       box(g, 0.14, 0.22, 0.14, 0, -0.17, 0.12, wood).rotation.x = -0.2;
       box(g, 0.16, 0.06, len * 0.85, 0, 0.1, -len * 0.42, gold);
@@ -364,48 +375,6 @@ export class Weapon {
       this.castHand,
     ])
       batchModel(model);
-    this.flash = new THREE.Sprite(
-      new THREE.SpriteMaterial({
-        map: surface("flash"),
-        color: 0xffe69a,
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        depthTest: false,
-        toneMapped: false,
-      }),
-    );
-    this.flash.scale.set(0.24, 0.24, 1);
-    this.group.add(this.flash);
-    this.flashCore = new THREE.Sprite(
-      new THREE.SpriteMaterial({
-        map: surface("flash"),
-        color: 0xffffff,
-        blending: THREE.AdditiveBlending,
-        transparent: true,
-        depthWrite: false,
-        depthTest: false,
-        toneMapped: false,
-      }),
-    );
-    this.flashCore.scale.set(0.12, 0.12, 1);
-    this.group.add(this.flashCore);
-    this.flashHalo = new THREE.Sprite(
-      new THREE.SpriteMaterial({
-        map: glowTexture(),
-        color: 0xffb45c,
-        opacity: 0.28,
-        blending: THREE.AdditiveBlending,
-        transparent: true,
-        depthWrite: false,
-        depthTest: false,
-        toneMapped: false,
-      }),
-    );
-    this.flashHalo.scale.set(0.36, 0.36, 1);
-    this.group.add(this.flashHalo);
-    this.light = new THREE.PointLight(0xffd98c, 0, 4);
-    this.group.add(this.light);
     this.group.scale.setScalar(0.68);
     camera.add(this.group);
     this.update(0, 0, 0, false, false);
@@ -441,9 +410,6 @@ export class Weapon {
     this.velocity += this.config.kick * 25;
     this.flashTime = 0.04;
     this.fireStamp++;
-    this.flash.material.rotation = this.fireStamp * 2.39996;
-    const size = 0.2 + Math.sin(this.fireStamp * 1.7) * 0.035;
-    this.flash.scale.set(size, size, 1);
     this.rotationKick +=
       Math.sin(this.fireStamp * 2.39996) * this.config.kick * 0.35;
     return true;
@@ -505,15 +471,12 @@ export class Weapon {
     aiming = false,
     sprinting = false,
     distance = time * speed,
+    airborne = false,
   ) {
     this.priorPosition.copy(this.posePosition);
     this.priorRotation.copy(this.poseRotation);
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.flashTime -= dt;
-    this.flash.visible = this.flashTime > 0;
-    this.light.intensity = this.flash.visible ? 1.5 : 0;
-    this.flash.position.set(0, 0.02, this.id === "rifle" ? -0.94 : -0.54);
-    this.light.position.copy(this.flash.position);
     // Critically damped spring: recoil remains stable across frame rates.
     const spring = springStep(
       this.recoil,
@@ -555,6 +518,7 @@ export class Weapon {
       bob = reducedMotion
         ? 0
         : Math.sin(distance * 2.1) *
+          (airborne ? 0.15 : 1) *
           Math.min(speed, 7) *
           (0.003 + this.running * 0.002);
     const pose = aimPose(this.aim);
@@ -574,7 +538,10 @@ export class Weapon {
     );
     this.group.rotation.set(
       this.recoil * 0.8 + reload * 0.12 + this.running * 1.05,
-      -reload * 0.45 - this.running * 0.32 + this.rotationKick * 0.4,
+      -reload * 0.45 -
+        this.running * 0.32 +
+        this.rotationKick * 0.4 +
+        (airborne && !reducedMotion ? Math.sin(time * 3.5) * 0.005 : 0),
       melee * -0.8 + reload * 0.5 - this.running * 0.22 + this.rotationKick,
     );
     for (const id of Object.keys(this.models) as WeaponId[])

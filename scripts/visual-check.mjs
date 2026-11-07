@@ -33,7 +33,7 @@ try {
   await page.goto(process.env.GAME_URL || "http://127.0.0.1:4180/");
   await page.waitForFunction(() => window.__soulHarvester?.().ready);
   const tiles = (await state()).surfaces;
-  assert.equal(tiles.length, 19); // The removed landmark's separate canopy tile is no longer loaded.
+  assert.equal(tiles.length, 18); // The old canopy and billboard muzzle-flash tiles are no longer loaded.
   assert.ok(
     tiles.some((t) => t.name === "pine") &&
       tiles.some((t) => t.name === "bark"),
@@ -77,6 +77,21 @@ try {
   await page.keyboard.up("ShiftLeft");
   await page.keyboard.up("KeyW");
   await page.waitForFunction(() => window.__soulHarvester().fireReady);
+  await page.keyboard.down("KeyW");
+  await page.waitForFunction(
+    () => window.__soulHarvester().position[2] < -5.5,
+    undefined,
+    { timeout: 90000 },
+  );
+  await page.keyboard.up("KeyW");
+  for (const [i, yaw] of [Math.PI / 2, -Math.PI / 2].entries()) {
+    const s = await state();
+    mx += (s.yaw - yaw) / 0.002;
+    my += (s.pitch + 0.25) / 0.002;
+    await page.mouse.move(mx, my);
+    await frame();
+    await page.screenshot({ path: `artifacts/visual-water-${i}.png` });
+  }
   await page.addStyleTag({ content: "#hud{visibility:hidden}" });
   for (const [i, yaw] of [0, Math.PI / 2, Math.PI, -Math.PI / 2].entries()) {
     const s = await state();

@@ -21,14 +21,15 @@ export interface MovementIntent {
 export class Handling {
   state: MovementState = "Idle";
   sprintOut = 0;
+  weaponPose: "Hip" | "Sprint" | "SprintAirborne" | "SprintOut" = "Hip";
   private shotLock = 0;
   constructor(public sprintOutTime = 0.225) {}
   update(dt: number, intent: MovementIntent) {
     this.shotLock = Math.max(0, this.shotLock - dt);
-    const wasSprinting = this.state === "Sprinting";
+    const wasSprinting = this.sprintPose;
     const sprint =
       intent.sprint &&
-      intent.grounded &&
+      (intent.grounded || wasSprinting) &&
       !intent.busy &&
       !intent.fire &&
       !intent.aim &&
@@ -36,24 +37,36 @@ export class Handling {
     if (wasSprinting && !sprint) this.sprintOut = this.sprintOutTime;
     else this.sprintOut = Math.max(0, this.sprintOut - dt);
     if (this.sprintOut > 1e-8) this.state = "SprintOut";
-    else if (sprint) this.state = "Sprinting";
+    else if (sprint && intent.grounded) this.state = "Sprinting";
     else if (!intent.grounded)
       this.state = intent.verticalSpeed > 0 ? "Jumping" : "Falling";
     else if (intent.aim) this.state = "Aiming";
     else if (intent.fire) this.state = "Firing";
     else this.state = intent.moving ? "Walking" : "Idle";
+    this.weaponPose =
+      this.sprintOut > 1e-8
+        ? "SprintOut"
+        : sprint
+          ? intent.grounded
+            ? "Sprint"
+            : "SprintAirborne"
+          : "Hip";
   }
   get sprinting() {
     return this.state === "Sprinting";
   }
+  get sprintPose() {
+    return this.weaponPose === "Sprint" || this.weaponPose === "SprintAirborne";
+  }
   get ready() {
-    return !this.sprinting && this.sprintOut <= 1e-8;
+    return !this.sprintPose && this.sprintOut <= 1e-8;
   }
   fired() {
     this.shotLock = 0.15;
   }
   reset() {
     this.state = "Idle";
+    this.weaponPose = "Hip";
     this.sprintOut = this.shotLock = 0;
   }
 }

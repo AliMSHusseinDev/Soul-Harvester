@@ -1,0 +1,85 @@
+import * as THREE from "three";
+import { landHeight } from "./terrain";
+export const OCEAN_Y = -5.8;
+export const ISLAND_BOUNDS = { minX: -230, maxX: 230, minZ: -300, maxZ: 200 };
+const smooth = (a: number, b: number, x: number) => {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+/** A complete height field: no deleted triangles, disconnected mountain sheets or open seams. */
+export function islandHeight(x: number, z: number) {
+  const base = landHeight(x, z),
+    ax = Math.abs(x);
+  const ridges =
+    smooth(34, 64, ax) *
+      Math.exp(-(((ax - 92) / 52) ** 2)) *
+      (36 +
+        14 * Math.sin(z * 0.034 + x * 0.025) ** 2 +
+        12 * Math.sin(z * 0.067 - x * 0.031) ** 2) +
+    smooth(95, 135, -z) *
+      Math.exp(-(((z + 160) / 52) ** 2)) *
+      (18 + 14 * Math.sin(x * 0.043) ** 2);
+  const radius = Math.hypot(
+    x / (154 + 8 * Math.sin(z * 0.024)),
+    (z + 36) / 205,
+  );
+  let y =
+    (base + ridges) * (1 - smooth(0.72, 1.02, radius)) -
+    12 * smooth(0.72, 1.02, radius);
+  // Carve a closed riverbed with sloping banks. Its influence closes before the distant ridges.
+  const center = -6 + Math.sign(x) * 12 * smooth(32, 95, ax),
+    half = 8;
+  const depth =
+    smooth(0, 3.5, half - Math.abs(z - center)) * (1 - smooth(38, 92, ax));
+  y = y * (1 - depth) + -10.5 * depth;
+  return y;
+}
+export function islandGeometry() {
+  const axis = (min: number, max: number, fineMin: number, fineMax: number) => {
+    const a: number[] = [];
+    for (let n = min; n <= max; n += 2)
+      if ((n >= fineMin && n <= fineMax) || (n - min) % 6 === 0 || n === max)
+        a.push(n);
+    return a;
+  };
+  const xs = axis(-230, 230, -40, 40),
+    zs = axis(-300, 200, -80, 30),
+    positions: number[] = [],
+    uvs: number[] = [],
+    colors: number[] = [],
+    indices: number[] = [];
+  const grass = new THREE.Color(0xc2d4b0),
+    rock = new THREE.Color(0x687f72),
+    shore = new THREE.Color(0x809983),
+    tint = new THREE.Color();
+  for (const z of zs)
+    for (const x of xs) {
+      const y = islandHeight(x, z);
+      positions.push(x, y, z);
+      uvs.push(x / 2, z / 2);
+      tint
+        .copy(grass)
+        .lerp(
+          rock,
+          smooth(28, 68, Math.abs(x)) * 0.7 + smooth(90, 155, -z) * 0.25,
+        )
+        .lerp(shore, 1 - smooth(-5, 0, y));
+      colors.push(tint.r, tint.g, tint.b);
+    }
+  for (let j = 0; j < zs.length - 1; j++)
+    for (let i = 0; i < xs.length - 1; i++) {
+      const a = j * xs.length + i,
+        b = a + 1,
+        c = a + xs.length,
+        d = c + 1;
+      indices.push(a, c, b, b, c, d);
+    }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  g.setIndex(indices);
+  g.computeVertexNormals();
+  g.computeBoundingSphere();
+  return g;
+}

@@ -13,6 +13,8 @@ import {
   damageLabel,
 } from "./presentation";
 import { PRESENTATION as P } from "./tuning";
+import { impactSplashGeometry, projectedFragmentSize } from "./combat-vfx";
+import { LabelLayout } from "./label-layout";
 interface Particle {
   life: number;
   max: number;
@@ -60,14 +62,25 @@ export class Effects {
     important: boolean;
     headshot: boolean;
     glyphRatio: number;
+    offsetX: number;
+    offsetY: number;
+    labelLength: number;
   }[] = [];
   private numberSerial = 0;
   private viewportHeight = 1080;
+  private layout = new LabelLayout();
+  private projected = new THREE.Vector3();
+  reduced = false;
   resize(height: number) {
     this.viewportHeight = height;
   }
   private numberTextures = new Map<string, THREE.CanvasTexture>();
-  private corpses: { sprite: THREE.Sprite; life: number; vy: number }[] = [];
+  private corpses: {
+    sprite: THREE.Sprite;
+    life: number;
+    vy: number;
+    tint: { value: number };
+  }[] = [];
   private corpseMaps = [0, 1, 2, 3].map(guardTexture);
   private orbs: { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number }[] =
     [];
@@ -79,6 +92,7 @@ export class Effects {
   private ray = new THREE.Ray();
   private point = new THREE.Vector3();
   private shardPool = new PixelShards();
+  private tintColor = new THREE.Color();
   private shardMesh: THREE.InstancedMesh;
   private flashMesh: THREE.InstancedMesh;
   private shardAlpha: THREE.InstancedBufferAttribute;
@@ -92,6 +106,9 @@ export class Effects {
     z: 0,
     scale: 1,
     seen: true,
+    color: 0xffffff,
+    rotation: 0,
+    priority: false,
   }));
   private stats = { impacts: 0, criticalNumbers: 0, deaths: 0, casts: 0 };
   private trailClocks: Float32Array;
@@ -103,7 +120,7 @@ export class Effects {
   ) {
     this.trailClocks = new Float32Array(battle.drops.length);
     const shardGeometry = new THREE.PlaneGeometry(1, 1),
-      flashGeometry = new THREE.RingGeometry(0.55, 1, 16);
+      flashGeometry = impactSplashGeometry();
     this.shardAlpha = new THREE.InstancedBufferAttribute(
       new Float32Array(P.shardCapacity),
       1,
@@ -127,6 +144,7 @@ export class Effects {
       P.flashCapacity,
     );
     this.shardMesh.setColorAt(0, new THREE.Color(0xffffff));
+    this.flashMesh.setColorAt(0, new THREE.Color(0xffffff));
     for (const mesh of [this.shardMesh, this.flashMesh]) {
       mesh.count = 0;
       mesh.frustumCulled = false;
@@ -212,7 +230,7 @@ export class Effects {
       scene.add(sprite);
       this.spawnWisps.push({ sprite, life: 0 });
     }
-    for (let i = 0; i < 32; i++) {
+    for (let i = 0; i < P.labelCapacity; i++) {
       const sprite = new THREE.Sprite(
         new THREE.SpriteMaterial({
           transparent: true,
@@ -236,6 +254,9 @@ export class Effects {
         important: false,
         headshot: false,
         glyphRatio: 0.625,
+        offsetX: 0,
+        offsetY: -32,
+        labelLength: 1,
       });
     }
     for (let i = 0; i < 20; i++) {
@@ -245,11 +266,25 @@ export class Effects {
           transparent: true,
           alphaTest: 0.2,
           depthWrite: false,
+          toneMapped: false,
         }),
       );
       sprite.visible = false;
       scene.add(sprite);
-      this.corpses.push({ sprite, life: 0, vy: 0 });
+      const tint = { value: 0 };
+      sprite.material.onBeforeCompile = (shader) => {
+        shader.uniforms.uDeathTint = tint;
+        shader.fragmentShader = shader.fragmentShader
+          .replace(
+            "#include <common>",
+            "#include <common>\nuniform float uDeathTint;",
+          )
+          .replace(
+            "#include <map_fragment>",
+            "#include <map_fragment>\ndiffuseColor.rgb=mix(diffuseColor.rgb,vec3(.807,.044,.06),uDeathTint);",
+          );
+      };
+      this.corpses.push({ sprite, life: 0, vy: 0, tint });
     }
     for (let i = 0; i < 6; i++) {
       const mesh = new THREE.Mesh(
@@ -355,7 +390,7 @@ export class Effects {
       key = `${label}:${critical}:${!!details.headshot}`;
     let texture = this.numberTextures.get(key);
     if (!texture) {
-      if (this.numberTextures.size >= 64)
+      if (this.numberTextures.size >= P.numberTextureLimit)
         for (const [k, map] of this.numberTextures) {
           if (
             this.numbers.some(
@@ -404,13 +439,24 @@ export class Effects {
     n.important = important;
     n.headshot = !!details.headshot;
     n.glyphRatio = fontSize / 64;
+    n.offsetX = 0;
+    n.offsetY = -32;
+    n.labelLength = label.length;
     n.seen = false;
     if (critical) this.stats.criticalNumbers++;
   }
-  impact(x: number, y: number, z: number, critical = false, bullet = true) {
+  impact(
+    x: number,
+    y: number,
+    z: number,
+    critical = false,
+    bullet = true,
+    scale = 1,
+    incoming?: { x: number; y: number; z: number },
+  ) {
     this.stats.impacts++;
     if (bullet) {
-      this.whiteFlash(x, y, z, critical ? 1.2 : 1);
+      this.whiteFlash(x, y, z, scale * (critical ? 1.15 : 1));
       // Lift fragments just off the shallow body surface to avoid depth fighting.
       this.point
         .set(
@@ -420,27 +466,93 @@ export class Effects {
         )
         .normalize()
         .multiplyScalar(0.09);
+      const normal = this.point.clone().normalize();
+      const motion = {
+        nx: normal.x,
+        ny: normal.y,
+        nz: normal.z,
+        dx: incoming?.x,
+        dy: incoming?.y,
+        dz: incoming?.z,
+      };
       this.shardPool.spawn(
         x + this.point.x,
         y + this.point.y,
         z + this.point.z,
-        critical ? 10 : 7,
+        this.reduced
+          ? 10
+          : critical
+            ? COMBAT_FEEL.criticalImpactCount
+            : COMBAT_FEEL.impactCount,
+        false,
+        scale,
+        motion,
+      );
+      this.shardPool.spawn(
+        x + this.point.x,
+        y + this.point.y,
+        z + this.point.z,
+        this.reduced ? 3 : COMBAT_FEEL.impactStreaks,
+        false,
+        scale,
+        { ...motion, streak: true },
       );
     } else this.shardPool.spawn(x, y, z, 3);
     this.burst(new THREE.Vector3(x, y, z), 0xfff6de, 2, 1.5);
   }
-  private whiteFlash(x: number, y: number, z: number, scale = 1) {
-    const f = this.flashes.find((f) => f.life <= 0 && f.seen);
+  private whiteFlash(
+    x: number,
+    y: number,
+    z: number,
+    scale = 1,
+    color = 0xffffff,
+    priority = false,
+  ) {
+    if (
+      !priority &&
+      this.flashes.filter((f) => f.life > 0).length >= P.flashCapacity - 8
+    )
+      return;
+    const f =
+      this.flashes.find((f) => f.life <= 0 && f.seen) ??
+      (priority ? this.flashes.find((f) => !f.priority) : undefined);
     if (!f) return;
-    Object.assign(f, { x, y, z, scale, max: 0.085, life: 0.085, seen: false });
+    Object.assign(f, {
+      x,
+      y,
+      z,
+      scale: scale * (this.reduced ? 0.8 : 1),
+      color,
+      priority,
+      rotation: (this.stats.impacts + this.stats.deaths) * 2.39996,
+      max: 0.12,
+      life: 0.12,
+      seen: false,
+    });
   }
   cast(point: THREE.Vector3, orb: boolean) {
     this.stats.casts++;
     this.burst(point, orb ? 0xffb953 : 0x78efd3, 14, 2.2);
-    this.whiteFlash(point.x, point.y, point.z, 0.65);
+    this.whiteFlash(point.x, point.y, point.z, 0.22);
   }
   levelUp(x: number, z: number) {
     this.pulse(x, z);
+    const y = groundHeight(x, z) + 0.65;
+    this.shardPool.spawn(
+      x,
+      y,
+      z,
+      this.reduced ? 16 : P.levelFragments,
+      true,
+      1.2,
+      {
+        level: true,
+      },
+    );
+    this.shardPool.spawn(x, y, z, this.reduced ? 4 : P.levelStreaks, true, 1, {
+      level: true,
+      streak: true,
+    });
     this.burst(
       new THREE.Vector3(x, groundHeight(x, z) + 0.5, z),
       0x75dfff,
@@ -464,18 +576,32 @@ export class Effects {
     c.sprite.position.set(x, groundHeight(x, z) + 0.85 * scale, z);
     c.sprite.visible = true;
     c.life = 0.65;
+    c.tint.value = 1;
     c.vy = 2.4;
     this.stats.deaths++;
     this.shardPool.spawn(
       x,
       c.sprite.position.y,
       z,
-      kind === 2 ? 22 : kind === 3 ? 18 : 12,
+      this.reduced
+        ? 18
+        : kind === 2
+          ? COMBAT_FEEL.bruteDeathCount
+          : COMBAT_FEEL.deathCount,
       true,
       Math.min(1.4, scale),
     );
-    this.whiteFlash(x, c.sprite.position.y, z, scale);
-    this.burst(c.sprite.position, 0xffc785, 6, 2.2);
+    this.shardPool.spawn(
+      x,
+      c.sprite.position.y,
+      z,
+      this.reduced ? 3 : COMBAT_FEEL.deathStreaks,
+      true,
+      scale,
+      { streak: true },
+    );
+    this.whiteFlash(x, c.sprite.position.y, z, scale * 1.35, 0xe83b45, true);
+    this.burst(c.sprite.position, 0xff6655, 5, 2.2);
   }
   spawn(x: number, z: number) {
     const w = this.spawnWisps.find((w) => w.life <= 0);
@@ -559,6 +685,7 @@ export class Effects {
     for (const c of this.corpses)
       if (c.life > 0) {
         c.life -= dt;
+        c.tint.value = Math.max(0, (c.life - 0.49) / 0.16);
         c.sprite.position.y = Math.max(
           groundHeight(c.sprite.position.x, c.sprite.position.z) + 0.15,
           c.sprite.position.y + c.vy * dt,
@@ -671,6 +798,8 @@ export class Effects {
     this.geometry.attributes.position.needsUpdate = true;
     this.geometry.attributes.color.needsUpdate = true;
 
+    this.layout.begin();
+    const viewportWidth = this.viewportHeight * this.camera.aspect;
     for (const n of this.numbers) {
       const visible = n.life > 0 || !n.seen;
       n.sprite.visible = visible;
@@ -689,10 +818,30 @@ export class Effects {
         0.2,
         Math.min(3.6, (18 * distance) / (focal * n.glyphRatio)),
       );
-      const lane = ((n.seed % 5) - 2) * height * 0.32;
-      n.sprite.position.x += Math.cos(this.camera.rotation.y) * lane;
-      n.sprite.position.z -= Math.sin(this.camera.rotation.y) * lane;
-      n.sprite.position.y += (n.seed % 3) * height * 0.16;
+      this.projected.copy(n.sprite.position).project(this.camera);
+      if (this.projected.z < -1 || this.projected.z > 1) {
+        n.sprite.visible = false;
+        continue;
+      }
+      const anchorX = (this.projected.x * 0.5 + 0.5) * viewportWidth,
+        anchorY = (-this.projected.y * 0.5 + 0.5) * this.viewportHeight;
+      const placement = this.layout.place(
+        anchorX,
+        anchorY,
+        18 * pose.scale * n.labelLength * 0.62 + 6,
+        18 * pose.scale + 5,
+        viewportWidth,
+        this.viewportHeight,
+        n.offsetX,
+        n.offsetY,
+      );
+      n.offsetX = placement.dx;
+      n.offsetY = placement.dy;
+      const units = distance / focal,
+        m = this.camera.matrixWorld.elements;
+      n.sprite.position.x += (m[0] * n.offsetX - m[4] * n.offsetY) * units;
+      n.sprite.position.y += (m[1] * n.offsetX - m[5] * n.offsetY) * units;
+      n.sprite.position.z += (m[2] * n.offsetX - m[6] * n.offsetY) * units;
       n.sprite.scale.set(height * 2 * pose.scale, height * pose.scale, 1);
       n.sprite.material.opacity = pose.opacity;
       n.seen = true;
@@ -704,9 +853,16 @@ export class Effects {
         this.dummy.position.set(p.x, p.y, p.z);
         this.dummy.quaternion.copy(this.camera.quaternion);
         this.dummy.rotateZ(p.angle);
+        const distance = this.camera.position.distanceTo(this.dummy.position),
+          focal =
+            this.viewportHeight /
+            (2 * Math.tan((this.camera.fov * Math.PI) / 360));
+        const size =
+          projectedFragmentSize(p.size, p.enemyWidth, distance, focal) *
+          (0.55 + fade * 0.45);
         this.dummy.scale.set(
-          p.size * (0.5 + fade * 0.5),
-          p.size * (0.5 + fade * 0.5) * 0.75,
+          size * (p.stretch > 2 ? 0.42 : 1),
+          size * p.stretch,
           1,
         );
         this.dummy.updateMatrix();
@@ -723,7 +879,7 @@ export class Effects {
       if (f.life > 0 || !f.seen) {
         const age = f.seen ? f.max - f.life : Math.min(0.025, f.max - f.life),
           t = Math.min(1, age / f.max),
-          scale = (0.035 + t * 0.075) * f.scale;
+          scale = (0.2 + 0.26 * (1 - Math.exp(-age * 45))) * f.scale;
         this.point
           .set(
             this.camera.position.x - f.x,
@@ -738,14 +894,17 @@ export class Effects {
           f.z + this.point.z,
         );
         this.dummy.quaternion.copy(this.camera.quaternion);
+        this.dummy.rotateZ(f.rotation);
         this.dummy.scale.setScalar(scale);
         this.dummy.updateMatrix();
         this.flashMesh.setMatrixAt(flashes, this.dummy.matrix);
+        this.flashMesh.setColorAt(flashes, this.tintColor.set(f.color));
         this.flashAlpha.setX(flashes++, 1 - t);
         f.seen = true;
       }
     this.flashMesh.count = flashes;
     this.flashMesh.instanceMatrix.needsUpdate = true;
+    this.flashMesh.instanceColor!.needsUpdate = true;
     this.flashAlpha.needsUpdate = true;
     const radius = 1 + (1 - this.ringLife / 0.6) * 6;
     for (let i = 0; i <= 64; i++)

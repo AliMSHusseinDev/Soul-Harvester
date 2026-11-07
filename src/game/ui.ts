@@ -4,6 +4,7 @@ import { WAVE_LIMIT } from "./waves";
 export const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
   document.getElementById(id) as T;
 export class UI {
+  private highlightAnimation: Animation | null = null;
   private toastTime = 0;
   private bannerTime = 0;
   private damage = 0;
@@ -103,6 +104,14 @@ export class UI {
       );
     this.syncHealth();
   }
+  levelHighlight(reduced: boolean) {
+    if (reduced) return;
+    this.highlightAnimation?.cancel();
+    this.highlightAnimation = $("level-highlight").animate(
+      [{ opacity: 0 }, { opacity: 0.15, offset: 0.15 }, { opacity: 0 }],
+      { duration: 280 },
+    );
+  }
   pickup(kind: "gold" | "xp", value: number) {
     if (kind === "gold") {
       $("coins-value").textContent = String(this.battle.coins);
@@ -151,6 +160,7 @@ export class UI {
     $("damage-overlay").style.opacity = ".5";
   }
   reset() {
+    this.highlightAnimation?.cancel();
     this.damage = 0;
     this.pickupTotal = 0;
     clearTimeout(this.pickupTime);

@@ -1,23 +1,52 @@
 import { it, expect } from "vitest";
 import * as THREE from "three";
 import { backdropGeometry, backdropHeight, coniferGeometry } from "./scenery";
+import { islandHeight, ISLAND_BOUNDS, OCEAN_Y } from "./island";
+import { landHeight } from "./terrain";
 import { surfaceUV } from "./surfaces";
 import { spriteGeometry } from "./sprite-geometry";
-it("keeps decorative mountains outside the play area and the ravine", () => {
+it("builds a continuous island with no internal boundary edges, floating ridges or deleted river strip", () => {
   const g = backdropGeometry(),
     p = g.attributes.position,
-    ix = g.index!;
+    ix = g.index!,
+    edges = new Map<string, number>();
   for (let i = 0; i < ix.count; i += 3) {
     const a = ix.getX(i),
       b = ix.getX(i + 1),
-      c = ix.getX(i + 2),
-      x = (p.getX(a) + p.getX(b) + p.getX(c)) / 3,
-      z = (p.getZ(a) + p.getZ(b) + p.getZ(c)) / 3;
-    expect(Math.abs(x) < 29 && z > -80 && z < 28).toBe(false);
-    expect(z > -18 && z < 6).toBe(false);
+      c = ix.getX(i + 2);
+    for (const [u, v] of [
+      [a, b],
+      [b, c],
+      [c, a],
+    ]) {
+      const k = u < v ? `${u}:${v}` : `${v}:${u}`;
+      edges.set(k, (edges.get(k) ?? 0) + 1);
+    }
+  }
+  for (const [key, count] of edges)
+    if (count === 1) {
+      const [a, b] = key.split(":").map(Number);
+      const exterior = (axis: "x" | "z", min: number, max: number) => {
+        const av = axis === "x" ? p.getX(a) : p.getZ(a),
+          bv = axis === "x" ? p.getX(b) : p.getZ(b);
+        return av === bv && (av === min || av === max);
+      };
+      expect(
+        exterior("x", ISLAND_BOUNDS.minX, ISLAND_BOUNDS.maxX) ||
+          exterior("z", ISLAND_BOUNDS.minZ, ISLAND_BOUNDS.maxZ),
+      ).toBe(true);
+    }
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i),
+      z = p.getZ(i);
+    expect(Number.isFinite(g.attributes.normal.getY(i))).toBe(true);
+    if (Math.abs(x) < 27 && z >= -66 && z <= 26 && (z <= -14 || z >= 2))
+      expect(p.getY(i)).toBeCloseTo(landHeight(x, z), 4);
   }
   expect(backdropHeight(20, -60)).toBe(0);
   expect(backdropHeight(90, -60)).toBeGreaterThan(25);
+  expect(islandHeight(210, 0)).toBeLessThan(OCEAN_Y);
+  expect(islandHeight(18, -6)).toBeLessThan(OCEAN_Y);
   g.dispose();
 });
 it("gives differently sized stone faces the same world texel scale", () => {

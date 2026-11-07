@@ -58,6 +58,7 @@ try {
       { surface },
       { guardAtlas, GUARD_FRAMES },
       { GunVFX },
+      { CinematicTime },
     ] = await Promise.all([
       import("/node_modules/three/build/three.module.js"),
       import("/src/game/battle.ts"),
@@ -68,6 +69,7 @@ try {
       import("/src/game/surfaces.ts"),
       import("/src/game/textures.ts"),
       import("/src/game/gun-vfx.ts"),
+      import("/src/game/cinematic-time.ts"),
     ]);
     await document.fonts.ready;
     document.querySelector("#loading")?.remove();
@@ -109,10 +111,13 @@ try {
       ui = new UI(b, w, () => {});
     v.resize(600);
     const gun = new GunVFX(scene, camera);
+    const cinematic = new CinematicTime();
     gun.resize(600);
     const player = { x: 0, z: -33, y: 0 },
       f = { freeze: true, time: 0, b, v, en, w, ui };
     window.__polish = f;
+    f.cinematic = cinematic;
+    f.minTimeScale = 1;
     Object.assign(b.enemies[0], {
       active: true,
       x: -0.75,
@@ -142,13 +147,16 @@ try {
       for (const e of b.events) {
         if (e.kind === "hit") {
           v.number(e.x, e.z, e.value, e.y, e.critical);
-          v.impact(e.x, e.y ?? 1, e.z, e.critical, e.bullet === true);
+          if (!e.killed)
+            v.impact(e.x, e.y ?? 1, e.z, e.critical, e.bullet === true);
         } else if (e.kind === "kill") v.death(e.x, e.z, e.value);
         else if (e.kind === "gold" || e.kind === "xp") {
           v.pickup(e.kind, e.x, e.z, e.y);
           if (e.kind === "gold") gold += e.value;
           else xp += e.value;
         } else if (e.kind === "level") {
+          cinematic.trigger();
+          ui.levelHighlight(false);
           ui.levelUp(e.value);
           v.levelUp(player.x, player.z);
         }
@@ -179,6 +187,18 @@ try {
       w.update(0.15, f.time, 0, false);
       v.cast(w.castOrigin(), true);
     };
+    f.adsFlash = () => {
+      w.reset();
+      for (let i = 0; i < 100; i++) w.update(1 / 60, 0, 0, false, true);
+      w.fire();
+      w.update(0.01, 0, 0, false, true);
+    };
+    f.kill = () => {
+      v.reset();
+      b.damageEnemy(0, 10000, player, 0);
+      drain();
+      v.step(0.025, 0);
+    };
     f.flash = () => {
       w.reset();
       w.update(0, 0, 0, false);
@@ -205,6 +225,7 @@ try {
       return gun.diagnostics();
     };
     f.impact = () => {
+      v.reset();
       v.impact(0, 2.5, -36, false, true);
       v.step(0.025, 0.145);
     };
@@ -215,6 +236,8 @@ try {
       return v.diagnostics();
     };
     f.loot = () => {
+      cinematic.reset();
+      f.minTimeScale = 1;
       b.reset();
       v.reset();
       ui.reset();
@@ -254,9 +277,12 @@ try {
       const dt = f.freeze ? 0 : Math.min((now - last) / 1000, 1 / 30);
       last = now;
       if (dt) {
-        f.time += dt;
-        b.update(dt, player);
-        v.step(dt, f.time);
+        const scale = cinematic.update(dt);
+        f.minTimeScale = Math.min(f.minTimeScale, scale);
+        const gameDt = dt * scale;
+        f.time += gameDt;
+        b.update(gameDt, player);
+        v.step(gameDt, f.time);
         drain();
       }
       w.update(0, f.time, 0, false);
@@ -276,21 +302,32 @@ try {
         .getContext()
         .readPixels(
           360,
-          370,
+          390,
           80,
-          100,
+          80,
           renderer.getContext().RGBA,
           renderer.getContext().UNSIGNED_BYTE,
           pixels,
         );
-      f.coralPixels = 0;
+      f.goldPixels = 0;
       for (let i = 0; i < pixels.length; i += 4)
         if (
           pixels[i] > 150 &&
-          pixels[i + 2] > pixels[i + 1] * 1.05 &&
-          pixels[i] > pixels[i + 1] * 1.25
+          pixels[i + 2] < pixels[i + 1] * 0.8 &&
+          pixels[i] > pixels[i + 1] * 1.05
         )
-          f.coralPixels++;
+          f.goldPixels++;
+      const deathPixels = new Uint8Array(120 * 150 * 4),
+        gl = renderer.getContext();
+      gl.readPixels(280, 150, 120, 150, gl.RGBA, gl.UNSIGNED_BYTE, deathPixels);
+      f.redPixels = 0;
+      for (let i = 0; i < deathPixels.length; i += 4)
+        if (
+          deathPixels[i] > 140 &&
+          deathPixels[i] > deathPixels[i + 1] * 1.6 &&
+          deathPixels[i] > deathPixels[i + 2] * 1.4
+        )
+          f.redPixels++;
     };
     requestAnimationFrame(tick);
   });
@@ -315,7 +352,7 @@ try {
     () => window.__polish.v.diagnostics().numbers,
   );
   assert.ok(
-    numbers.some((n) => n.critical && n.value === 28.5) &&
+    numbers.some((n) => n.critical && n.value === 29) &&
       numbers.some((n) => !n.critical && n.value === 19),
   );
   await page.screenshot({ path: "artifacts/polish-critical.png" });
@@ -324,13 +361,16 @@ try {
   const impact = await page.evaluate(() => window.__polish.v.diagnostics());
   assert.ok(impact.shards >= 7 && impact.flashes >= 1);
   assert.ok(
-    await page.evaluate(() => window.__polish.coralPixels > 0),
-    "coral instance fragments must render in color, not black",
+    await page.evaluate(() => window.__polish.goldPixels > 0),
+    "gold instance fragments must render in color, not black",
   );
   await page.screenshot({ path: "artifacts/polish-impact.png" });
   await page.evaluate(() => window.__polish.flash());
   await frame();
   await page.screenshot({ path: "artifacts/polish-muzzle-flash.png" });
+  await page.evaluate(() => window.__polish.adsFlash());
+  await frame();
+  await page.screenshot({ path: "artifacts/polish-muzzle-ads.png" });
   await page.evaluate(() => window.__polish.clearFlash());
   await page.evaluate(() => window.__polish.cast());
   await frame();
@@ -343,8 +383,15 @@ try {
   const priority = await page.evaluate(() => window.__polish.priority());
   assert.ok(
     priority.numbers.length <= 32 &&
-      priority.numbers.some((n) => n.critical && n.value === 28.5) &&
+      priority.numbers.some((n) => n.critical && n.value === 29) &&
       priority.numberTextures <= 64,
+  );
+  await page.evaluate(() => window.__polish.kill());
+  await frame();
+  await page.screenshot({ path: "artifacts/polish-death-red.png" });
+  assert.ok(
+    await page.evaluate(() => window.__polish.redPixels > 1800),
+    "finishing corpse must visibly flash crimson while preserving alpha",
   );
   await page.evaluate(() => window.__polish.loot());
   await page.waitForFunction(
@@ -370,6 +417,18 @@ try {
     points: window.__polish.b.points,
     fx: window.__polish.v.diagnostics(),
   }));
+  await page.waitForFunction(
+    () => !window.__polish.cinematic.active,
+    undefined,
+    { timeout: 60000 },
+  );
+  assert.ok(
+    await page.evaluate(
+      () =>
+        window.__polish.minTimeScale <= 0.36 &&
+        window.__polish.cinematic.scale === 1,
+    ),
+  );
   assert.ok(rewards.coins > 40 && rewards.level > 1 && rewards.points > 4);
   assert.ok(rewards.fx.numberTextures <= 64);
   assert.deepEqual(errors, []);

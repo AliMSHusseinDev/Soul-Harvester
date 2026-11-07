@@ -26,6 +26,25 @@ try {
   await page.locator("#loading").waitFor({ state: "detached" });
   await page.locator("#enter").click();
   await wait(() => window.__soulHarvester().active);
+  await page.keyboard.down("KeyW");
+  await page.keyboard.down("ShiftLeft");
+  await wait(() => window.__soulHarvester().stamina === 0);
+  assert.equal(
+    await page
+      .locator("#stamina")
+      .evaluate((el) => el.getBoundingClientRect().width),
+    0,
+  );
+  await page.keyboard.up("ShiftLeft");
+  await page.keyboard.up("KeyW");
+  await wait(
+    () =>
+      window.__soulHarvester().stamina > 0.35 &&
+      window.__soulHarvester().fireReady,
+  );
+  console.log(
+    "PASS: sprint fully depletes stamina and the rendered fill reaches exact zero",
+  );
   const checks = async () =>
     page.evaluate(() => {
       const c = document.querySelector("#crosshair"),
@@ -104,6 +123,16 @@ try {
       getComputedStyle(document.querySelector("#crosshair")).opacity === "0",
   );
   const ammo = (await state()).ammo;
+  await page.keyboard.down("Space");
+  await wait(
+    () =>
+      !window.__soulHarvester().grounded &&
+      window.__soulHarvester().weaponPose === "SprintAirborne",
+  );
+  assert.equal((await state()).fireReady, false);
+  await page.screenshot({ path: "artifacts/handling-sprint-air.png" });
+  await page.keyboard.up("Space");
+  await wait(() => window.__soulHarvester().grounded);
   await page.screenshot({ path: "artifacts/handling-sprint.png" });
   await page.mouse.click(400, 250);
   await wait(() => window.__soulHarvester().ammo < 30);
