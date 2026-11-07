@@ -1,59 +1,5 @@
 import * as THREE from "three";
 import { seededRandom } from "./math";
-export function stoneTexture() {
-  const c = document.createElement("canvas");
-  c.width = c.height = 256;
-  const ctx = c.getContext("2d")!;
-  const rng = seededRandom(231);
-  ctx.fillStyle = "#252d2a";
-  ctx.fillRect(0, 0, 256, 256);
-  for (let y = 0; y < 4; y++)
-    for (let x = -1; x < 4; x++) {
-      const px = x * 85 + (y % 2) * 42,
-        py = y * 64;
-      const shade = Math.floor(65 + rng() * 22);
-      ctx.fillStyle = `rgb(${shade},${shade + 6},${shade + 1})`;
-      ctx.fillRect(px + 3, py + 3, 80, 58);
-      ctx.fillStyle = "#70776a44";
-      ctx.fillRect(px + 3, py + 3, 80, 2);
-      ctx.fillStyle = "#14201c88";
-      ctx.fillRect(px + 3, py + 58, 80, 3);
-    }
-  for (let i = 0; i < 18000; i++) {
-    const x = rng() * 256,
-      y = rng() * 256;
-    ctx.fillStyle = rng() > 0.5 ? "#a3a49015" : "#0c151a22";
-    ctx.fillRect(x, y, 1 + rng() * 3, 1 + rng() * 2);
-  }
-  for (let i = 0; i < 120; i++) {
-    ctx.fillStyle = "#33432b55";
-    ctx.fillRect(rng() * 256, rng() * 256, 3 + rng() * 12, 2 + rng() * 4);
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 4;
-  return t;
-}
-export function groundTexture() {
-  const c = document.createElement("canvas");
-  c.width = c.height = 512;
-  const ctx = c.getContext("2d")!,
-    r = seededRandom(45);
-  ctx.fillStyle = "#304837";
-  ctx.fillRect(0, 0, 512, 512);
-  for (let i = 0; i < 70000; i++) {
-    const k = r();
-    ctx.fillStyle = k < 0.4 ? "#10291b44" : k < 0.8 ? "#58703c33" : "#8b876422";
-    ctx.fillRect(r() * 512, r() * 512, 1 + r() * 4, 1 + r() * 3);
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.repeat.set(14, 18);
-  t.anisotropy = 8;
-  return t;
-}
 /** Original hand-drawn sprite, rasterized at 40px to retain the reference's hybrid style. */
 export function shadeTexture(variant = 0) {
   const c = document.createElement("canvas");
@@ -256,42 +202,5 @@ export function guardTexture(kind = 0) {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.magFilter = t.minFilter = THREE.NearestFilter;
-  return t;
-}
-
-export function cloudTexture() {
-  const c = document.createElement("canvas");
-  c.width = 1024;
-  c.height = 512;
-  const g = c.getContext("2d")!,
-    r = seededRandom(992);
-  g.fillStyle = "#000";
-  g.fillRect(0, 0, 1024, 512);
-  g.lineCap = "round";
-  for (let i = 0; i < 55; i++) {
-    const x = r() * 1250 - 150,
-      y = 80 + r() * 190,
-      len = 120 + r() * 500,
-      bend = (r() - 0.5) * 90;
-    g.beginPath();
-    g.moveTo(x, y);
-    g.bezierCurveTo(
-      x + len * 0.28,
-      y + bend,
-      x + len * 0.7,
-      y - bend * 0.8,
-      x + len,
-      y - 15 - r() * 35,
-    );
-    g.lineWidth = 2 + r() * 13;
-    g.strokeStyle = `rgba(220,240,225,${0.06 + r() * 0.19})`;
-    g.shadowColor = "#dcefe6";
-    g.shadowBlur = 12 + r() * 20;
-    g.stroke();
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = THREE.RepeatWrapping;
-  t.minFilter = THREE.LinearMipmapLinearFilter;
-  t.magFilter = THREE.LinearFilter;
   return t;
 }

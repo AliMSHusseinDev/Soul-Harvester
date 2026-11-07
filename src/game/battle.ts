@@ -51,6 +51,7 @@ export interface Enemy extends Point {
   kind: number;
   wave: number;
   hitFlash: number;
+  damageStamp: number;
   reaction: number;
   spawnAge: number;
   spawnZone: number;
@@ -98,6 +99,7 @@ export class Battle {
       kind: 0,
       wave: 1,
       hitFlash: 0,
+      damageStamp: 0,
       reaction: 0,
       spawnAge: 0,
       spawnZone: -1,
@@ -117,6 +119,7 @@ export class Battle {
     clock: number;
   }[] = [];
   private completeEmitted = false;
+  private damageStamp = 0;
   readonly missiles: {
     active: boolean;
     x: number;
@@ -235,6 +238,7 @@ export class Battle {
       knockX: 0,
       knockZ: 0,
       hitFlash: 0,
+      damageStamp: 0,
       reaction: 0,
       spawnAge: 0,
       spawnZone: zone,
@@ -503,6 +507,7 @@ export class Battle {
     const e = this.enemies[id];
     if (!e?.active || this.phase === "lost") return false;
     e.hp -= damage;
+    e.damageStamp = ++this.damageStamp;
     e.hitFlash = COMBAT_FEEL.flashDuration;
     e.reaction = COMBAT_FEEL.reactionDuration;
     const d = Math.hypot(e.x - from.x, e.z - from.z) || 1;

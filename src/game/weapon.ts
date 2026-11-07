@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { damp, aimPose, springStep } from "./math";
-import { glowTexture } from "./textures";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { surface, surfaceUV } from "./surfaces";
 export type WeaponId = "rifle" | "pistol" | "blade";
 export const WEAPONS = {
   rifle: {
@@ -66,26 +67,36 @@ export class Weapon {
   private leftHand: THREE.Group;
   constructor(camera: THREE.PerspectiveCamera) {
     const steel = new THREE.MeshStandardMaterial({
-        color: 0x384b43,
-        metalness: 0.7,
-        roughness: 0.32,
+        map: surface("steel"),
+        color: 0xc1ccc2,
+        metalness: 0.45,
+        roughness: 0.6,
       }),
       gold = new THREE.MeshStandardMaterial({
-        color: 0xaf8a45,
+        map: surface("brass"),
+        color: 0xe2cd9b,
         metalness: 0.65,
         roughness: 0.42,
       }),
       wood = new THREE.MeshStandardMaterial({
-        color: 0x452b27,
+        map: surface("wood"),
+        color: 0xa38b70,
         roughness: 0.8,
       }),
       skin = new THREE.MeshStandardMaterial({
-        color: 0xbda28d,
+        map: surface("skin"),
+        color: 0xc5b7a7,
         roughness: 0.9,
       }),
       glove = new THREE.MeshStandardMaterial({
-        color: 0x292e29,
+        map: surface("leather"),
+        color: 0x637166,
         roughness: 0.9,
+      }),
+      recess = new THREE.MeshStandardMaterial({
+        map: surface("steel"),
+        color: 0x26352d,
+        roughness: 0.85,
       });
     const box = (
       g: THREE.Group,
@@ -97,7 +108,10 @@ export class Weapon {
       z: number,
       m: THREE.Material,
     ) => {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+      const mesh = new THREE.Mesh(
+        surfaceUV(new THREE.BoxGeometry(w, h, d), 0.2),
+        m,
+      );
       mesh.position.set(x, y, z);
       g.add(mesh);
       return mesh;
@@ -112,6 +126,19 @@ export class Weapon {
         rifle = id === "rifle",
         len = rifle ? 0.85 : 0.45;
       box(g, 0.13, 0.13, len, 0, 0.02, -len / 2, steel);
+      for (let i = 0; i < (rifle ? 4 : 2); i++) {
+        box(g, 0.004, 0.035, 0.045, 0.067, 0.025, -0.22 - i * 0.11, recess);
+        box(g, 0.004, 0.035, 0.045, -0.067, 0.025, -0.22 - i * 0.11, recess);
+      }
+      box(g, 0.006, 0.045, 0.12, 0.07, 0.015, -0.1, gold);
+      box(g, 0.006, 0.025, 0.08, 0.074, 0.02, -0.1, recess);
+      const muzzle = new THREE.Mesh(
+        surfaceUV(new THREE.CylinderGeometry(0.032, 0.037, 0.12, 8), 0.2),
+        steel,
+      );
+      muzzle.rotation.x = Math.PI / 2;
+      muzzle.position.set(0, 0.02, -len - 0.015);
+      g.add(muzzle);
       box(g, 0.15, 0.08, 0.28, 0, -0.06, 0, gold);
       box(g, 0.14, 0.22, 0.14, 0, -0.17, 0.12, wood).rotation.x = -0.2;
       box(g, 0.16, 0.06, len * 0.85, 0, 0.1, -len * 0.42, gold);
@@ -127,6 +154,8 @@ export class Weapon {
           steel,
         );
       box(g, 0.025, 0.06, 0.03, 0, 0.19, -len + 0.04, gold);
+      for (const x of [-0.04, 0.04])
+        box(g, 0.018, 0.045, 0.03, x, 0.16, -len + 0.04, steel);
       box(g, 0.025, 0.06, 0.03, -0.055, 0.19, 0.025, gold);
       box(g, 0.025, 0.06, 0.03, 0.055, 0.19, 0.025, gold);
       if (rifle) {
@@ -134,12 +163,11 @@ export class Weapon {
         box(g, 0.15, 0.13, 0.24, 0, -0.02, 0.23, wood);
       }
       box(g, 0.15, 0.15, 0.22, 0.02, -0.18, 0.16, glove);
-      const arm = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.078, 0.1, 0.65, 8),
+      const arm = forearmBetween(
+        new THREE.Vector3(0.025, -0.24, 0.18),
+        new THREE.Vector3(0.22, -0.4, 0.76),
         skin,
       );
-      arm.position.set(0.025, -0.3, 0.46);
-      arm.rotation.x = Math.PI / 2 - 0.15;
       g.add(arm);
       for (let i = 0; i < 4; i++)
         box(g, 0.027, 0.08, 0.13, -0.05 + i * 0.035, -0.12, 0.08, glove);
@@ -157,31 +185,53 @@ export class Weapon {
       this.group.add(g);
     }
     const blade = this.models.blade;
-    box(blade, 0.07, 0.07, 1.1, 0, 0, -0.2, wood);
+    box(blade, 0.065, 0.075, 0.28, 0, 0, 0.04, wood);
+    box(blade, 0.23, 0.045, 0.065, 0, 0.015, -0.12, gold);
+    box(blade, 0.08, 0.085, 0.04, 0, 0, 0.2, gold);
     const shape = new THREE.Shape();
-    shape.moveTo(0, 0);
-    shape.lineTo(0.5, 0.12);
-    shape.quadraticCurveTo(0.8, 0.05, 0.9, -0.2);
-    shape.quadraticCurveTo(0.45, 0.1, 0.2, -0.2);
-    shape.lineTo(0, -0.12);
+    shape.moveTo(-0.075, 0);
+    shape.lineTo(0.075, 0);
+    shape.lineTo(0.065, 0.4);
+    shape.lineTo(0, 0.65);
+    shape.lineTo(-0.065, 0.4);
+    shape.closePath();
     const edge = new THREE.Mesh(
-      new THREE.ExtrudeGeometry(shape, { depth: 0.025, bevelEnabled: false }),
-      gold,
+      new THREE.ExtrudeGeometry(shape, {
+        depth: 0.025,
+        bevelEnabled: true,
+        bevelSegments: 1,
+        bevelSize: 0.012,
+        bevelThickness: 0.008,
+        steps: 1,
+      }),
+      new THREE.MeshStandardMaterial({
+        map: surface("steel"),
+        color: 0x65d2d9,
+        emissive: 0x0b3840,
+        emissiveIntensity: 0.2,
+        metalness: 0.55,
+        roughness: 0.4,
+      }),
     );
-    edge.position.set(0, 0.08, -0.7);
+    edge.position.set(0, 0.025, -0.14);
     edge.rotation.x = -Math.PI / 2;
     blade.add(edge);
     box(blade, 0.15, 0.14, 0.2, 0, -0.08, 0.12, glove);
-    box(blade, 0.17, 0.16, 0.6, 0, -0.2, 0.45, skin);
+    blade.add(
+      forearmBetween(
+        new THREE.Vector3(0, -0.14, 0.16),
+        new THREE.Vector3(0.23, -0.35, 0.75),
+        skin,
+      ),
+    );
     this.group.add(blade);
     this.leftHand = new THREE.Group();
     box(this.leftHand, 0.17, 0.14, 0.2, 0, 0, 0, glove);
-    const forearm = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.072, 0.09, 0.5, 8),
+    const forearm = forearmBetween(
+      new THREE.Vector3(0, -0.055, 0.04),
+      new THREE.Vector3(-0.29, -0.3, 0.6),
       skin,
     );
-    forearm.position.set(0, -0.07, 0.25);
-    forearm.rotation.x = Math.PI / 2;
     this.leftHand.add(forearm);
     for (let i = 0; i < 4; i++)
       box(
@@ -192,12 +242,14 @@ export class Weapon {
         -0.05 + i * 0.035,
         0.06,
         -0.06,
-        skin,
+        glove,
       );
     this.group.add(this.leftHand);
+    for (const model of [...Object.values(this.models), this.leftHand])
+      batchModel(model);
     this.flash = new THREE.Sprite(
       new THREE.SpriteMaterial({
-        map: glowTexture(),
+        map: surface("flash"),
         color: 0xffe69a,
         transparent: true,
         blending: THREE.AdditiveBlending,
@@ -335,9 +387,12 @@ export class Weapon {
       cast = Math.sin((this.castTime / 0.55) * Math.PI),
       bob = reducedMotion ? 0 : Math.sin(time * 8) * Math.min(speed, 5) * 0.003;
     const pose = aimPose(this.aim);
+    const idle = reducedMotion
+      ? 0
+      : Math.sin(time * 1.6) * 0.001 * (1 - this.aim);
     this.group.position.set(
-      pose.x,
-      pose.y - reload * 0.14 + melee * 0.12 + bob * (1 - this.aim) * 0.6,
+      pose.x + idle * 0.5,
+      pose.y + idle - reload * 0.14 + melee * 0.12 + bob * (1 - this.aim) * 0.6,
       pose.z + this.recoil - melee * 0.35 + this.switchTime * 0.7,
     );
     this.group.rotation.set(
@@ -354,5 +409,56 @@ export class Weapon {
     );
     this.leftHand.rotation.set(cast * -0.9, reload * 0.6, -cast * 0.2);
     this.leftHand.visible = this.id === "rifle" || this.reloading || cast > 0;
+  }
+}
+function forearmBetween(
+  wrist: THREE.Vector3,
+  elbow: THREE.Vector3,
+  material: THREE.Material,
+) {
+  const direction = elbow.clone().sub(wrist),
+    mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.1, 0.075, direction.length(), 8),
+      material,
+    );
+  mesh.position.copy(wrist).addScaledVector(direction, 0.5);
+  mesh.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    direction.normalize(),
+  );
+  return mesh;
+}
+
+/** Static viewmodel parts share a handful of material draws; the hand rig still animates independently. */
+function batchModel(group: THREE.Group) {
+  const batches = new Map<
+    THREE.Material,
+    { geometries: THREE.BufferGeometry[]; objects: THREE.Mesh[] }
+  >();
+  for (const child of group.children) {
+    if (!(child instanceof THREE.Mesh) || Array.isArray(child.material))
+      continue;
+    child.updateMatrix();
+    const g = (
+      child.geometry.index
+        ? child.geometry.toNonIndexed()
+        : child.geometry.clone()
+    ).applyMatrix4(child.matrix);
+    let batch = batches.get(child.material);
+    if (!batch) {
+      batch = { geometries: [], objects: [] };
+      batches.set(child.material, batch);
+    }
+    batch.geometries.push(g);
+    batch.objects.push(child);
+  }
+  for (const [material, batch] of batches) {
+    const geometry = mergeGeometries(batch.geometries)!;
+    group.add(new THREE.Mesh(geometry, material));
+    for (const object of batch.objects) {
+      group.remove(object);
+      object.geometry.dispose();
+    }
+    batch.geometries.forEach((g) => g.dispose());
   }
 }

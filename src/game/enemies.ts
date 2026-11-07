@@ -4,6 +4,7 @@ import type { Battle, Enemy } from "./battle";
 import { groundHeight } from "./terrain";
 import { ENEMY_TYPES, ENEMY_CAPACITY } from "./waves";
 import { COMBAT_FEEL } from "./tuning";
+import { spriteGeometry } from "./sprite-geometry";
 function pose(e: Enemy, time: number) {
   const scale = ENEMY_TYPES[e.kind].scale,
     bob =
@@ -28,6 +29,7 @@ export class Enemies {
   private flashes: THREE.InstancedBufferAttribute[] = [];
   private time = 0;
   private flashing = 0;
+  private renderedHits = new Float64Array(ENEMY_CAPACITY);
   constructor(
     scene: THREE.Scene,
     private battle: Battle,
@@ -36,13 +38,14 @@ export class Enemies {
       const texture = guardTexture(k),
         image = texture.image as HTMLCanvasElement;
       this.alpha.push(image.getContext("2d")!.getImageData(0, 0, 32, 40).data);
-      const geometry = new THREE.PlaneGeometry(1.25, 1.65),
+      const geometry = spriteGeometry(this.alpha[k], 32, 40, 1.25, 1.65),
         flash = new THREE.InstancedBufferAttribute(
           new Float32Array(ENEMY_CAPACITY),
           1,
         ),
         material = new THREE.MeshBasicMaterial({
           map: texture,
+          vertexColors: true,
           alphaTest: 0.25,
           side: THREE.DoubleSide,
         });
@@ -99,8 +102,16 @@ export class Enemies {
         .set(e.windup > 0 ? 0xffb59a : 0xe3f1e3)
         .multiplyScalar(0.55 + p.emergence * 0.45);
       mesh.setColorAt(i, this.tint);
-      this.flashes[e.kind].setX(i, e.hitFlash / COMBAT_FEEL.flashDuration);
-      if (e.hitFlash > 0) this.flashing++;
+      // A short flash must survive at least one rendered frame after simulation catch-up.
+      const pending =
+          e.damageStamp > 0 && e.damageStamp !== this.renderedHits[e.id],
+        flash = Math.max(
+          e.hitFlash / COMBAT_FEEL.flashDuration,
+          pending ? 0.9 : 0,
+        );
+      this.flashes[e.kind].setX(i, flash);
+      this.renderedHits[e.id] = e.damageStamp;
+      if (flash > 0) this.flashing++;
     }
     for (let k = 0; k < 4; k++) {
       const mesh = this.meshes[k];
@@ -125,7 +136,7 @@ export class Enemies {
     for (const e of this.battle.enemies) {
       if (!e.active) continue;
       const p = pose(e, time),
-        centre = new THREE.Vector3(e.x, p.y, e.z),
+        centre = new THREE.Vector3(e.x, p.y, e.z).addScaledVector(normal, 0.04),
         t = normal.dot(centre.clone().sub(ray.origin)) / denom;
       if (t < 0) continue;
       const point = ray.at(t, new THREE.Vector3()),

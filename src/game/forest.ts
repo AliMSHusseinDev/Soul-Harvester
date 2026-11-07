@@ -11,7 +11,7 @@ export interface ForestTree {
 export const FOREST_TREES: readonly ForestTree[] = (() => {
   const r = seededRandom(8003),
     trees: ForestTree[] = [];
-  for (let row = 0; row < 5; row++)
+  for (let row = 0; row < 7; row++)
     for (let i = 0; i < 43; i++) {
       const x = (i - 21) * 4 + (r() - 0.5) * 2.2,
         z = -65.5 - row * 8 - r() * 2.5,
@@ -24,7 +24,7 @@ export const FOREST_TREES: readonly ForestTree[] = (() => {
         shade: 0.7 + r() * 0.3,
       });
     }
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 220; i++) {
     const x = (i % 2 ? 1 : -1) * (31 + r() * 28),
       z = 31 - r() * 106;
     if (isRiver(x, z)) continue;

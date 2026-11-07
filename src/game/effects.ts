@@ -4,6 +4,7 @@ import { groundHeight } from "./terrain";
 import { ENEMY_TYPES } from "./waves";
 import type { Battle } from "./battle";
 import { COMBAT_FEEL, LOOT_FEEL } from "./tuning";
+import { surface } from "./surfaces";
 interface Particle {
   life: number;
   max: number;
@@ -70,7 +71,7 @@ export class Effects {
     const points = new THREE.Points(
       this.geometry,
       new THREE.PointsMaterial({
-        map: glowTexture(),
+        map: surface("spark"),
         size: COMBAT_FEEL.particleSize,
         vertexColors: true,
         transparent: true,
@@ -89,7 +90,8 @@ export class Effects {
         12,
       ),
       new THREE.MeshStandardMaterial({
-        color: 0xe8b74c,
+        map: surface("coin"),
+        color: 0xffedc6,
         metalness: 0.4,
         roughness: 0.42,
         emissive: 0xa85c0c,
@@ -100,11 +102,12 @@ export class Effects {
     this.crystalMesh = new THREE.InstancedMesh(
       new THREE.OctahedronGeometry(LOOT_FEEL.xpRadius),
       new THREE.MeshStandardMaterial({
-        color: 0x42b7e4,
+        map: surface("crystal"),
+        color: 0x72d9f5,
         roughness: 0.35,
         metalness: 0.15,
         emissive: 0x1878b0,
-        emissiveIntensity: 0.35,
+        emissiveIntensity: 0.48,
         flatShading: true,
       }),
       battle.drops.length,
@@ -344,6 +347,7 @@ export class Effects {
         d.kind === "gold" ? Math.PI / 2 : 0,
         time * 2 + d.id,
         0,
+        "YXZ",
       );
       // Shrink as it reaches the player, avoiding a screen-filling pickup in the near plane.
       const scale = d.magnet

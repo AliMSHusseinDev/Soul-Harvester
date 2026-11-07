@@ -1096,6 +1096,42 @@ dialog .primary {
     font-size: 6px;
   }
 }
+@media (max-height: 520px) {
+  .masthead {
+    padding: 14px 24px;
+  }
+  .intro {
+    top: 82px;
+    bottom: 16px;
+    overflow: auto;
+    max-width: 86vw;
+  }
+  h1 {
+    font-size: clamp(38px, 6vw, 52px);
+    margin: 12px 0;
+  }
+  .lede {
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .menu-actions {
+    flex-direction: row;
+    width: min(540px, 86vw);
+    margin-top: 12px;
+  }
+  .menu-actions .primary,
+  .menu-actions .secondary {
+    flex: 1;
+    padding: 12px;
+    min-height: 42px;
+    font-size: 9px;
+  }
+  .menu-footer,
+  .build-note,
+  .scene-label {
+    display: none;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

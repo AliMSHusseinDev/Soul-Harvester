@@ -23,6 +23,7 @@ import { MAP, groundHeight } from "./game/terrain";
 import { LIGHTING, COMBAT_FEEL } from "./game/tuning";
 import { HitFeedback, shotTarget } from "./game/feedback";
 import { WAVE_LIMIT } from "./game/waves";
+import { surfaceSummary } from "./game/surfaces";
 async function boot() {
   const canvas = $<HTMLCanvasElement>("world");
   const renderer = new THREE.WebGLRenderer({
@@ -468,7 +469,7 @@ async function boot() {
     $("hitmarker").classList.toggle("show", feedback.remaining > 0);
     $("hitmarker").classList.toggle("kill", feedback.kill);
     $("crosshair").classList.toggle("confirmed", feedback.remaining > 0);
-    world.update(ambientTime);
+    world.update(ambientTime, camera.position);
     if (bellTimer > 0) {
       bellTimer = Math.max(0, bellTimer - dt);
       world.bell.rotation.z =
@@ -499,7 +500,7 @@ async function boot() {
   Object.defineProperty(window, "__soulHarvester", {
     value: () => ({
       ready: true,
-      version: "0.4.0",
+      version: "0.5.0",
       active,
       started,
       softwareRenderer: software,
@@ -581,6 +582,7 @@ async function boot() {
         geometries: renderer.info.memory.geometries,
         textures: renderer.info.memory.textures,
       },
+      surfaces: surfaceSummary(),
     }),
     writable: false,
   });

@@ -59,7 +59,7 @@ export const LOOT_FEEL = {
   xpRadius: 0.095,
 } as const;
 export const COMBAT_FEEL = {
-  flashDuration: 0.115,
+  flashDuration: 0.085,
   flashStrength: 0.86,
   reactionDuration: 0.18,
   hitMarkerDuration: 0.14,
@@ -70,11 +70,11 @@ export const COMBAT_FEEL = {
 } as const;
 export const LIGHTING = {
   exposure: 1.16,
-  moon: 3.6,
-  sky: 1.9,
-  fill: 0.85,
+  moon: 3.0,
+  sky: 1.3,
+  fill: 0.6,
   fogDensity: 0.0105,
   torch: 22,
-  viewSky: 1.6,
+  viewSky: 1.0,
   viewKey: 1.5,
 } as const;

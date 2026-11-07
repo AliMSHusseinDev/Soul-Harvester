@@ -47,12 +47,16 @@ The browser suite uses `/usr/bin/chromium` by default; set `CHROMIUM_PATH` to an
 - `src/game/battle.ts`: renderer-independent concurrent waves, combat, aggro, damage, economy, XP and upgrade simulation.
 - `src/game/navigation.ts`: shared Dijkstra flow fields with a binary min-heap, non-corner-cutting grid paths, line-of-sight queries, and a spatial hash for local crowd separation.
 - `src/game/terrain.ts`: a C2-continuous raised-keep ramp shared by scenery, collision, AI, pickups and effects.
-- `src/game/world.ts`: seeded original environment, instanced grass/masonry, merged static props, huge moon, moving cloud shader, lanterns, a landmark tree, tiered forest silhouettes, NPCs and bell.
+- `src/game/world.ts`: seeded original environment, instanced pixel-cut grass/masonry, merged static props, huge moon, seamless direction-space clouds, lanterns, a landmark tree, layered pixel-cut forest silhouettes, NPCs and bell.
 - `src/game/player.ts`: fixed-step acceleration, gravity, circle/AABB collision substeps, prop landing, sprint hysteresis, high jump and double jump.
-- `src/game/weapon.ts`: original weapon models, ammunition, reload/weapon switching, critically damped recoil spring, aim-down-sights, melee and casting motion.
-- `src/game/enemies.ts`: four instanced billboard batches, alpha-aware analytical hit tests, walk animation and telegraphed attacks.
+- `src/game/weapon.ts`: textured, batched weapon models and tapered forearms, ammunition, reload/weapon switching, critically damped recoil spring, aim-down-sights, melee and casting motion.
+- `src/game/enemies.ts`: four instanced shallow 3D sprite batches, alpha-aware analytical hit tests, pixel-boundary extrusion, walk animation, brief body flashes and telegraphed attacks.
 - `src/game/waves.ts`: deterministic escalating count/type quotas and ten concurrent wave jobs; each enemy retains its source wave.
 - `src/game/loot.ts`: persistent gold/XP drops, ballistic pop/bounce, collision-safe movement and delayed spring attraction.
+- `src/game/surfaces.ts`: cached original pixel tiles and shared world-space texel mapping.
+- `src/game/sky.ts`: camera-centred cloud/sky shader with no UV wrap seam, luminous lunar disk and halo.
+- `src/game/scenery.ts`: crossed pixel foliage, grass tufts and a valley backdrop excluded from playable ground and the ravine.
+- `src/game/sprite-geometry.ts`: shallow sprite extrusion with alpha-preserving fronts and shaded pixel boundary walls.
 - `src/game/tuning.ts`: central difficulty, spawn cadence, economy, physics, feedback and lighting parameters.
 - `src/game/spawning.ts` / `forest.ts`: stratified forest zones, prevalidated reachable positions, spacing and shared trunk obstacles.
 - `src/game/rewards.ts`: type/wave-based loot probabilities, bounded dry streaks and reliable XP.
@@ -64,7 +68,7 @@ The browser suite uses `/usr/bin/chromium` by default; set `CHROMIUM_PATH` to an
 - `src/game/audio.ts`: original opt-in synthesized ambience, shots, bell, magic and effects.
 - `src/main.ts`: lifecycle and coordination of these systems, occluded shooting, event handling and separate world/viewmodel rendering.
 
-All game visuals and audio are generated locally. Fonts are self-hosted; licenses are in `public/licenses/`. The uploaded reference is analyzed in `docs/reference-analysis.md`; no reference artwork, extracted weapon models or game code is redistributed.
+All game visuals and audio are generated locally. Surface tiles use nearest magnification with mipmapped minification to keep nearby pixels sharp and reduce distant shimmer. The sky is sampled in 3D direction space and follows the camera; it has no texture-wrap seam or far-plane edge. Low-poly valley slopes, pixel foliage and fog provide depth without a postprocessing pipeline. Fonts are self-hosted; licenses are in `public/licenses/`. The uploaded reference is analyzed in `docs/reference-analysis.md`; no reference artwork, extracted weapon models or game code is redistributed.
 
 ## Combat and progression
 
@@ -108,8 +112,12 @@ In the repository's **Settings → Pages**, set **Source** to **GitHub Actions**
 
 ### Local production build
 
-Run `npm run build` followed by `npm run preview -- --port 4173`. Use the existing browser-check instructions above. `vite.config.ts` makes all built asset paths relative, so the same build can run on a root domain or inside a GitHub Pages project path. The JavaScript bundle is about 165 KB gzipped before fonts; Vite reports its advisory about the uncompressed Three.js bundle size.
+Run `npm run build` followed by `npm run preview -- --port 4173`. Use the existing browser-check instructions above. `vite.config.ts` makes all built asset paths relative, so the same build can run on a root domain or inside a GitHub Pages project path. The JavaScript bundle is about 168 KB gzipped before fonts; Vite reports its advisory about the uncompressed Three.js bundle size.
 
 Public hosting must be verified after the hosting account's deployment succeeds. Do not treat a saved environment draft, a ZIP archive, or a localhost address as a public game link.
 
 Each cloud task already has an isolated checkout. Use the existing repository; do not create another Git worktree unless explicitly requested.
+
+### Visual verification
+
+With the production preview running, use `npm run test:visual` to capture the moonlit forest, the new dagger, rifle ADS and all four sky directions. The helper checks sight alignment and renderer errors. The full browser suite remains the behavioral regression test. Art direction is original pixel-textured 3D with low-poly scenery and shallow extruded enemy sprites; it does not redistribute Minecraft or reference-game assets.

@@ -13,7 +13,7 @@ const browser = await chromium.launch({
   ],
 });
 const page = await browser.newPage({
-  viewport: { width: 800, height: 500 },
+  viewport: { width: 640, height: 400 },
   deviceScaleFactor: 1,
 });
 const errors = [];
@@ -22,7 +22,7 @@ page.on("console", (m) => {
   if (m.type() === "error") errors.push(m.text());
 });
 const state = () => page.evaluate(() => window.__soulHarvester());
-const wait = (p) => page.waitForFunction(p, undefined, { timeout: 60000 });
+const wait = (p) => page.waitForFunction(p, undefined, { timeout: 90000 });
 let mx = 0,
   my = 0;
 async function enter() {
