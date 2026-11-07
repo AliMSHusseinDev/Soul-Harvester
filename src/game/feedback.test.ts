@@ -14,8 +14,11 @@ it("preserves kill priority during rapid hits and clears in simulation time", ()
   expect(f.kill).toBe(false);
   expect(f.remaining).toBeGreaterThan(0);
   f.confirm(true);
+  f.update(0.2);
+  const killRemaining = f.remaining;
   f.confirm(false);
   expect(f.kill).toBe(true);
+  expect(f.remaining).toBe(killRemaining);
   f.update(1);
   expect(f.remaining).toBe(0);
   expect(f.kill).toBe(false);

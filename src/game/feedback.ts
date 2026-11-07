@@ -4,7 +4,9 @@ export class HitFeedback {
   remaining = 0;
   kill = false;
   confirm(kill: boolean) {
-    this.kill = kill || (this.remaining > 0 && this.kill);
+    // Preserve a recent kill without letting subsequent ordinary hits extend it forever.
+    if (!kill && this.kill && this.remaining > 0) return;
+    this.kill = kill;
     this.remaining = this.kill
       ? COMBAT_FEEL.killMarkerDuration
       : COMBAT_FEEL.hitMarkerDuration;
