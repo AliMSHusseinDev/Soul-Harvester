@@ -2,7 +2,7 @@
   "sheets": [
     {
       "kind": "normal",
-      "source": "White Particles.png",
+      "source": "Yellow Spark.png",
       "canvasSize": [314, 314],
       "anchor": [0.5, 0.5],
       "background": "alpha",
@@ -27,7 +27,7 @@
     },
     {
       "kind": "critical",
-      "source": "Yellow Spark.png",
+      "source": "White Particles.png",
       "canvasSize": [314, 314],
       "anchor": [0.5, 0.5],
       "background": "alpha",

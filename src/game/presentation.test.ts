@@ -47,3 +47,20 @@ it("bounds colorful shard bursts and releases every slot without touching game e
   expect(p.items.every((p) => p.life === 0 && p.y >= 0.04)).toBe(true);
   expect(p.spawn(0, 1, 0, 8)).toBe(8);
 });
+it("keeps number motion finite, strictly rising and continuous through the pop peak", () => {
+  for (const critical of [false, true]) {
+    let previous = -1;
+    for (let step = 0; step <= 120; step++) {
+      const pose = damageNumberPose(step / 120, critical, 17);
+      expect(pose.rise).toBeGreaterThanOrEqual(previous);
+      expect(pose.scale).toBeGreaterThan(0);
+      expect(pose.opacity).toBeGreaterThanOrEqual(0);
+      expect(pose.opacity).toBeLessThanOrEqual(1);
+      expect(Number.isFinite(pose.rotation)).toBe(true);
+      previous = pose.rise;
+    }
+    const left = damageNumberPose(0.065 - 0.00001, critical, 17).scale;
+    const right = damageNumberPose(0.065 + 0.00001, critical, 17).scale;
+    expect(Math.abs(right - left)).toBeLessThan(0.000001);
+  }
+});

@@ -62,7 +62,21 @@ try {
     ["critical", "death", "normal"],
   );
   console.log("Original atlases loaded in the production game");
+  const assets = (await state()).lootRender.combatSprites.assets;
+  assert.equal(
+    assets.find((a) => a.kind === "normal").source,
+    "Yellow Spark.png",
+  );
+  assert.equal(
+    assets.find((a) => a.kind === "critical").source,
+    "White Particles.png",
+  );
   await page.evaluate(() => {
+    const canvas = document.querySelector("#world"),
+      gl = canvas.getContext("webgl2"),
+      sampleWidth = Math.min(120, canvas.width),
+      sampleHeight = Math.min(90, Math.floor(canvas.height / 2) - 10),
+      pixels = new Uint8Array(sampleWidth * sampleHeight * 4);
     const c = (window.__combatCapture = { phase: "far", images: {}, seen: {} });
     const sample = () => {
       const s = window.__soulHarvester(),
@@ -73,7 +87,36 @@ try {
           b = s.lootRender.combatSprites.frames.find((b) => b.kind === kind);
         if (b) {
           (c.seen[key] ??= []).push(b.frame);
-          if (!c.images[key] && b.age >= 0.065 && b.age < 0.22)
+          const captureAfter =
+            kind === "death" ? 0.18 : kind === "critical" ? 0.14 : 0.1;
+          if (
+            !c.images[key] &&
+            b.age >= captureAfter &&
+            b.age < (kind === "death" ? 0.5 : 0.32)
+          ) {
+            gl.readPixels(
+              Math.floor((canvas.width - sampleWidth) / 2),
+              // A lethal body hit lands below the sight. Ordinary/head hits
+              // are sampled above it, excluding the golden weapon itself.
+              Math.floor(canvas.height / 2) +
+                (kind === "death" ? -sampleHeight : 10),
+              sampleWidth,
+              sampleHeight,
+              gl.RGBA,
+              gl.UNSIGNED_BYTE,
+              pixels,
+            );
+            const visiblePixels = { gold: 0, white: 0, red: 0 };
+            for (let i = 0; i < pixels.length; i += 4) {
+              const r = pixels[i],
+                g = pixels[i + 1],
+                b = pixels[i + 2];
+              if (r > 150 && g > 100 && b < g * 0.75 && r > g * 1.02)
+                visiblePixels.gold++;
+              if (r > 230 && g > 230 && b > 220) visiblePixels.white++;
+              // Ruby fragments contain blue; the brown rifle does not.
+              if (r > 100 && r > g * 1.5 && b > g * 1.05) visiblePixels.red++;
+            }
             c.images[key] = {
               data: document.querySelector("#world").toDataURL("image/png"),
               sample: {
@@ -82,9 +125,13 @@ try {
                 burst: b,
                 render: s.lootRender.combatSprites,
                 legacyFlashes: s.lootRender.flashes,
+                legacyShards: s.lootRender.shards,
+                numbers: s.lootRender.numbers,
+                visiblePixels,
                 position: s.position,
               },
             };
+          }
         }
       }
       requestAnimationFrame(sample);
@@ -164,6 +211,17 @@ try {
       `${kind} captured from actual damage`,
     );
     console.log(`Captured real ${kind} damage with original art`);
+    const numberState = (await state()).lootRender.numbers;
+    assert.ok(
+      numberState.some((n) => n.visible),
+      "real damage creates readable screen-space text",
+    );
+    for (const n of numberState.filter((n) => n.visible))
+      assert.ok(
+        n.offsetY <= -42 && n.worldY >= n.floor + 0.35 - 1e-6 && n.y >= 12,
+        "real labels stay above the floor",
+      );
+    await page.screenshot({ path: `artifacts/actual-ui-${kind}.png` });
   }
   const capture = await page.evaluate(() => window.__combatCapture),
     report = {};
@@ -175,6 +233,24 @@ try {
     report[key] = image.sample;
     if (key.startsWith("near-")) {
       assert.equal(image.sample.legacyFlashes, 0);
+      assert.equal(image.sample.legacyShards, 0);
+      const p = image.sample.visiblePixels;
+      console.log(key, p);
+      if (key === "near-normal")
+        assert.ok(
+          p.gold >= 8,
+          "yellow-sheet pixels must be visible above the weapon and moving actor",
+        );
+      if (key === "near-critical")
+        assert.ok(
+          p.white >= 12 && p.gold >= 2,
+          "white-star core and yellow edges must reach the framebuffer",
+        );
+      if (key === "near-death")
+        assert.ok(
+          p.red >= 8,
+          "red chunks remain visible after the brief actor flash ends",
+        );
       assert.ok(
         new Set(capture.seen[key]).size >= 2,
         "Authored frames actually advance",

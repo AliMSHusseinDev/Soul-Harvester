@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { COMBAT_ASSETS } from "./combat-assets";
+import type { WorldVisibility } from "./world-visibility";
 import {
   CombatBursts,
   CombatCoverage,
@@ -24,6 +25,7 @@ interface Batch {
 const DRAW_PRIORITY = ["death", "critical", "normal"] as const;
 /** Three cached textures / at most three draws, with independent per-instance UVs. */
 export class CombatSpriteRenderer {
+  readonly scene = new THREE.Scene();
   readonly pool = new CombatBursts();
   readonly ready: Promise<void>;
   private batches = new Map<CombatEffectKind, Batch>();
@@ -42,9 +44,9 @@ export class CombatSpriteRenderer {
   private errors: string[] = [];
   private visible = 0;
   constructor(
-    private scene: THREE.Scene,
     private camera: THREE.PerspectiveCamera,
     sheets: readonly CombatSheet[] = COMBAT_ASSETS,
+    private visibility?: WorldVisibility,
   ) {
     const kinds = new Set<CombatEffectKind>();
     for (const sheet of sheets) {
@@ -97,14 +99,12 @@ export class CombatSpriteRenderer {
       const material = new THREE.MeshBasicMaterial({
         map: texture,
         transparent: true,
-        depthTest: true,
+        // The struck moving actor must not swallow its own hit animation.
+        // World walls/terrain are rejected by the shared visibility BVH instead.
+        depthTest: false,
         depthWrite: false,
-        // Raycast hits lie on the shallow enemy front: bias coplanar fragments
-        // without moving the logical world-space impact or bypassing wall depth.
-        polygonOffset: true,
-        polygonOffsetFactor: -1,
-        polygonOffsetUnits: -2,
         toneMapped: false,
+        fog: false,
         alphaTest: 0.015,
         side: THREE.DoubleSide,
         blending: THREE.NormalBlending,
@@ -239,9 +239,13 @@ export class CombatSpriteRenderer {
           .applyMatrix4(camera.matrixWorldInverse);
         const depth = -this.local.z;
         this.depths[i] = depth;
-        const width =
-          combatSpriteWidth(kind, b.enemyWidth, depth, focal, viewportHeight) *
-          (reduced ? 0.85 : 1);
+        const width = combatSpriteWidth(
+          kind,
+          b.enemyWidth,
+          depth,
+          focal,
+          viewportHeight,
+        );
         this.sphere.center.set(
           b.x + b.offsetX,
           b.y + b.offsetY,
@@ -250,7 +254,8 @@ export class CombatSpriteRenderer {
         this.sphere.radius = Math.hypot(width, width / aspect);
         if (
           depth < camera.near + 0.08 ||
-          !this.frustum.intersectsSphere(this.sphere)
+          !this.frustum.intersectsSphere(this.sphere) ||
+          this.visibility?.occluded(camera.position, this.sphere.center)
         ) {
           this.pool.presented(b);
           continue;
@@ -311,6 +316,11 @@ export class CombatSpriteRenderer {
   diagnostics() {
     return {
       installed: Array.from(this.batches.keys()),
+      assets: Array.from(this.batches.values(), (b) => ({
+        kind: b.sheet.kind,
+        source: b.sheet.source,
+        url: b.sheet.url,
+      })),
       errors: [...this.errors],
       active: this.pool.items.filter((b) => b.active).length,
       visible: this.visible,

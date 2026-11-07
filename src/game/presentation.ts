@@ -2,15 +2,23 @@ import { seededRandom } from "./math";
 import { PRESENTATION as P } from "./tuning";
 export function damageNumberPose(age: number, critical: boolean, seed: number) {
   const life = critical ? P.criticalNumberLife : P.numberLife,
+    t = Math.max(0, Math.min(1, age / life)),
     pop =
-      age < 0.055
-        ? 0.75 + 0.4 * Math.sin((Math.min(1, age / 0.055) * Math.PI) / 2)
-        : 1 + 0.15 * Math.max(0, 1 - (age - 0.055) / 0.105) ** 2;
+      age < 0.065
+        ? 0.62 + 0.64 * Math.sin((Math.min(1, age / 0.065) * Math.PI) / 2)
+        : 1 + 0.26 * (1 + (age - 0.065) * 32) * Math.exp(-(age - 0.065) * 32),
+    fade = Math.max(0, Math.min(1, (1 - t) / 0.28));
   return {
     scale: (critical ? 1.3 : 1) * pop,
-    opacity: Math.max(0, Math.min(1, (life - age) / 0.25)),
-    rise: (1 - Math.exp(-age * 4.5)) * (critical ? 0.44 : 0.34),
-    side: Math.sin(seed * 2.39996) * (1 - Math.exp(-age * 4)) * 0.1,
+    opacity: fade * fade * (3 - 2 * fade),
+    rise:
+      ((1 - Math.exp(-t * 3.6)) / (1 - Math.exp(-3.6))) * (critical ? 72 : 52),
+    side:
+      Math.sin(seed * 2.39996) * (1 - Math.exp(-t * 5)) * (critical ? 15 : 10),
+    rotation:
+      Math.sin(seed * 2.39996) *
+      (critical ? 0.07 : 0.035) *
+      Math.exp(-age * 14),
     life,
   };
 }

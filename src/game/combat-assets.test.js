@@ -4,6 +4,24 @@ import { COMBAT_ASSETS } from "./combat-assets";
 import { validateCombatSheet } from "./combat-sprites";
 
 it("ships all three original combat animations with valid RGBA atlases and sixteen frames each", () => {
+  const config = JSON.parse(
+    readFileSync(
+      new URL("../../assets/source/combat/import.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  expect(config.sheets.find((s) => s.kind === "normal").source).toBe(
+    "Yellow Spark.png",
+  );
+  expect(config.sheets.find((s) => s.kind === "critical").source).toBe(
+    "White Particles.png",
+  );
+  expect(COMBAT_ASSETS.find((s) => s.kind === "normal").source).toBe(
+    "Yellow Spark.png",
+  );
+  expect(COMBAT_ASSETS.find((s) => s.kind === "critical").source).toBe(
+    "White Particles.png",
+  );
   expect(COMBAT_ASSETS.map((s) => s.kind).sort()).toEqual([
     "critical",
     "death",

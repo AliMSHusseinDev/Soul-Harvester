@@ -74,8 +74,8 @@ export const MOTION = {
 export const PRESENTATION = {
   burstWindup: 0.12,
   orbWindup: 0.16,
-  numberLife: 0.7,
-  criticalNumberLife: 0.82,
+  numberLife: 0.82,
+  criticalNumberLife: 1.0,
   shardCapacity: 640,
   flashCapacity: 40,
   labelCapacity: 32,
@@ -87,7 +87,7 @@ export const PRESENTATION = {
 } as const;
 export const COMBAT_FEEL = {
   flashDuration: 0.12,
-  flashStrength: 0.9,
+  flashStrength: 0.6,
   reactionDuration: 0.18,
   hitMarkerDuration: 0.2,
   killMarkerDuration: 0.25,

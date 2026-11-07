@@ -142,3 +142,20 @@ it("uses directional medium fragments, finishing colors and stable drag integrat
   expect(g.attributes.position.count).toBe(48);
   expect(projectedFragmentSize(0.1, 1.25, 60, 700)).toBeLessThanOrEqual(0.15);
 });
+it("reserves upward-only label lanes and never pushes existing text downwards", () => {
+  const layout = new LabelLayout(),
+    placements: { dx: number; dy: number; visible: boolean }[] = [];
+  layout.begin();
+  for (let i = 0; i < 32; i++) {
+    const p = layout.place(320, 220, 38, 20, 640, 400);
+    expect(p.visible).toBe(true);
+    expect(p.dy).toBeLessThanOrEqual(-42);
+    placements.push(p);
+  }
+  layout.begin();
+  for (const prior of placements) {
+    const next = layout.place(320, 214, 38, 20, 640, 400, prior.dx, prior.dy);
+    expect(next.visible).toBe(true);
+    expect(next.dy).toBeLessThanOrEqual(prior.dy);
+  }
+});

@@ -145,7 +145,7 @@ def prepare(entry, base):
         metadata.append({"x": x, "y": y, "width": w, "height": h,
                          "coverage": round(sum(i * n for i, n in enumerate(histogram)) / (255 * w * h), 6)})
     checker.alpha_composite(atlas)
-    sheet = {"kind": kind, "url": f"vfx/combat/{kind}.png", "width": atlas.width,
+    sheet = {"kind": kind, "source": source.name, "url": f"vfx/combat/{kind}.png", "width": atlas.width,
              "height": atlas.height, "anchor": anchor, "frames": metadata}
     if fps is not None:
         sheet["fps"] = fps
@@ -168,7 +168,10 @@ def build(config_path):
     out.mkdir(parents=True, exist_ok=True)
     review.mkdir(parents=True, exist_ok=True)
     for sheet, atlas, checker, report in prepared:
-        atlas.save(out / f"{sheet['kind']}.png", optimize=True)
+        target = out / f"{sheet['kind']}.png"
+        atlas.save(target, optimize=True)
+        content_hash = hashlib.sha256(target.read_bytes()).hexdigest()[:12]
+        sheet["url"] += f"?v={content_hash}"
         checker.convert("RGB").save(review / f"{sheet['kind']}-review.png")
     # URLs follow the document's project path; no root-relative /vfx paths.
     sheets = json.dumps([p[0] for p in prepared], indent=2)

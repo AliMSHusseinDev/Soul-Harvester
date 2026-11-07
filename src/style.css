@@ -584,6 +584,52 @@ h1 em {
 .crosshair.sprinting {
   opacity: 0;
 }
+.damage-numbers {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 6;
+  contain: layout style paint;
+}
+.damage-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: #f4fff0;
+  font:
+    600 22px/1.15 "Pixelify Sans",
+    monospace;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  -webkit-text-stroke: 2.5px #0b2421;
+  paint-order: stroke fill;
+  text-shadow:
+    0 3px 0 #061714,
+    2px 3px 0 #061714;
+  transform-origin: center;
+  will-change: transform, opacity;
+  user-select: none;
+}
+.damage-label[data-critical="true"] {
+  color: #ffda64;
+  -webkit-text-stroke-color: #452b1c;
+  text-shadow: 0 3px 0 #6c3b22;
+}
+.damage-label[data-critical="true"]::before {
+  content: "✦";
+  font-size: 15px;
+  margin-right: 3px;
+  vertical-align: 2px;
+}
+.damage-label[data-headshot="true"] {
+  color: #ffaf77;
+}
+.damage-label[data-kill="true"] {
+  text-shadow:
+    0 3px 0 #742b30,
+    2px 3px 0 #25191c;
+}
 .hitmarker {
   position: absolute;
   left: 50%;

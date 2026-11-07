@@ -321,10 +321,6 @@ async function boot() {
     raycaster.setFromCamera(center, camera);
     accuracy.fired(ACCURACY[weapon.id]);
     direction.copy(raycaster.ray.direction);
-    effects.shell(
-      camera.position,
-      new THREE.Vector3(Math.cos(input.yaw), 0, -Math.sin(input.yaw)),
-    );
     const hit = enemies.raycast(raycaster.ray, time, input.yaw)[0];
     let solidDistance = Infinity;
     for (const box of occluders) {
@@ -695,15 +691,17 @@ async function boot() {
       renderer.clearDepth();
       renderer.render(viewScene, camera);
     }
+    renderer.render(effects.impactScene, camera);
   }
   renderer.compile(scene, camera);
+  renderer.compile(effects.impactScene, camera);
   requestAnimationFrame(animate);
   $("loading").classList.add("done");
   window.setTimeout(() => $("loading").remove(), 800);
   Object.defineProperty(window, "__soulHarvester", {
     value: () => ({
       ready: true,
-      version: "0.9.1",
+      version: "0.10.0",
       timeScale: cinematic.scale,
       cinematicActive: cinematic.active,
       stamina: player.stamina,

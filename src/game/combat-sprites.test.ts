@@ -87,9 +87,9 @@ it("preserves enemy-relative scale at both resolutions and caps near-eye coverag
   for (const height of [720, 1080]) {
     const focal = height / (2 * Math.tan(Math.PI / 6));
     for (const [kind, ratio, cap] of [
-      ["normal", 0.42, 0.12],
-      ["critical", 0.62, 0.16],
-      ["death", 0.9, 0.22],
+      ["normal", 0.62, 0.14],
+      ["critical", 0.82, 0.18],
+      ["death", 0.95, 0.23],
     ] as const) {
       expect(
         combatSpriteWidth(kind, 1.25, 10, focal, height) / 1.25,

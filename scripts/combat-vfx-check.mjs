@@ -100,6 +100,8 @@ try {
         });
         renderer.setSize(width, height);
         renderer.setPixelRatio(1);
+        renderer.autoClear = false;
+        renderer.info.autoReset = false;
         renderer.outputColorSpace = T.SRGBColorSpace;
         const scene = new T.Scene();
         scene.background = new T.Color(0x173b3b);
@@ -116,7 +118,9 @@ try {
         const draw = () => {
           enemies.update(0, camera.rotation.y);
           effects.render(0);
+          renderer.info.reset();
           renderer.render(scene, camera);
+          renderer.render(effects.impactScene, camera);
         };
         const drain = () => {
           for (const e of battle.events) {
@@ -162,12 +166,11 @@ try {
           enemies.diagnostics().flashing === 1,
           "Enemy surface flashes independently",
         );
-        const normal = scene.getObjectByName("authored-combat-normal");
+        const normal = effects.impactScene.getObjectByName(
+          "authored-combat-normal",
+        );
         check(normal.count === 1, "Normal category draw");
-        const matrixBefore = Array.from(
-            effects.shardMesh.instanceMatrix.array.slice(0, 16),
-          ),
-          origin = normal.instanceMatrix.array.slice(12, 15),
+        const origin = normal.instanceMatrix.array.slice(12, 15),
           normalUV = Array.from(
             normal.geometry.attributes.combatRect.array.slice(0, 4),
           );
@@ -187,18 +190,13 @@ try {
               Math.abs(normalUV[component] - uv[instance * 4 + component]) >
               1e-6;
         check(advanced, "Elapsed time advances authored UVs");
-        const fixedMatrix = Array.from(
-          effects.shardMesh.instanceMatrix.array.slice(0, 16),
-        );
         camera.position.set(3.6, 1.3, -34.2);
         camera.lookAt(0, 1.1, -39);
         draw();
-        const movedMatrix = Array.from(
-          effects.shardMesh.instanceMatrix.array.slice(0, 16),
-        );
         check(
-          fixedMatrix.every((v, i) => Math.abs(v - movedMatrix[i]) < 1e-5),
-          "3D fragments do not billboard or follow camera motion",
+          effects.diagnostics().shards === 0 &&
+            effects.diagnostics().particles === 0,
+          "Damage uses original sheets without legacy cubes or points",
         );
         check(
           origin.every(
@@ -219,10 +217,6 @@ try {
           billboard.dot(cameraForward) > 0.9999,
           "Only the authored layer faces the active camera",
         );
-        check(
-          matrixBefore.some((v, i) => v !== fixedMatrix[i]),
-          "Fragments actually move and tumble over time",
-        );
         camera.position.set(0, 1.3, -33);
         camera.lookAt(0, 1.3, -39);
         draw();
@@ -234,8 +228,8 @@ try {
           "Critical metadata strengthens the same white surface flash",
         );
         check(
-          scene.getObjectByName("authored-combat-critical").count === 1 &&
-            normal.count === 0,
+          effects.impactScene.getObjectByName("authored-combat-critical")
+            .count === 1 && normal.count === 0,
           "Critical replaces normal artwork",
         );
         effects.reset();
@@ -248,8 +242,10 @@ try {
           "Exactly one lethal effect after repeated damage to a dead enemy",
         );
         check(
-          scene.getObjectByName("authored-combat-death").count === 1 &&
-            scene.getObjectByName("authored-combat-critical").count === 0,
+          effects.impactScene.getObjectByName("authored-combat-death").count ===
+            1 &&
+            effects.impactScene.getObjectByName("authored-combat-critical")
+              .count === 0,
           "Critical lethal prioritizes red, independently of the removed enemy",
         );
         check(
@@ -258,7 +254,9 @@ try {
         );
         effects.step(0.7, 0);
         draw();
-        const death = scene.getObjectByName("authored-combat-death"),
+        const death = effects.impactScene.getObjectByName(
+            "authored-combat-death",
+          ),
           last = sheets[2].frames.at(-1);
         check(
           Math.abs(
@@ -275,6 +273,7 @@ try {
         );
         effects.reset();
         effects.impact(0, 1.3, -39, false, true);
+        effects.step(0.12, 0);
         draw();
         // GPU pixel checks detect black quads and prove the sampled art reaches the framebuffer.
         const pixels = new Uint8Array(width * height * 4),
@@ -302,6 +301,7 @@ try {
         );
         wall.position.set(0, 1.3, -37);
         scene.add(wall);
+        effects.visibility.rebuild([new T.Box3().setFromObject(wall)]);
         draw();
         const center = new Uint8Array(4);
         gl.readPixels(
@@ -318,10 +318,13 @@ try {
           "Opaque world geometry correctly occludes the effects",
         );
         scene.remove(wall);
+        effects.visibility.rebuild([]);
         wall.geometry.dispose();
         wall.material.dispose();
         for (const kind of ["normal", "critical", "death"]) {
-          const mesh = scene.getObjectByName(`authored-combat-${kind}`),
+          const mesh = effects.impactScene.getObjectByName(
+              `authored-combat-${kind}`,
+            ),
             texture = mesh.material.map;
           check(
             texture.magFilter === T.NearestFilter &&
@@ -330,7 +333,7 @@ try {
             "Nearest filtering, no atlas mip bleed",
           );
           check(
-            mesh.material.depthTest &&
+            !mesh.material.depthTest &&
               !mesh.material.depthWrite &&
               !mesh.material.toneMapped,
             "Correct depth and unlit sprite color",
@@ -353,12 +356,14 @@ try {
           effects.step(1 / 60, frame / 60);
           effects.render(frame / 60);
           timings.push(performance.now() - start);
+          renderer.info.reset();
           renderer.render(scene, camera);
+          renderer.render(effects.impactScene, camera);
           if (frame === 60) baseline = { ...renderer.info.memory };
         }
         check(
           effects.diagnostics().combatSprites.active <= 48 &&
-            effects.diagnostics().shards <= 640,
+            effects.diagnostics().shards === 0,
           "Bounded sprite and fragment pools",
         );
         check(
@@ -396,7 +401,7 @@ try {
   );
   console.log(JSON.stringify(reports, null, 2));
   console.log(
-    `PASS: ${useOriginals ? "original user" : "diagnostic"} atlases, independent frames, world-space cubes, billboard orbit, occlusion, event priority, cleanup and bounded stress at 720p/1080p.`,
+    `PASS: ${useOriginals ? "original user" : "diagnostic"} atlases, independent frames, no legacy damage bursts, billboard orbit, occlusion, event priority, cleanup and bounded stress at 720p/1080p.`,
   );
 } finally {
   await browser?.close();

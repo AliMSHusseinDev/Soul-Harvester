@@ -272,6 +272,23 @@ try {
         bottomRight: toPixel(e.x + 0.625, 0),
       };
     };
+    f.labelRegression = (width, height) => {
+      f.freeze = true;
+      v.reset();
+      b.events.length = 0;
+      for (const e of b.enemies) e.active = false;
+      renderer.setSize(width, height);
+      camera.aspect = width / height;
+      camera.position.set(0, 1.72, -33);
+      camera.lookAt(0, 0.05, -39);
+      camera.updateProjectionMatrix();
+      camera.updateMatrixWorld();
+      v.resize(height);
+      for (let i = 0; i < 8; i++)
+        v.number(((i % 3) - 1) * 0.15, -39, 19 + i, 0.03, i % 3 === 0);
+      const floor = new T.Vector3(0, 0, -39).project(camera);
+      return (-floor.y * 0.5 + 0.5) * height;
+    };
     let last = performance.now();
     const tick = (now) => {
       requestAnimationFrame(tick);
@@ -298,6 +315,7 @@ try {
       renderer.render(scene, camera);
       renderer.clearDepth();
       renderer.render(view, camera);
+      renderer.render(v.impactScene, camera);
       const pixels = new Uint8Array(80 * 100 * 4);
       renderer
         .getContext()
@@ -360,9 +378,9 @@ try {
   await page.evaluate(() => window.__polish.impact());
   await frame();
   const impact = await page.evaluate(() => window.__polish.v.diagnostics());
-  // Coverage budgeting can attenuate fully overlapping birth fragments. Check
-  // visible output and the pool bound rather than prescribing an overlap count.
-  assert.ok(impact.shards > 0 && impact.shards <= 640);
+  // Verify the original yellow sheet reaches the framebuffer without legacy bursts.
+  assert.equal(impact.shards, 0, "legacy damage cubes are removed");
+  assert.equal(impact.particles, 0, "legacy point bursts are removed");
   assert.deepEqual(impact.combatSprites.installed.slice().sort(), [
     "critical",
     "death",
@@ -376,7 +394,7 @@ try {
   );
   assert.ok(
     await page.evaluate(() => window.__polish.goldPixels > 0),
-    "gold instance fragments must render in color, not black",
+    "original Yellow Spark pixels must render in color, not black",
   );
   await page.screenshot({ path: "artifacts/polish-impact.png" });
   await page.evaluate(() => window.__polish.flash());
@@ -446,6 +464,76 @@ try {
   assert.ok(rewards.coins > 40 && rewards.level > 1 && rewards.points > 4);
   assert.ok(rewards.fx.numberTextures <= 64);
   assert.deepEqual(errors, []);
+  for (const [width, height] of [
+    [1280, 720],
+    [1920, 1080],
+  ]) {
+    await page.setViewportSize({ width, height });
+    const floor = await page.evaluate(
+      ({ width, height }) => window.__polish.labelRegression(width, height),
+      { width, height },
+    );
+    let previous = new Map();
+    for (const dt of [0.02, 0.06, 0.1, 0.18, 0.25]) {
+      await page.evaluate((dt) => window.__polish.v.step(dt, 0), dt);
+      await frame();
+      const numbers = await page.evaluate(
+        () => window.__polish.v.diagnostics().numbers,
+      );
+      for (const n of numbers.filter((n) => n.visible)) {
+        assert.ok(
+          n.worldY >= n.floor + 0.35 - 1e-6 && n.offsetY <= -42,
+          "labels stay above terrain and use upward lanes",
+        );
+        assert.ok(
+          n.y < floor - 12 && n.y >= 12 && n.y < height,
+          "screen text cannot descend under the map",
+        );
+        if (previous.has(n.value))
+          assert.ok(
+            n.y <= previous.get(n.value),
+            "rising numbers never reverse downwards",
+          );
+        previous.set(n.value, n.y);
+      }
+      const boxes = await page
+        .locator(".damage-label:not([hidden])")
+        .evaluateAll((es) =>
+          es.map((e) => {
+            const r = e.getBoundingClientRect();
+            return {
+              left: r.left,
+              top: r.top,
+              right: r.right,
+              bottom: r.bottom,
+            };
+          }),
+        );
+      for (let i = 0; i < boxes.length; i++)
+        for (let j = i + 1; j < boxes.length; j++) {
+          const a = boxes[i],
+            b = boxes[j];
+          assert.ok(
+            a.right <= b.left ||
+              b.right <= a.left ||
+              a.bottom <= b.top ||
+              b.bottom <= a.top,
+            "visible number glyph boxes do not overlap",
+          );
+        }
+      if (dt === 0.1)
+        await page.screenshot({
+          path: `artifacts/damage-numbers-${height}p.png`,
+        });
+    }
+    await page.evaluate(() => window.__polish.v.step(2, 0));
+    await frame();
+    assert.equal(
+      await page.locator(".damage-label:not([hidden])").count(),
+      0,
+      "all DOM labels return to their pool",
+    );
+  }
   console.log(
     "PASS: four alpha-preserving sprite frames, white-body capture, normal/critical numbers, open-hand cast, forty-enemy loot stream and real level-up rewards",
   );

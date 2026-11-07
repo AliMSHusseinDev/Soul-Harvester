@@ -135,10 +135,7 @@ export class Enemies {
       const decay = Math.min(1, flash);
       this.flashes[e.kind].setX(
         i,
-        decay *
-          decay *
-          (3 - 2 * decay) *
-          (e.hitCritical ? 1 / COMBAT_FEEL.flashStrength : 1),
+        decay * decay * (3 - 2 * decay) * (e.hitCritical ? 1.2 : 1),
       );
       this.renderedHits[e.id] = e.damageStamp;
       const walking = Math.hypot(e.vx, e.vz) > 0.2;

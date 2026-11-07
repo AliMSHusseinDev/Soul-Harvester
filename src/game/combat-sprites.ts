@@ -11,6 +11,7 @@ export interface CombatFrame {
 export interface CombatSheet {
   kind: CombatEffectKind;
   url: string;
+  source?: string;
   width: number;
   height: number;
   frames: readonly CombatFrame[];
@@ -20,10 +21,10 @@ export interface CombatSheet {
 }
 export const COMBAT_PROFILES = {
   // Canvas ratios include the original transparent margins: peak visible art
-  // spans approximately 33% / 55% / 80% of the enemy width.
-  normal: { priority: 0, duration: 0.22, ratio: 0.42, maxScreen: 0.12 },
-  critical: { priority: 1, duration: 0.28, ratio: 0.62, maxScreen: 0.16 },
-  death: { priority: 2, duration: 0.56, ratio: 0.9, maxScreen: 0.22 },
+  // spans approximately 55% / 65% / 85% of the enemy width.
+  normal: { priority: 0, duration: 0.28, ratio: 0.62, maxScreen: 0.14 },
+  critical: { priority: 1, duration: 0.36, ratio: 0.82, maxScreen: 0.18 },
+  death: { priority: 2, duration: 0.6, ratio: 0.95, maxScreen: 0.23 },
 } as const;
 export const COMBAT_BUDGET = {
   capacity: 48,
