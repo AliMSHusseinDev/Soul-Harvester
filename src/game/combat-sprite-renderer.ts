@@ -31,6 +31,7 @@ export class CombatSpriteRenderer {
   private dummy = new THREE.Object3D();
   private projected = new THREE.Vector3();
   private local = new THREE.Vector3();
+  private normal = new THREE.Vector3();
   private view = new THREE.Matrix4();
   private frustum = new THREE.Frustum();
   private sphere = new THREE.Sphere();
@@ -52,8 +53,12 @@ export class CombatSpriteRenderer {
         throw new Error(`Duplicate combat sheet: ${sheet.kind}`);
       kinds.add(sheet.kind);
     }
-    // The empty catalog is intentional until the original attachments are available.
-    this.ready = Promise.all(sheets.map((s) => this.load(s))).then(() => {});
+    this.ready = Promise.all(sheets.map((s) => this.load(s))).then(() => {
+      if (!this.disposed && this.batches.size !== sheets.length)
+        throw new Error(
+          "Combat images could not load. Reload the game to retry.",
+        );
+    });
   }
   private async load(sheet: CombatSheet) {
     let texture: THREE.Texture | undefined;
@@ -159,9 +164,38 @@ export class CombatSpriteRenderer {
     enemyWidth: number,
     playbackSpeed = 1,
     duration?: number,
+    normal?: { x: number; y: number; z: number },
   ) {
     const batch = this.batches.get(kind);
     if (!batch) return false;
+    // Freeze a small surface lift at birth. The full billboard then clears the
+    // shallow enemy front even while aiming down/up; it never follows the camera.
+    this.local.set(0, 0, 1).applyQuaternion(this.camera.quaternion);
+    this.normal
+      .set(normal?.x ?? this.local.x, normal?.y ?? 0, normal?.z ?? this.local.z)
+      .normalize();
+    const cosine = this.normal.dot(this.local),
+      profile = COMBAT_PROFILES[kind],
+      distance = Math.hypot(
+        this.camera.position.x - x,
+        this.camera.position.y - y,
+        this.camera.position.z - z,
+      ),
+      widthBound = Math.min(
+        enemyWidth * profile.ratio * 1.35,
+        2 *
+          profile.maxScreen *
+          distance *
+          Math.tan((this.camera.fov * Math.PI) / 360),
+      ),
+      aspect = batch.sheet.frames[0].width / batch.sheet.frames[0].height,
+      lift =
+        0.012 +
+        widthBound *
+          0.5 *
+          Math.hypot(1, 1 / aspect) *
+          Math.sqrt(Math.max(0, 1 - cosine * cosine));
+    this.normal.multiplyScalar((cosine < 0 ? -1 : 1) * lift);
     this.pool.spawn(
       kind,
       x,
@@ -171,6 +205,7 @@ export class CombatSpriteRenderer {
       batch.sheet,
       playbackSpeed,
       duration,
+      this.normal,
     );
     // A budget rejection must not reintroduce the legacy full-sized flash.
     return true;
@@ -199,13 +234,19 @@ export class CombatSpriteRenderer {
       for (let i = 0; i < this.pool.items.length; i++) {
         const b = this.pool.items[i];
         if (!b.active || b.kind !== kind) continue;
-        this.local.set(b.x, b.y, b.z).applyMatrix4(camera.matrixWorldInverse);
+        this.local
+          .set(b.x + b.offsetX, b.y + b.offsetY, b.z + b.offsetZ)
+          .applyMatrix4(camera.matrixWorldInverse);
         const depth = -this.local.z;
         this.depths[i] = depth;
         const width =
           combatSpriteWidth(kind, b.enemyWidth, depth, focal, viewportHeight) *
           (reduced ? 0.85 : 1);
-        this.sphere.center.set(b.x, b.y, b.z);
+        this.sphere.center.set(
+          b.x + b.offsetX,
+          b.y + b.offsetY,
+          b.z + b.offsetZ,
+        );
         this.sphere.radius = Math.hypot(width, width / aspect);
         if (
           depth < camera.near + 0.08 ||
@@ -242,7 +283,11 @@ export class CombatSpriteRenderer {
           frame = this.pool.frame(b, batch.sheet.frames.length),
           uv = batch.uv[frame],
           width = this.widths[i];
-        this.dummy.position.set(b.x, b.y, b.z);
+        this.dummy.position.set(
+          b.x + b.offsetX,
+          b.y + b.offsetY,
+          b.z + b.offsetZ,
+        );
         this.dummy.quaternion.copy(camera.quaternion);
         this.dummy.rotateZ(b.rotation);
         this.dummy.scale.set(width, width / aspect, 1);
@@ -269,6 +314,21 @@ export class CombatSpriteRenderer {
       errors: [...this.errors],
       active: this.pool.items.filter((b) => b.active).length,
       visible: this.visible,
+      rendered: {
+        normal: this.batches.get("normal")?.mesh.count ?? 0,
+        critical: this.batches.get("critical")?.mesh.count ?? 0,
+        death: this.batches.get("death")?.mesh.count ?? 0,
+      },
+      frames: this.pool.items
+        .filter((b) => b.active)
+        .map((b) => ({
+          kind: b.kind,
+          age: b.age,
+          frame: this.pool.frame(
+            b,
+            this.batches.get(b.kind)!.sheet.frames.length,
+          ),
+        })),
       capacity: COMBAT_BUDGET.capacity,
       replaced: this.pool.replaced,
       dropped: this.pool.dropped,

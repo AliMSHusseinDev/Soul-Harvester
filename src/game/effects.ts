@@ -471,6 +471,9 @@ export class Effects {
       y,
       z,
       1.25 * scale,
+      1,
+      undefined,
+      surfaceNormal,
     );
     const lowDetail =
       this.reduced ||

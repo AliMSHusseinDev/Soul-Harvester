@@ -43,6 +43,13 @@ class ImporterTests(unittest.TestCase):
             config["frameRects"][1][2] = 15
             with self.assertRaisesRegex(ValueError, "equal animation canvases"):
                 module.prepare(config, base)
+            config["canvasSize"] = [16, 16]
+            normalized, packed, _, _ = module.prepare(config, base)
+            first = normalized["frames"][0]
+            self.assertEqual(packed.getpixel((first["x"] + 9, first["y"] + 9)), (0, 255, 0, 96))
+            config["canvasSize"] = [8, 8]
+            with self.assertRaisesRegex(ValueError, "cannot crop"):
+                module.prepare(config, base)
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ export interface CombatFrame {
   y: number;
   width: number;
   height: number;
-  /** Fraction of non-transparent texels, used for conservative coverage budgeting. */
+  /** Mean alpha coverage, so faint authored wisps do not consume opaque coverage. */
   coverage: number;
 }
 export interface CombatSheet {
@@ -19,9 +19,11 @@ export interface CombatSheet {
   fps?: number;
 }
 export const COMBAT_PROFILES = {
-  normal: { priority: 0, duration: 0.22, ratio: 0.36, maxScreen: 0.12 },
-  critical: { priority: 1, duration: 0.28, ratio: 0.53, maxScreen: 0.16 },
-  death: { priority: 2, duration: 0.56, ratio: 0.78, maxScreen: 0.22 },
+  // Canvas ratios include the original transparent margins: peak visible art
+  // spans approximately 33% / 55% / 80% of the enemy width.
+  normal: { priority: 0, duration: 0.22, ratio: 0.42, maxScreen: 0.12 },
+  critical: { priority: 1, duration: 0.28, ratio: 0.62, maxScreen: 0.16 },
+  death: { priority: 2, duration: 0.56, ratio: 0.9, maxScreen: 0.22 },
 } as const;
 export const COMBAT_BUDGET = {
   capacity: 48,
@@ -100,6 +102,9 @@ export interface CombatBurst {
   x: number;
   y: number;
   z: number;
+  offsetX: number;
+  offsetY: number;
+  offsetZ: number;
   enemyWidth: number;
   age: number;
   duration: number;
@@ -118,6 +123,9 @@ export class CombatBursts {
       x: 0,
       y: 0,
       z: 0,
+      offsetX: 0,
+      offsetY: 0,
+      offsetZ: 0,
       enemyWidth: 1.25,
       age: 0,
       duration: 1,
@@ -138,6 +146,7 @@ export class CombatBursts {
     sheet: CombatSheet,
     playbackSpeed = 1,
     duration?: number,
+    offset?: { x: number; y: number; z: number },
   ) {
     if (
       ![x, y, z, enemyWidth, playbackSpeed].every(Number.isFinite) ||
@@ -185,6 +194,9 @@ export class CombatBursts {
       x,
       y,
       z,
+      offsetX: offset?.x ?? 0,
+      offsetY: offset?.y ?? 0,
+      offsetZ: offset?.z ?? 0,
       enemyWidth,
       age: 0,
       duration:

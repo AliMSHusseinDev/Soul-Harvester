@@ -109,6 +109,7 @@ try {
       en = new Enemies(scene, b),
       w = new Weapon(camera),
       ui = new UI(b, w, () => {});
+    await v.ready;
     v.resize(600);
     const gun = new GunVFX(scene, camera);
     const cinematic = new CinematicTime();
@@ -361,7 +362,18 @@ try {
   const impact = await page.evaluate(() => window.__polish.v.diagnostics());
   // Coverage budgeting can attenuate fully overlapping birth fragments. Check
   // visible output and the pool bound rather than prescribing an overlap count.
-  assert.ok(impact.shards > 0 && impact.shards <= 640 && impact.flashes >= 1);
+  assert.ok(impact.shards > 0 && impact.shards <= 640);
+  assert.deepEqual(impact.combatSprites.installed.slice().sort(), [
+    "critical",
+    "death",
+    "normal",
+  ]);
+  assert.equal(impact.combatSprites.rendered.normal, 1);
+  assert.equal(
+    impact.flashes,
+    0,
+    "the authored sheet replaces the geometric flash",
+  );
   assert.ok(
     await page.evaluate(() => window.__polish.goldPixels > 0),
     "gold instance fragments must render in color, not black",

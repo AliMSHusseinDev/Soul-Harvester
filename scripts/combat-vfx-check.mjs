@@ -4,6 +4,7 @@ import { chromium } from "playwright";
 import { mkdir, writeFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 await mkdir("artifacts", { recursive: true });
+const useOriginals = process.env.VFX_ORIGINALS === "1";
 const server = await createServer({
   configFile: false,
   root: process.cwd(),
@@ -52,7 +53,7 @@ try {
     });
     await page.goto("http://127.0.0.1:5191/combat-fixture.html");
     const report = await page.evaluate(
-      async ({ width, height }) => {
+      async ({ width, height, useOriginals }) => {
         const [T, { Effects }, { Battle }, { Enemies }] = await Promise.all([
           import("/node_modules/three/build/three.module.js"),
           import("/src/game/effects.ts"),
@@ -62,7 +63,7 @@ try {
         const check = (value, reason) => {
           if (!value) throw new Error(reason);
         };
-        const sheets = ["normal", "critical", "death"].map((kind, category) => {
+        let sheets = ["normal", "critical", "death"].map((kind, category) => {
           const canvas = document.createElement("canvas"),
             columns = [4, 3, 5][category],
             rows = 2;
@@ -90,6 +91,8 @@ try {
             anchor: [0.5, 0.5],
           };
         });
+        if (useOriginals)
+          sheets = (await import("/src/game/combat-assets.ts")).COMBAT_ASSETS;
         const renderer = new T.WebGLRenderer({
           canvas: document.querySelector("canvas"),
           antialias: false,
@@ -175,10 +178,15 @@ try {
           uv[0] !== uv[4] || uv[1] !== uv[5],
           "Overlapping animations keep independent frames",
         );
-        check(
-          normalUV.some((v, i) => v !== uv[i]),
-          "Elapsed time advances authored UVs",
-        );
+        // Depth sorting may change upload order; the advancing burst need not
+        // remain in slot zero after another burst is spawned.
+        let advanced = false;
+        for (let instance = 0; instance < normal.count; instance++)
+          for (let component = 0; component < 4; component++)
+            advanced ||=
+              Math.abs(normalUV[component] - uv[instance * 4 + component]) >
+              1e-6;
+        check(advanced, "Elapsed time advances authored UVs");
         const fixedMatrix = Array.from(
           effects.shardMesh.instanceMatrix.array.slice(0, 16),
         );
@@ -369,11 +377,12 @@ try {
           cpuUpdateMeanMs: timings.reduce((a, b) => a + b, 0) / timings.length,
           cpuUpdateP95Ms: timings[Math.floor(timings.length * 0.95)],
           memory: { ...renderer.info.memory },
-          testArtwork:
-            "synthetic diagnostic atlas; original sheets unavailable",
+          testArtwork: useOriginals
+            ? "original user PNGs from Damage Particles.zip"
+            : "synthetic diagnostic atlas",
         };
       },
-      { width, height },
+      { width, height, useOriginals },
     );
     assert.deepEqual(errors, [], "Browser/shader errors");
     assert.deepEqual(report.diagnostic.combatSprites.errors, []);
@@ -387,7 +396,7 @@ try {
   );
   console.log(JSON.stringify(reports, null, 2));
   console.log(
-    "PASS: diagnostic atlas animation/alpha, independent frames, world-space cubes, billboard orbit, occlusion, event priority, cleanup and bounded stress at 720p/1080p. Original-art review still required.",
+    `PASS: ${useOriginals ? "original user" : "diagnostic"} atlases, independent frames, world-space cubes, billboard orbit, occlusion, event priority, cleanup and bounded stress at 720p/1080p.`,
   );
 } finally {
   await browser?.close();

@@ -82,7 +82,11 @@ def prepare(entry, base):
     mode = entry.get("background", "alpha")
     if mode not in {"alpha", "connected-black"}:
         raise ValueError("background must be alpha or connected-black")
-    canvas = None
+    requested_canvas = entry.get("canvasSize")
+    if requested_canvas is not None and (len(requested_canvas) != 2 or
+            any(not isinstance(n, int) or n < 1 for n in requested_canvas)):
+        raise ValueError("canvasSize must be an explicit positive [width,height]")
+    canvas = tuple(requested_canvas) if requested_canvas else None
     combined = None
     for rect in rects:
         if len(rect) != 4 or any(not isinstance(n, int) for n in rect):
@@ -90,12 +94,19 @@ def prepare(entry, base):
         x, y, w, h = rect
         if min(x, y) < 0 or min(w, h) < 1 or x + w > image.width or y + h > image.height:
             raise ValueError(f"Out-of-bounds frame in {kind}: {rect}")
-        if canvas is not None and canvas != (w, h):
+        if requested_canvas and (w > canvas[0] or h > canvas[1]):
+            raise ValueError("canvasSize cannot crop source frame pixels")
+        if not requested_canvas and canvas is not None and canvas != (w, h):
             raise ValueError("Use equal animation canvases; separately cropped frames would jitter")
-        canvas = (w, h)
+        if canvas is None:
+            canvas = (w, h)
         frame = image.crop((x, y, x + w, y + h))
         if mode == "connected-black":
             frame = remove_connected_black(frame, entry.get("blackThreshold", 0))
+        if frame.size != canvas:
+            normalized = Image.new("RGBA", canvas)
+            normalized.paste(frame, ((canvas[0] - w) // 2, (canvas[1] - h) // 2))
+            frame = normalized
         frames.append(frame)
         alpha = frame.getchannel("A")
         combined = ImageChops.lighter(combined, alpha) if combined else alpha.copy()
@@ -132,7 +143,7 @@ def prepare(entry, base):
         atlas.paste(cropped, (x, y))  # No alpha mask: preserve original semi-transparent texels exactly.
         histogram = cropped.getchannel("A").histogram()
         metadata.append({"x": x, "y": y, "width": w, "height": h,
-                         "coverage": round(sum(histogram[1:]) / (w * h), 6)})
+                         "coverage": round(sum(i * n for i, n in enumerate(histogram)) / (255 * w * h), 6)})
     checker.alpha_composite(atlas)
     sheet = {"kind": kind, "url": f"vfx/combat/{kind}.png", "width": atlas.width,
              "height": atlas.height, "anchor": anchor, "frames": metadata}
@@ -140,7 +151,8 @@ def prepare(entry, base):
         sheet["fps"] = fps
     report = {"kind": kind, "source": source.name, "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
               "originalSize": image.size, "frameRects": rects, "background": mode,
-              "unionCrop": bounds, "frameCount": len(frames), "atlasSize": atlas.size}
+              "unionCrop": bounds, "frameCanvas": canvas,
+              "frameCount": len(frames), "atlasSize": atlas.size}
     return sheet, atlas, checker, report
 
 
@@ -164,7 +176,7 @@ def build(config_path):
     catalog += f"const sheets = {sheets};\n"
     catalog += "export const COMBAT_ASSETS: readonly CombatSheet[] = sheets.map(s => ({ ...s, "
     catalog += "kind: s.kind as CombatSheet['kind'], anchor: s.anchor as [number, number], "
-    catalog += "url: new URL(s.url, document.baseURI).href }));\n"
+    catalog += "url: s.url }));\n"
     (ROOT / "src/game/combat-assets.ts").write_text(catalog)
     (review / "report.json").write_text(json.dumps([p[3] for p in prepared], indent=2))
     print(f"Prepared three ORIGINAL atlases; inspect checkerboard previews in {review}")
