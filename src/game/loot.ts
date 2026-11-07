@@ -17,6 +17,7 @@ export interface Drop extends Point {
   magnet: boolean;
   magnetAge: number;
   bounces: number;
+  acquireAfter: number;
 }
 export class Loot {
   readonly drops: Drop[] = Array.from(
@@ -36,6 +37,7 @@ export class Loot {
       magnet: false,
       magnetAge: 0,
       bounces: 0,
+      acquireAfter: F.magnetDelay,
     }),
   );
   private collected: (Point & {
@@ -44,6 +46,7 @@ export class Loot {
     y: number;
   })[] = [];
   private random = seededRandom(481);
+  private magnetBudget = 0;
   constructor(private navigation: Navigation) {}
   release(x: number, z: number, reward: Reward) {
     const startAngle = this.random() * Math.PI * 2;
@@ -71,11 +74,16 @@ export class Loot {
         magnet: false,
         magnetAge: 0,
         bounces: 0,
+        acquireAfter: F.magnetDelay + this.random() * F.acquisitionJitter,
       });
     }
   }
   update(dt: number, player: Point & { y?: number }, magnetism: number) {
     this.collected.length = 0;
+    this.magnetBudget = Math.min(
+      F.acquisitionPerStep * 2,
+      this.magnetBudget + dt * 60 * F.acquisitionPerStep,
+    );
     const targetY =
       (player.y ?? groundHeight(player.x, player.z)) + F.targetHeight;
     for (const d of this.drops) {
@@ -84,7 +92,22 @@ export class Loot {
       const distance = Math.hypot(d.x - player.x, d.z - player.z),
         inRange = distance < F.magnetRadius + magnetism * F.magnetPerPoint,
         clear = (d.magnet || inRange) && this.navigation.lineClear(d, player);
-      if (d.age >= F.magnetDelay && inRange && clear) d.magnet = true;
+      if (
+        !d.magnet &&
+        d.age >= d.acquireAfter &&
+        inRange &&
+        clear &&
+        this.magnetBudget >= 1
+      ) {
+        d.magnet = true;
+        this.magnetBudget--;
+        const dx = player.x - d.x,
+          dz = player.z - d.z,
+          len = Math.hypot(dx, dz) || 1,
+          curve = Math.sin(d.id * 2.39996) * 0.4;
+        d.vx -= (dz / len) * curve;
+        d.vz += (dx / len) * curve;
+      }
       if (distance > 13 || !clear) {
         d.magnet = false;
         d.magnetAge = 0;
@@ -167,6 +190,7 @@ export class Loot {
   }
   reset() {
     this.random = seededRandom(481);
+    this.magnetBudget = 0;
     this.collected.length = 0;
     for (const d of this.drops) d.active = false;
   }

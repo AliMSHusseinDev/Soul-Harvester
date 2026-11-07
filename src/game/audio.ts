@@ -94,13 +94,13 @@ export class Audio {
   reload() {
     this.tone(460, 0.06, 0.05, "square", 170);
   }
-  hit(kill = false) {
+  hit(kill = false, critical = false) {
     this.tone(
-      kill ? 1150 : 850,
-      kill ? 0.1 : 0.055,
+      kill ? 1150 : critical ? 1050 : 850,
+      kill ? 0.1 : critical ? 0.08 : 0.055,
       0.045,
       "triangle",
-      kill ? 1600 : 500,
+      kill ? 1600 : critical ? 1700 : 500,
     );
     if (kill) this.tone(1720, 0.14, 0.025, "sine", 2100);
   }
@@ -108,7 +108,9 @@ export class Audio {
     this.tone(95, 0.1, 0.035, "triangle", 45);
   }
   level() {
-    this.tone(650, 0.25, 0.06, "sine", 1300);
+    this.tone(650, 0.25, 0.05, "sine", 1300);
+    this.tone(975, 0.35, 0.03, "sine", 1460);
+    this.tone(1300, 0.45, 0.02, "sine", 1950);
   }
   bell() {
     for (const [f, v] of [

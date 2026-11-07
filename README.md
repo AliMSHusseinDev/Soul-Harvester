@@ -38,19 +38,23 @@ With the production preview running, in another terminal:
 
 ```sh
 GAME_URL=http://127.0.0.1:4173 npm run test:browser
+npm run test:visual
+npm run test:polish
 ```
 
 The browser suite uses `/usr/bin/chromium` by default; set `CHROMIUM_PATH` to another Chromium executable. It exercises actual pointer capture, character upgrades, movement, jump/landing, aiming, finite-ammo reloads, weapon switching, magic, bell collision/interaction, forest-wide spawning, white hit flashes, confirmed red hit markers, probabilistic loot collection, all ten stacked waves, shooting moving enemies, pause/resume, sound controls, and narrow-screen menu layout. Screenshots go to ignored `artifacts/`. Software WebGL is used for automation; those frame rates are not representative of GPU-equipped clients.
 
+`test:visual` uses the same `GAME_URL`/preview as the browser suite. `test:polish` starts its own isolated local fixture on port 5190. It renders the production enemy, weapon, effects and HUD classes in a controlled scene to inspect alpha-preserving flashes, normal/critical numbers, casting, loot streams and real level-up rewards. The fixture never ships with the game. See [the 0.6.0 report](docs/release-0.6.0.md) for the latest changes and validation.
+
 ## Architecture
 
 - `src/game/battle.ts`: renderer-independent concurrent waves, combat, aggro, damage, economy, XP and upgrade simulation.
-- `src/game/navigation.ts`: shared Dijkstra flow fields with a binary min-heap, non-corner-cutting grid paths, line-of-sight queries, and a spatial hash for local crowd separation.
+- `src/game/navigation.ts`: shared Dijkstra flow fields with a binary min-heap, validated path lookahead, bounded lane offsets, non-corner-cutting grid paths, line-of-sight queries, and a spatial hash for local crowd separation.
 - `src/game/terrain.ts`: a C2-continuous raised-keep ramp shared by scenery, collision, AI, pickups and effects.
 - `src/game/world.ts`: seeded original environment, instanced pixel-cut grass/masonry, merged static props, huge moon, seamless direction-space clouds, lanterns, a landmark tree, layered pixel-cut forest silhouettes, NPCs and bell.
 - `src/game/player.ts`: fixed-step acceleration, gravity, circle/AABB collision substeps, prop landing, sprint hysteresis, high jump and double jump.
 - `src/game/weapon.ts`: textured, batched weapon models and tapered forearms, ammunition, reload/weapon switching, critically damped recoil spring, aim-down-sights, melee and casting motion.
-- `src/game/enemies.ts`: four instanced shallow 3D sprite batches, alpha-aware analytical hit tests, pixel-boundary extrusion, walk animation, brief body flashes and telegraphed attacks.
+- `src/game/enemies.ts`: four instanced shallow 3D sprite batches with four-frame atlases, alpha-aware analytical hit tests, pixel-boundary extrusion, distance-driven walk animation, brief body flashes and telegraphed attacks.
 - `src/game/waves.ts`: deterministic escalating count/type quotas and ten concurrent wave jobs; each enemy retains its source wave.
 - `src/game/loot.ts`: persistent gold/XP drops, ballistic pop/bounce, collision-safe movement and delayed spring attraction.
 - `src/game/surfaces.ts`: cached original pixel tiles and shared world-space texel mapping.
@@ -61,7 +65,8 @@ The browser suite uses `/usr/bin/chromium` by default; set `CHROMIUM_PATH` to an
 - `src/game/spawning.ts` / `forest.ts`: stratified forest zones, prevalidated reachable positions, spacing and shared trunk obstacles.
 - `src/game/rewards.ts`: type/wave-based loot probabilities, bounded dry streaks and reliable XP.
 - `src/game/feedback.ts`: nearest-hit resolution and simulation-time hit/kill markers.
-- `src/game/effects.ts`: pooled impact particles, floating damage numbers, tumbling deaths, instanced coins/crystals, projectile sweeps and expanding spell ring.
+- `src/game/presentation.ts`: renderer-independent number animation, bounded tumbling pixel-shard pool and exactly-once ability presentation timers.
+- `src/game/effects.ts`: pooled layered impacts, critical-aware floating numbers, tumbling deaths, occasional tracers, instanced coins/crystals, projectile sweeps and expanding spell ring; physics and GPU uploads run separately.
 - `src/game/ui.ts`: vitality/base integrity, inventory, skill/stat panels, weapon upgrade shop and death/restart presentation.
 - `src/game/input.ts`: pointer lock, focus cleanup, aim and fire inputs.
 - `src/game/math.ts`: seeded randomness, fixed-step accumulator and collision helpers.
@@ -80,9 +85,13 @@ Wave sizes increase from 8 to 44 (four extra per wave), with guaranteed introduc
 
 Every kill leaves XP; gold is probabilistic. Base gold chances are 32% / 42% / 90% / 72% for hollowguard / ravener / brute / witch, with type-specific amounts and small wave bonuses. After three dry kills the chance rises; no run exceeds six consecutive dry kills. These are adjustable design values, not recovered reference-game rates.
 
-Drops launch upward/outward from the defeated enemy, bounce under lightweight gravity/drag and get a 0.95-second animation window before magnetic attraction. Exact critically damped springs then accelerate pickups toward the player, with a speed limit, wall checks, ground clearance and visual shrinking near collection. Brief trails, sparks and rising-pitch chimes confirm collection. Rewards persist until collected or reset. Dynamic batches disable stale frustum-bound culling, so loot stays visible on both sides of the bridge. Each level grants two upgrade points.
+Drops launch upward/outward from the defeated enemy and bounce under lightweight gravity/drag. Magnetic attraction begins after a 0.52–0.585-second animation window inside a base 4.2-metre radius. Acquisition has a frame-rate-independent budget and slight timing/trajectory variation, forming a stream through dense loot. Exact critically damped springs accelerate pickups toward the player, with a speed limit, wall checks, ground clearance and visual shrinking near collection. Brief trails, sparks and rising-pitch chimes confirm collection. Rewards persist until collected or reset. Dynamic batches disable stale frustum-bound culling, so loot stays visible on both sides of the bridge. Each level grants two upgrade points and shows a pixel-style LEVEL UP pop, sparkles and chord.
 
 Confirmed bullet damage briefly flashes the textured enemy white without losing its alpha silhouette, adds a restrained recoil reaction and impact particles at the actual intersection, and shows a red hit marker. Kills use a larger warm marker and a distinct confirmation sound. Only the first intersection of a bullet counts: an enemy or wall in front of the bell blocks that shot from starting a wave.
+
+Hits emit a tiny white ring and 7–10 warm pixel shards; stronger enemies receive larger death bursts. White normal damage numbers and 30%-larger gold critical numbers pop, drift and fade according to the confirmed critical flag, without changing damage calculations. Shared pools bound particle counts and number texture memory. Dynamic effect buffers upload once per displayed frame, after simulation catch-up.
+
+Enemies use smoothly damped velocity, individual speed variation, safe flow-field lookahead and spatial separation, including stationary attackers. Walk poses follow distance travelled; attack frames show their windup. Gunfire keeps ordinary attack timing intact; heavy melee/magic knockback can interrupt. Weapons add a running pose, animated magazine removal/reinsertion and an open-hand casting sequence. F/Q reserve their cooldown immediately and release once after a short anticipation; pause/reset cannot duplicate a release. Player hits update health immediately, fade a red vignette and apply a restrained weapon/camera reaction that respects reduced-motion preferences.
 
 The gameplay HUD uses a self-hosted pixel font and compact corner clusters. Controls live in the pause guide, not in permanent paragraphs over the world. The stats/skills panel uses rank pips, discipline tiers and a single contextual description. Aim-down-sights places both sight tips on the camera's optical axis, suppresses walking bob and hides the crosshair and interaction prompt.
 
@@ -112,7 +121,7 @@ In the repository's **Settings → Pages**, set **Source** to **GitHub Actions**
 
 ### Local production build
 
-Run `npm run build` followed by `npm run preview -- --port 4173`. Use the existing browser-check instructions above. `vite.config.ts` makes all built asset paths relative, so the same build can run on a root domain or inside a GitHub Pages project path. The JavaScript bundle is about 168 KB gzipped before fonts; Vite reports its advisory about the uncompressed Three.js bundle size.
+Run `npm run build` followed by `npm run preview -- --port 4173`. Use the existing browser-check instructions above. `vite.config.ts` makes all built asset paths relative, so the same build can run on a root domain or inside a GitHub Pages project path. The JavaScript bundle is about 174 KB gzipped before fonts; Vite reports its advisory about the uncompressed Three.js bundle size.
 
 Public hosting must be verified after the hosting account's deployment succeeds. Do not treat a saved environment draft, a ZIP archive, or a localhost address as a public game link.
 

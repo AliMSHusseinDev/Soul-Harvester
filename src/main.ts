@@ -15,7 +15,7 @@ import { Player } from "./game/player";
 import { Weapon } from "./game/weapon";
 import { Enemies } from "./game/enemies";
 import { Audio } from "./game/audio";
-import { FixedClock, damp, seededRandom } from "./game/math";
+import { FixedClock, damp, seededRandom, springStep } from "./game/math";
 import { Battle } from "./game/battle";
 import { Effects } from "./game/effects";
 import { UI, $ } from "./game/ui";
@@ -24,6 +24,7 @@ import { LIGHTING, COMBAT_FEEL } from "./game/tuning";
 import { HitFeedback, shotTarget } from "./game/feedback";
 import { WAVE_LIMIT } from "./game/waves";
 import { surfaceSummary } from "./game/surfaces";
+import { AbilityPresentation } from "./game/presentation";
 async function boot() {
   const canvas = $<HTMLCanvasElement>("world");
   const renderer = new THREE.WebGLRenderer({
@@ -76,7 +77,8 @@ async function boot() {
     enemies = new Enemies(scene, battle),
     audio = new Audio(),
     clock = new FixedClock(),
-    effects = new Effects(scene, battle),
+    effects = new Effects(scene, battle, camera),
+    abilityPresentation = new AbilityPresentation(),
     feedback = new HitFeedback();
   const ui = new UI(battle, weapon, () => {
     input.clear();
@@ -96,11 +98,15 @@ async function boot() {
     footstep = 0,
     kick = 0,
     uiTimer = 0;
+  let hurtKick = 0,
+    hurtVelocity = 0,
+    shotSerial = 0;
   let lastBulletHit: {
     enemyId: number;
     killed: boolean;
     point: number[];
     time: number;
+    critical: boolean;
   } | null = null;
   let confirmedHits = 0,
     confirmedKills = 0;
@@ -145,8 +151,13 @@ async function boot() {
     footstep = 0;
     bellTimer = 0;
     time = 0;
+    ui.reset();
     ui.update(0, false);
     feedback.reset();
+    abilityPresentation.reset();
+    hurtKick = 0;
+    hurtVelocity = 0;
+    shotSerial = 0;
     lastBulletHit = null;
     confirmedHits = 0;
     confirmedKills = 0;
@@ -234,17 +245,14 @@ async function boot() {
     else if (action === "Digit3") weapon.switch("rifle");
     else if (action === "KeyK") ui.open("skills-dialog");
     else if (action === "KeyF") {
-      if (battle.burst(player.position)) {
+      if (battle.requestBurst()) {
+        abilityPresentation.begin("burst");
         weapon.cast();
-        audio.cast();
-        effects.pulse(player.position.x, player.position.z);
       }
     } else if (action === "KeyQ") {
       if (battle.canOrb()) {
-        camera.getWorldDirection(direction);
-        effects.orb(camera.position, direction);
+        abilityPresentation.begin("orb");
         weapon.cast();
-        audio.cast();
       }
     }
   };
@@ -300,16 +308,16 @@ async function boot() {
         damage,
         player.position,
         weapon.id === "rifle" ? 2 : 4,
-        hit.point,
-      );
-      effects.burst(
-        hit.point,
-        killed ? 0xe0ba79 : 0xc5e6d5,
-        COMBAT_FEEL.impactCount,
-        2,
+        {
+          x: hit.point.x,
+          y: hit.point.y,
+          z: hit.point.z,
+          critical,
+          bullet: true,
+        },
       );
       feedback.confirm(killed);
-      audio.hit(killed);
+      audio.hit(killed, critical);
       confirmedHits++;
       if (killed) confirmedKills++;
       lastBulletHit = {
@@ -317,9 +325,22 @@ async function boot() {
         killed,
         point: hit.point.toArray(),
         time,
+        critical,
       };
     } else if (target === "bell") ringBell();
     else if (target === "solid") effects.burst(solidPoint, 0xbbad85, 5, 1.5);
+    shotSerial++;
+    if (shotSerial % 3 === 0 || weapon.id === "pistol") {
+      const endpoint =
+        target === "enemy" && hit
+          ? hit.point
+          : target === "bell"
+            ? bellPoint
+            : target === "solid"
+              ? solidPoint
+              : camera.position.clone().addScaledVector(direction, 70);
+      effects.tracer(weapon.muzzlePoint(), endpoint);
+    }
     kick = Math.min(
       0.12,
       kick +
@@ -328,20 +349,34 @@ async function boot() {
     );
   }
   function processEvents() {
+    let gold = 0,
+      xp = 0;
     for (const event of battle.events) {
       if (event.kind === "gold" || event.kind === "xp") {
         effects.pickup(event.kind, event.x, event.z, event.y);
         audio.pickup(event.kind);
-        ui.pickup(event.kind);
+        if (event.kind === "gold") gold += event.value;
+        else xp += event.value;
       } else if (event.kind === "complete") ui.banner("KEEP DEFENDED");
-      else if (event.kind === "hit")
-        effects.number(event.x, event.z, event.value, event.y);
-      else if (event.kind === "kill") {
+      else if (event.kind === "hit") {
+        effects.number(event.x, event.z, event.value, event.y, event.critical);
+        effects.impact(
+          event.x,
+          event.y ?? groundHeight(event.x, event.z) + 0.9,
+          event.z,
+          event.critical,
+          event.bullet === true,
+        );
+      } else if (event.kind === "kill") {
         effects.death(event.x, event.z, event.value);
         audio.death();
       } else if (event.kind === "playerHit") {
         ui.hit();
         audio.hurt();
+        if (!reducedMotion) {
+          hurtVelocity = Math.min(0.18, hurtVelocity + 0.09);
+          weapon.hurt();
+        }
       } else if (event.kind === "baseHit") {
         effects.burst(
           new THREE.Vector3(0, groundHeight(0, 19) + 1.4, 19),
@@ -352,12 +387,14 @@ async function boot() {
       } else if (event.kind === "wave") {
         ui.banner(`WAVE ${event.value}`);
       } else if (event.kind === "level") {
-        ui.banner(`LEVEL ${event.value} · +2 SKILL POINTS`);
-        effects.pulse(player.position.x, player.position.z);
+        ui.levelUp(event.value);
+        effects.levelUp(player.position.x, player.position.z);
         audio.level();
       } else if (event.kind === "lost") ui.lost();
       else if (event.kind === "spawn") effects.spawn(event.x, event.z);
     }
+    if (gold) ui.pickup("gold", gold);
+    if (xp) ui.pickup("xp", xp);
     battle.events.length = 0;
   }
   function resize() {
@@ -410,9 +447,22 @@ async function boot() {
         }
         player.render(camera, 1, reducedMotion);
         kick = damp(kick, 0, 14, step);
-        camera.rotation.x += kick;
+        const hurt = springStep(hurtKick, hurtVelocity, 0, 14, step);
+        hurtKick = hurt.position;
+        hurtVelocity = hurt.velocity;
+        camera.rotation.x += kick + hurtKick;
         camera.updateMatrixWorld();
         weapon.update(step, time, player.speed, reducedMotion, input.aiming);
+        for (const ability of abilityPresentation.update(step)) {
+          const origin = weapon.castOrigin();
+          camera.getWorldDirection(direction);
+          if (ability === "burst") {
+            battle.releaseBurst(player.position);
+            effects.pulse(player.position.x, player.position.z);
+          } else effects.orb(origin, direction);
+          effects.cast(origin, ability === "orb");
+          audio.cast();
+        }
         if (input.firing || input.fireQueued) {
           input.fireQueued = false;
           shoot();
@@ -423,11 +473,11 @@ async function boot() {
           battle.ammoReward = 0;
         }
         effects.followPlayer(player.position.x, player.position.z);
-        effects.update(step, time, true);
+        effects.step(step, time);
         processEvents();
       });
       player.render(camera, alpha, reducedMotion);
-      camera.rotation.x += kick;
+      camera.rotation.x += kick + hurtKick;
       enemies.update(time, input.yaw);
       const fov =
         input.aiming && weapon.id !== "blade" ? 55 : player.speed > 6 ? 76 : 72;
@@ -463,12 +513,15 @@ async function boot() {
         );
         camera.lookAt(0, 4, -39);
       }
-      effects.update(0, time, false);
     }
     weapon.group.visible = active;
+    weapon.present();
     $("hitmarker").classList.toggle("show", feedback.remaining > 0);
     $("hitmarker").classList.toggle("kill", feedback.kill);
     $("crosshair").classList.toggle("confirmed", feedback.remaining > 0);
+    $("hitmarker").style.opacity = String(Math.min(1, feedback.fraction * 4));
+    $("hitmarker").style.transform =
+      `translate(-50%,-50%) scale(${(feedback.kill ? 1.22 : 1) * (1 + Math.sin(feedback.fraction * Math.PI) * 0.18)})`;
     world.update(ambientTime, camera.position);
     if (bellTimer > 0) {
       bellTimer = Math.max(0, bellTimer - dt);
@@ -485,6 +538,7 @@ async function boot() {
       uiTimer = 0.08;
     }
     camera.updateMatrixWorld();
+    effects.render(time);
     renderer.info.reset();
     renderer.clear();
     renderer.render(scene, camera);
@@ -500,7 +554,7 @@ async function boot() {
   Object.defineProperty(window, "__soulHarvester", {
     value: () => ({
       ready: true,
-      version: "0.5.0",
+      version: "0.6.0",
       active,
       started,
       softwareRenderer: software,
@@ -511,6 +565,9 @@ async function boot() {
       reserve: weapon.reserve,
       weapon: weapon.id,
       aiming: input.aiming,
+      casting: weapon.casting,
+      pendingAbilities: abilityPresentation.count,
+      reloadProgress: weapon.reloadProgress,
       aimAmount: weapon.aimAmount,
       ground: groundHeight(player.position.x, player.position.z),
       bellPosition: world.bellPosition.toArray(),
@@ -540,6 +597,10 @@ async function boot() {
         wave: e.wave,
         hitFlash: e.hitFlash,
         spawnZone: e.spawnZone,
+        gait: e.gait,
+        vx: e.vx,
+        vz: e.vz,
+        speedFactor: e.speedFactor,
       })),
       targets: enemies.positions,
       enemyRender: enemies.diagnostics(),

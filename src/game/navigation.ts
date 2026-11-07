@@ -192,6 +192,58 @@ export class Navigation {
     }
     return true;
   }
+  /** Three-cell lookahead removes waypoint zigzags; lateral lanes stay inside the safe grid. */
+  steerSmooth(
+    from: Point,
+    target: Point,
+    field: Float32Array,
+    lane = 0,
+  ): Point {
+    let i = this.index(from.x, from.z);
+    if (i < 0 || !Number.isFinite(field[i]))
+      return this.steer(from, target, field);
+    let aim = from;
+    for (let step = 0; step < 3; step++) {
+      let next = i,
+        min = field[i];
+      for (const n of this.neighbors(i))
+        if (field[n.id] < min) {
+          next = n.id;
+          min = field[n.id];
+        }
+      const p = next === i ? target : this.point(next);
+      if (!this.walkLine(from, p)) break;
+      aim = p;
+      if (next === i) break;
+      i = next;
+    }
+    let dx = aim.x - from.x,
+      dz = aim.z - from.z,
+      d = Math.hypot(dx, dz);
+    if (d < 0.05) return this.steer(from, target, field);
+    const offset = { x: aim.x - (dz / d) * lane, z: aim.z + (dx / d) * lane };
+    if (this.walkLine(from, offset)) {
+      dx = offset.x - from.x;
+      dz = offset.z - from.z;
+      d = Math.hypot(dx, dz);
+    }
+    return d > 0.01 ? { x: dx / d, z: dz / d } : { x: 0, z: 0 };
+  }
+  private walkLine(a: Point, b: Point) {
+    const steps = Math.max(
+      1,
+      Math.ceil(Math.hypot(a.x - b.x, a.z - b.z) / 0.3),
+    );
+    for (let n = 1; n <= steps; n++)
+      if (
+        !this.walkable(
+          a.x + ((b.x - a.x) * n) / steps,
+          a.z + ((b.z - a.z) * n) / steps,
+        )
+      )
+        return false;
+    return true;
+  }
 }
 /** Rebuilt once per simulation step, O(N) insertion and local separation queries. */
 export class SpatialGrid<T extends Point> {

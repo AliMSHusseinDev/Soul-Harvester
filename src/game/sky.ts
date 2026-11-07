@@ -35,6 +35,10 @@ void main(){
   c+=mix(vec3(.055,.085,.09),vec3(.15,.23,.20),lunar)*band*horizon;
   float star=step(.9995,hash(floor(n*650.)))*pow(max(0.,h),.6)*(1.-band);
   c+=vec3(.15,.19,.19)*star;
+  vec3 lunarUp=normalize(cross(vec3(1.,0.,0.),moonDir));
+  float a=atan(dot(n,lunarUp),n.x);
+  float shafts=pow(.5+.5*sin(a*17.+sin(a*3.)*.7),12.)*lunar*(1.-pow(max(0.,dot(n,moonDir)),70.));
+  c+=vec3(.008,.025,.02)*shafts*horizon*(1.-band*.8);
   gl_FragColor=vec4(c,1.);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>

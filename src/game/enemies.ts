@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { guardTexture } from "./textures";
+import { guardTexture, guardAtlas, GUARD_FRAMES } from "./textures";
 import type { Battle, Enemy } from "./battle";
 import { groundHeight } from "./terrain";
 import { ENEMY_TYPES, ENEMY_CAPACITY } from "./waves";
@@ -8,7 +8,7 @@ import { spriteGeometry } from "./sprite-geometry";
 function pose(e: Enemy, time: number) {
   const scale = ENEMY_TYPES[e.kind].scale,
     bob =
-      Math.sin(time * (e.kind === 1 ? 13 : 8) + e.phase) *
+      Math.sin((e.kind === 3 ? time * 4 : e.gait) + e.phase) *
       (e.kind === 3 ? 0.065 : 0.025),
     reaction = Math.sin((e.reaction / COMBAT_FEEL.reactionDuration) * Math.PI),
     emergence = Math.min(1, e.spawnAge / 0.35);
@@ -29,14 +29,16 @@ export class Enemies {
   private flashes: THREE.InstancedBufferAttribute[] = [];
   private time = 0;
   private flashing = 0;
+  private frames: THREE.InstancedBufferAttribute[] = [];
+  private walking = 0;
   private renderedHits = new Float64Array(ENEMY_CAPACITY);
   constructor(
     scene: THREE.Scene,
     private battle: Battle,
   ) {
     for (let k = 0; k < ENEMY_TYPES.length; k++) {
-      const texture = guardTexture(k),
-        image = texture.image as HTMLCanvasElement;
+      const texture = guardAtlas(k),
+        image = guardTexture(k).image as HTMLCanvasElement;
       this.alpha.push(image.getContext("2d")!.getImageData(0, 0, 32, 40).data);
       const geometry = spriteGeometry(this.alpha[k], 32, 40, 1.25, 1.65),
         flash = new THREE.InstancedBufferAttribute(
@@ -51,18 +53,29 @@ export class Enemies {
         });
       flash.setUsage(THREE.DynamicDrawUsage);
       geometry.setAttribute("hitFlash", flash);
+      const frame = new THREE.InstancedBufferAttribute(
+        new Float32Array(ENEMY_CAPACITY),
+        1,
+      );
+      frame.setUsage(THREE.DynamicDrawUsage);
+      geometry.setAttribute("spriteFrame", frame);
+      this.frames.push(frame);
       this.flashes.push(flash);
       // Mix after texture sampling: white flash respects the sprite's alpha and shading detail.
       material.onBeforeCompile = (shader) => {
         shader.vertexShader = shader.vertexShader
           .replace(
             "#include <common>",
-            "#include <common>\nattribute float hitFlash; varying float vHitFlash;",
+            "#include <common>\nattribute float hitFlash; attribute float spriteFrame; varying float vHitFlash;",
           )
           .replace(
             "#include <begin_vertex>",
             "#include <begin_vertex>\nvHitFlash = hitFlash;",
           );
+        shader.vertexShader = shader.vertexShader.replace(
+          "#include <uv_vertex>",
+          `#include <uv_vertex>\n#ifdef USE_MAP\nvMapUv.x=(vMapUv.x+spriteFrame)/${GUARD_FRAMES.toFixed(1)};\n#endif`,
+        );
         shader.fragmentShader = shader.fragmentShader
           .replace(
             "#include <common>",
@@ -88,8 +101,12 @@ export class Enemies {
     this.time = time;
     const counts = [0, 0, 0, 0];
     this.flashing = 0;
+    this.walking = 0;
     for (const e of this.battle.enemies) {
-      if (!e.active) continue;
+      if (!e.active) {
+        this.renderedHits[e.id] = 0;
+        continue;
+      }
       const p = pose(e, time);
       this.dummy.position.set(e.x, p.y, e.z);
       this.dummy.rotation.set(0, yaw, p.roll);
@@ -111,6 +128,12 @@ export class Enemies {
         );
       this.flashes[e.kind].setX(i, flash);
       this.renderedHits[e.id] = e.damageStamp;
+      const walking = Math.hypot(e.vx, e.vz) > 0.2;
+      this.frames[e.kind].setX(
+        i,
+        e.windup > 0 ? 3 : walking ? 1 + (Math.floor(e.gait / Math.PI) % 2) : 0,
+      );
+      if (walking) this.walking++;
       if (flash > 0) this.flashing++;
     }
     for (let k = 0; k < 4; k++) {
@@ -119,6 +142,7 @@ export class Enemies {
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
       this.flashes[k].needsUpdate = true;
+      this.frames[k].needsUpdate = true;
     }
   }
   /** Alpha-aware ray/billboard intersection, independent of rendering/culling bounds. */
@@ -175,6 +199,8 @@ export class Enemies {
     return {
       batches: this.meshes.map((m) => m.count),
       flashing: this.flashing,
+      walking: this.walking,
+      frames: GUARD_FRAMES,
     };
   }
 }

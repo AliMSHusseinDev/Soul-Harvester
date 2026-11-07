@@ -54,6 +54,39 @@ export class Weapon {
   private meleeTime = 0;
   private castTime = 0;
   private aim = 0;
+  private running = 0;
+  private fireStamp = 0;
+  private presentedStamp = 0;
+  private magazineMeshes: {
+    mesh: THREE.Mesh;
+    id: WeaponId;
+    base: THREE.Vector3;
+  }[] = [];
+  private castHand = new THREE.Group();
+  get casting() {
+    return this.castTime > 0;
+  }
+  get reloadProgress() {
+    return this.reloading ? 1 - this.reloadTime / this.reloadDuration : 0;
+  }
+  castOrigin() {
+    return this.castHand.localToWorld(new THREE.Vector3(0, 0.13, -0.06));
+  }
+  muzzlePoint() {
+    return this.group.localToWorld(
+      new THREE.Vector3(0, 0.035, this.id === "rifle" ? -0.91 : -0.51),
+    );
+  }
+  present() {
+    this.flash.visible =
+      this.id !== "blade" &&
+      (this.flashTime > 0 || this.fireStamp !== this.presentedStamp);
+    this.light.intensity = this.flash.visible ? 1.5 : 0;
+    this.presentedStamp = this.fireStamp;
+  }
+  hurt() {
+    this.velocity += 0.18;
+  }
   get aimAmount() {
     return this.aim;
   }
@@ -159,8 +192,23 @@ export class Weapon {
       box(g, 0.025, 0.06, 0.03, -0.055, 0.19, 0.025, gold);
       box(g, 0.025, 0.06, 0.03, 0.055, 0.19, 0.025, gold);
       if (rifle) {
-        box(g, 0.11, 0.28, 0.2, 0, -0.24, -0.2, steel).rotation.x = 0.12;
+        const magazine = box(g, 0.11, 0.28, 0.2, 0, -0.24, -0.2, steel);
+        magazine.rotation.x = 0.12;
+        magazine.userData.animated = true;
+        this.magazineMeshes.push({
+          mesh: magazine,
+          id,
+          base: magazine.position.clone(),
+        });
         box(g, 0.15, 0.13, 0.24, 0, -0.02, 0.23, wood);
+      } else {
+        const magazine = box(g, 0.08, 0.14, 0.1, 0, -0.23, 0.12, steel);
+        magazine.userData.animated = true;
+        this.magazineMeshes.push({
+          mesh: magazine,
+          id,
+          base: magazine.position.clone(),
+        });
       }
       box(g, 0.15, 0.15, 0.22, 0.02, -0.18, 0.16, glove);
       const arm = forearmBetween(
@@ -245,7 +293,24 @@ export class Weapon {
         glove,
       );
     this.group.add(this.leftHand);
-    for (const model of [...Object.values(this.models), this.leftHand])
+    box(this.castHand, 0.14, 0.11, 0.12, 0, 0, 0, glove);
+    for (let i = 0; i < 4; i++)
+      box(this.castHand, 0.027, 0.14, 0.035, -0.05 + i * 0.033, 0.11, 0, glove);
+    box(this.castHand, 0.08, 0.035, 0.04, -0.09, 0.01, 0, glove).rotation.z =
+      0.4;
+    this.castHand.add(
+      forearmBetween(
+        new THREE.Vector3(0, -0.055, 0.04),
+        new THREE.Vector3(-0.24, -0.28, 0.58),
+        skin,
+      ),
+    );
+    this.group.add(this.castHand);
+    for (const model of [
+      ...Object.values(this.models),
+      this.leftHand,
+      this.castHand,
+    ])
       batchModel(model);
     this.flash = new THREE.Sprite(
       new THREE.SpriteMaterial({
@@ -294,6 +359,7 @@ export class Weapon {
     this.cooldown = this.config.interval;
     this.velocity += this.config.kick * 25;
     this.flashTime = 0.04;
+    this.fireStamp++;
     return true;
   }
   reload() {
@@ -336,6 +402,10 @@ export class Weapon {
     this.cooldown = 0;
     this.meleeTime = 0;
     this.castTime = 0;
+    this.aim = 0;
+    this.running = 0;
+    this.flashTime = 0;
+    this.fireStamp = this.presentedStamp = 0;
   }
   update(
     dt: number,
@@ -381,24 +451,33 @@ export class Weapon {
       14,
       dt,
     );
+    this.running = damp(this.running, speed > 6 && !aiming ? 1 : 0, 9, dt);
     const rp = this.reloading ? 1 - this.reloadTime / this.reloadDuration : 0,
       reload = Math.sin(rp * Math.PI),
       melee = Math.sin((this.meleeTime / 0.38) * Math.PI),
       cast = Math.sin((this.castTime / 0.55) * Math.PI),
-      bob = reducedMotion ? 0 : Math.sin(time * 8) * Math.min(speed, 5) * 0.003;
+      bob = reducedMotion
+        ? 0
+        : Math.sin(time * (8 + this.running * 3)) * Math.min(speed, 7) * 0.003;
     const pose = aimPose(this.aim);
     const idle = reducedMotion
       ? 0
       : Math.sin(time * 1.6) * 0.001 * (1 - this.aim);
     this.group.position.set(
       pose.x + idle * 0.5,
-      pose.y + idle - reload * 0.14 + melee * 0.12 + bob * (1 - this.aim) * 0.6,
+      pose.y +
+        idle -
+        reload * 0.14 -
+        cast * 0.22 -
+        this.running * 0.065 +
+        melee * 0.12 +
+        bob * (1 - this.aim) * 0.6,
       pose.z + this.recoil - melee * 0.35 + this.switchTime * 0.7,
     );
     this.group.rotation.set(
       this.recoil * 0.8 + reload * 0.12,
       -reload * 0.45,
-      melee * -0.8 + reload * 0.5,
+      melee * -0.8 + reload * 0.5 - this.running * 0.09,
     );
     for (const id of Object.keys(this.models) as WeaponId[])
       this.models[id].visible = id === this.id;
@@ -408,7 +487,30 @@ export class Weapon {
       this.id === "rifle" ? -0.4 : -0.05,
     );
     this.leftHand.rotation.set(cast * -0.9, reload * 0.6, -cast * 0.2);
-    this.leftHand.visible = this.id === "rifle" || this.reloading || cast > 0;
+    this.leftHand.visible =
+      !this.casting && (this.id === "rifle" || this.reloading);
+    this.castHand.visible = this.casting;
+    this.castHand.position.set(
+      -0.32 - cast * 0.1,
+      -0.06 + cast * 0.2,
+      -0.35 - cast * 0.25,
+    );
+    this.castHand.rotation.set(-cast * 0.55, 0, cast * 0.12);
+    for (const m of this.magazineMeshes) {
+      const amount =
+        this.reloading && m.id === this.id
+          ? Math.sin(Math.PI * Math.min(1, rp / 0.78))
+          : 0;
+      m.mesh.position.copy(m.base);
+      m.mesh.position.y -= amount * 0.25;
+      m.mesh.position.x -= amount * 0.1;
+      m.mesh.visible = !(
+        this.reloading &&
+        m.id === this.id &&
+        rp > 0.35 &&
+        rp < 0.58
+      );
+    }
   }
 }
 function forearmBetween(
@@ -436,7 +538,11 @@ function batchModel(group: THREE.Group) {
     { geometries: THREE.BufferGeometry[]; objects: THREE.Mesh[] }
   >();
   for (const child of group.children) {
-    if (!(child instanceof THREE.Mesh) || Array.isArray(child.material))
+    if (
+      !(child instanceof THREE.Mesh) ||
+      Array.isArray(child.material) ||
+      child.userData.animated
+    )
       continue;
     child.updateMatrix();
     const g = (

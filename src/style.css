@@ -467,7 +467,7 @@ h1 em {
   left: 50%;
   bottom: 34px;
   transform: translateX(-50%);
-  display: flex;
+  display: none;
   align-items: center;
   gap: 8px;
   font-size: 15px;
@@ -1139,4 +1139,22 @@ dialog .primary {
     animation: none !important;
     transition: none !important;
   }
+}
+
+#combat-banner.level-up {
+  font-size: clamp(38px, 6vw, 66px);
+  color: #effff4;
+  text-shadow:
+    3px 3px #145e81,
+    5px 5px #031713;
+  white-space: nowrap;
+}
+#combat-banner.level-up::after {
+  content: attr(data-detail);
+  display: block;
+  text-align: center;
+  font-size: 17px;
+  letter-spacing: 2px;
+  color: #8edcff;
+  margin-top: 4px;
 }

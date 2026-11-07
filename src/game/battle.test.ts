@@ -139,3 +139,49 @@ it("a high jumping player can avoid a grounded attack", () => {
   for (let i = 0; i < 40; i++) b.update(1 / 60, { x: 0, z: -29, y: 2 });
   expect(b.health).toBe(100);
 });
+
+it("carries critical metadata without changing supplied damage and releases a reserved burst only once", () => {
+  const b = new Battle([]),
+    e = enemy(b, 0, -30);
+  e.hp = 200;
+  b.damageEnemy(0, 19, { x: 0, z: -25 }, 2, {
+    x: 0,
+    y: 1.4,
+    z: -30,
+    critical: true,
+    bullet: true,
+  });
+  expect(e.hp).toBe(181);
+  expect(b.events[0]).toMatchObject({
+    kind: "hit",
+    value: 19,
+    critical: true,
+    bullet: true,
+  });
+  expect(b.requestBurst()).toBe(true);
+  expect(e.hp).toBe(181);
+  expect(b.releaseBurst({ x: 0, z: -30 })).toBe(true);
+  expect(e.hp).toBe(121);
+  expect(b.releaseBurst({ x: 0, z: -30 })).toBe(false);
+  expect(e.hp).toBe(121);
+});
+it("reports the same greed-adjusted gold amount that is actually awarded", () => {
+  const b = new Battle([]);
+  b.stats.greed = 3;
+  Object.assign(b.drops[0], {
+    active: true,
+    kind: "gold",
+    value: 4,
+    x: 0,
+    z: 14,
+    y: 5.3,
+    vx: 0,
+    vy: 0,
+    vz: 0,
+    age: 1,
+    magnet: true,
+  });
+  b.update(1 / 60, { x: 0, z: 14, y: 4 });
+  expect(b.coins).toBe(46);
+  expect(b.events.find((e) => e.kind === "gold")?.value).toBe(6);
+});

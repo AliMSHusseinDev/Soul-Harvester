@@ -204,3 +204,57 @@ export function guardTexture(kind = 0) {
   t.magFilter = t.minFilter = THREE.NearestFilter;
   return t;
 }
+
+const atlasCache = new Map<number, THREE.CanvasTexture>();
+export const GUARD_FRAMES = 4;
+/** Four original poses share an identical alpha mask, so shooting and extruded edges stay exact. */
+export function guardAtlas(kind: number) {
+  const cached = atlasCache.get(kind);
+  if (cached) return cached;
+  const base = guardTexture(kind).image as HTMLCanvasElement,
+    c = document.createElement("canvas");
+  c.width = 32 * GUARD_FRAMES;
+  c.height = 40;
+  const g = c.getContext("2d")!;
+  g.imageSmoothingEnabled = false;
+  const colors =
+    kind === 2
+      ? ["#3d3428", "#b69a60"]
+      : kind === 3
+        ? ["#27253e", "#a28ec0"]
+        : ["#193633", "#8ebf9b"];
+  for (let frame = 0; frame < GUARD_FRAMES; frame++) {
+    const pose = document.createElement("canvas");
+    pose.width = 32;
+    pose.height = 40;
+    const p = pose.getContext("2d")!;
+    p.drawImage(base, 0, 0);
+    p.globalCompositeOperation = "source-atop";
+    if (frame === 1 || frame === 2) {
+      p.fillStyle = colors[0];
+      p.fillRect(frame === 1 ? 7 : 18, 33, 7, 7);
+      p.fillStyle = colors[1];
+      p.fillRect(frame === 1 ? 18 : 7, 34, 6, 2);
+      p.fillStyle = colors[1];
+      p.fillRect(frame === 1 ? 4 : 25, 25, 3, 5);
+      p.fillStyle = colors[0];
+      p.fillRect(frame === 1 ? 25 : 4, 26, 3, 6);
+    } else if (frame === 3) {
+      p.fillStyle = colors[0];
+      p.fillRect(5, 26, 22, 5);
+      p.fillStyle = colors[1];
+      p.fillRect(7, 24, 6, 3);
+      p.fillRect(19, 24, 6, 3);
+      p.fillStyle = kind === 3 ? "#ffb871" : "#ffdf9a";
+      p.fillRect(9, 11, 5, 2);
+      p.fillRect(18, 11, 5, 2);
+    }
+    g.drawImage(pose, frame * 32, 0);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.magFilter = t.minFilter = THREE.NearestFilter;
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  atlasCache.set(kind, t);
+  return t;
+}

@@ -1,4 +1,4 @@
-import { resolveCircle, type Solid } from "./math";
+import { resolveCircle, damp, type Solid } from "./math";
 import { Navigation, SpatialGrid, type Point } from "./navigation";
 import { MAP, inMap, isRiver, groundHeight } from "./terrain";
 import { Loot, type Drop } from "./loot";
@@ -11,7 +11,7 @@ import {
 } from "./waves";
 import { ForestSpawner } from "./spawning";
 import { RewardRoller } from "./rewards";
-import { COMBAT_FEEL, DIFFICULTY, SPAWNING } from "./tuning";
+import { COMBAT_FEEL, DIFFICULTY, SPAWNING, MOTION } from "./tuning";
 export type Stat =
   "constitution" | "instinct" | "lethality" | "agility" | "magnetism" | "greed";
 export type Skill =
@@ -55,6 +55,11 @@ export interface Enemy extends Point {
   reaction: number;
   spawnAge: number;
   spawnZone: number;
+  vx: number;
+  vz: number;
+  gait: number;
+  speedFactor: number;
+  stalled: number;
 }
 export type BattleEvent = {
   kind:
@@ -74,6 +79,8 @@ export type BattleEvent = {
   z: number;
   value: number;
   y?: number;
+  critical?: boolean;
+  bullet?: boolean;
 };
 export class Battle {
   readonly nav: Navigation;
@@ -103,6 +110,11 @@ export class Battle {
       reaction: 0,
       spawnAge: 0,
       spawnZone: -1,
+      vx: 0,
+      vz: 0,
+      gait: 0,
+      speedFactor: 1,
+      stalled: 0,
     }),
   );
   readonly drops: Drop[];
@@ -120,6 +132,9 @@ export class Battle {
   }[] = [];
   private completeEmitted = false;
   private damageStamp = 0;
+  private burstPrimed = false;
+  private crowdX = new Float32Array(ENEMY_CAPACITY);
+  private crowdZ = new Float32Array(ENEMY_CAPACITY);
   readonly missiles: {
     active: boolean;
     x: number;
@@ -190,8 +205,15 @@ export class Battle {
   get alive() {
     return this.enemies.filter((e) => e.active);
   }
-  private emit(kind: BattleEvent["kind"], x = 0, z = 0, value = 0, y?: number) {
-    this.events.push({ kind, x, z, value, y });
+  private emit(
+    kind: BattleEvent["kind"],
+    x = 0,
+    z = 0,
+    value = 0,
+    y?: number,
+    details?: { critical?: boolean; bullet?: boolean },
+  ) {
+    this.events.push({ kind, x, z, value, y, ...details });
   }
   get pending() {
     return this.waveJobs.reduce((n, j) => n + j.plan.length - j.index, 0);
@@ -242,6 +264,11 @@ export class Battle {
       reaction: 0,
       spawnAge: 0,
       spawnZone: zone,
+      vx: 0,
+      vz: 0,
+      gait: 0,
+      stalled: 0,
+      speedFactor: 1 + Math.sin(e.phase + wave) * MOTION.speedVariation,
     });
     this.emit("spawn", x, z, zone);
     return true;
@@ -299,12 +326,31 @@ export class Battle {
       e.reaction = Math.max(0, e.reaction - dt);
       e.spawnAge += dt;
       if (e.spawnAge < 0.35) continue;
+      if (Math.hypot(e.knockX, e.knockZ) > 0.02) {
+        const p = resolveCircle(
+          e.x + e.knockX * dt,
+          e.z + e.knockZ * dt,
+          0.34,
+          groundHeight(e.x, e.z),
+          this.solids,
+        );
+        if (this.nav.walkable(p.x, p.z)) {
+          e.x = p.x;
+          e.z = p.z;
+        }
+      }
+      e.knockX *= Math.exp(-dt * 8);
+      e.knockZ *= Math.exp(-dt * 8);
       const distance = Math.hypot(e.x - player.x, e.z - player.z);
-      if (e.target === "bell" && distance < 9 && this.nav.lineClear(e, player))
+      if (
+        e.target === "bell" &&
+        distance < MOTION.aggroEnter &&
+        this.nav.lineClear(e, player)
+      )
         e.target = "player";
       else if (
         e.target === "player" &&
-        (distance > 13 ||
+        (distance > MOTION.aggroExit ||
           !inMap(player.x, player.z) ||
           isRiver(player.x, player.z))
       )
@@ -319,6 +365,8 @@ export class Battle {
               : 2.3;
       e.cooldown = Math.max(0, e.cooldown - dt);
       if (e.windup > 0) {
+        e.vx = damp(e.vx, 0, 12, dt);
+        e.vz = damp(e.vz, 0, 12, dt);
         e.windup -= dt;
         if (e.windup <= 0) {
           if (d < range + 0.6) {
@@ -352,12 +400,20 @@ export class Battle {
         continue;
       }
       if (d < range) {
+        e.vx = damp(e.vx, 0, 12, dt);
+        e.vz = damp(e.vz, 0, 12, dt);
         if (e.cooldown === 0 && this.nav.lineClear(e, target))
           e.windup = ENEMY_TYPES[e.kind].windup;
         continue;
       }
       const field = e.target === "player" ? this.playerField : this.bellField;
-      const v = this.nav.steer(e, target, field);
+      const recovering = e.stalled > MOTION.stalledAfter,
+        lane = recovering
+          ? 0
+          : Math.sin(e.gait * 0.09 + e.phase) * MOTION.laneWidth,
+        v = recovering
+          ? this.nav.steer(e, target, field)
+          : this.nav.steerSmooth(e, target, field, lane);
       let sx = 0,
         sz = 0;
       for (const other of this.grid.near(e)) {
@@ -370,19 +426,38 @@ export class Battle {
           dz = Math.sin(e.phase);
           ds = 0.1;
         }
-        if (ds < 1.2) {
-          const f = (1.2 - ds) / Math.max(ds, 0.12);
+        const spacing =
+          MOTION.separation *
+          (ENEMY_TYPES[e.kind].scale + ENEMY_TYPES[other.kind].scale) *
+          0.5;
+        if (ds < spacing * spacing) {
+          const f = (spacing * spacing - ds) / Math.max(ds, 0.12);
           sx += dx * f;
           sz += dz * f;
         }
       }
       const speed =
-        ENEMY_TYPES[e.kind].speed * (1 + e.wave * DIFFICULTY.speedPerWave);
-      let vx = v.x * speed + Math.max(-1.3, Math.min(1.3, sx)),
-        vz = v.z * speed + Math.max(-1.3, Math.min(1.3, sz));
+          ENEMY_TYPES[e.kind].speed *
+          e.speedFactor *
+          (1 + e.wave * DIFFICULTY.speedPerWave),
+        force = MOTION.separationForce * (recovering ? 0.25 : 1);
+      e.vx = damp(
+        e.vx,
+        v.x * speed + Math.max(-force, Math.min(force, sx)),
+        MOTION.turnRate,
+        dt,
+      );
+      e.vz = damp(
+        e.vz,
+        v.z * speed + Math.max(-force, Math.min(force, sz)),
+        MOTION.turnRate,
+        dt,
+      );
+      const beforeX = e.x,
+        beforeZ = e.z;
       const p = resolveCircle(
-        e.x + (vx + e.knockX) * dt,
-        e.z + (vz + e.knockZ) * dt,
+        e.x + e.vx * dt,
+        e.z + e.vz * dt,
         0.34,
         groundHeight(e.x, e.z),
         this.solids,
@@ -403,13 +478,18 @@ export class Battle {
           e.z = fallback.z;
         }
       }
-      e.knockX *= Math.exp(-dt * 8);
-      e.knockZ *= Math.exp(-dt * 8);
+      const travelled = Math.hypot(e.x - beforeX, e.z - beforeZ);
+      e.gait += (travelled * 5) / ENEMY_TYPES[e.kind].scale;
+      e.stalled = travelled < dt * 0.12 ? e.stalled + dt : 0;
     }
+    this.separateContacts(dt);
     for (const pickup of this.loot.update(dt, player, this.stats.magnetism)) {
-      this.emit(pickup.kind, pickup.x, pickup.z, pickup.value, pickup.y);
-      if (pickup.kind === "gold")
-        this.coins += Math.ceil(pickup.value * (1 + this.stats.greed * 0.15));
+      const granted =
+        pickup.kind === "gold"
+          ? Math.ceil(pickup.value * (1 + this.stats.greed * 0.15))
+          : pickup.value;
+      this.emit(pickup.kind, pickup.x, pickup.z, granted, pickup.y);
+      if (pickup.kind === "gold") this.coins += granted;
       else {
         this.xp += pickup.value;
         this.ammoReward += 3 + this.skills.scavenging * 2;
@@ -435,6 +515,52 @@ export class Battle {
         this.emit("complete");
       }
     }
+  }
+  private separateContacts(dt: number) {
+    this.crowdX.fill(0);
+    this.crowdZ.fill(0);
+    for (const e of this.enemies)
+      if (e.active)
+        for (const other of this.grid.near(e)) {
+          if (other.id <= e.id) continue;
+          let dx = e.x - other.x,
+            dz = e.z - other.z,
+            d = Math.hypot(dx, dz);
+          const spacing =
+            0.38 * (ENEMY_TYPES[e.kind].scale + ENEMY_TYPES[other.kind].scale);
+          if (d >= spacing) continue;
+          if (d < 0.0001) {
+            dx = Math.cos(e.phase + other.phase * 0.7);
+            dz = Math.sin(e.phase + other.phase * 0.7);
+            d = 1;
+          }
+          const push = Math.min(0.12, (spacing - Math.min(d, spacing)) * 0.5);
+          // Coincident centres need a deterministic escape direction too.
+          const amount = push || 0.025;
+          this.crowdX[e.id] += (dx / d) * amount;
+          this.crowdZ[e.id] += (dz / d) * amount;
+          this.crowdX[other.id] -= (dx / d) * amount;
+          this.crowdZ[other.id] -= (dz / d) * amount;
+        }
+    for (const e of this.enemies)
+      if (e.active) {
+        const dx = this.crowdX[e.id],
+          dz = this.crowdZ[e.id],
+          d = Math.hypot(dx, dz);
+        if (d < 0.0001) continue;
+        const factor = Math.min(1, (dt * 2.1) / d),
+          p = resolveCircle(
+            e.x + dx * factor,
+            e.z + dz * factor,
+            0.34,
+            groundHeight(e.x, e.z),
+            this.solids,
+          );
+        if (this.nav.walkable(p.x, p.z)) {
+          e.x = p.x;
+          e.z = p.z;
+        }
+      }
   }
   private castMissile(enemy: Enemy, target: Point) {
     const m = this.missiles.find((m) => !m.active);
@@ -502,7 +628,7 @@ export class Battle {
     damage: number,
     from: Point,
     knockback = 3,
-    impact?: Point & { y: number },
+    impact?: Point & { y: number; critical?: boolean; bullet?: boolean },
   ) {
     const e = this.enemies[id];
     if (!e?.active || this.phase === "lost") return false;
@@ -513,14 +639,17 @@ export class Battle {
     const d = Math.hypot(e.x - from.x, e.z - from.z) || 1;
     e.knockX = ((e.x - from.x) / d) * knockback;
     e.knockZ = ((e.z - from.z) / d) * knockback;
-    e.windup = 0;
-    e.cooldown = 0.2;
+    if (knockback >= 6) {
+      e.windup = 0;
+      e.cooldown = 0.2;
+    }
     this.emit(
       "hit",
       impact?.x ?? e.x,
       impact?.z ?? e.z,
       damage,
       impact?.y ?? groundHeight(e.x, e.z) + 0.9 * ENEMY_TYPES[e.kind].scale,
+      { critical: impact?.critical, bullet: impact?.bullet },
     );
     if (e.hp <= 0) {
       e.active = false;
@@ -553,8 +682,18 @@ export class Battle {
     return true;
   }
   burst(player: Point) {
+    if (!this.requestBurst()) return false;
+    return this.releaseBurst(player);
+  }
+  requestBurst() {
     if (this.burstCooldown > 0 || this.phase === "lost") return false;
     this.burstCooldown = 12 - this.skills.sorcery;
+    this.burstPrimed = true;
+    return true;
+  }
+  releaseBurst(player: Point) {
+    if (this.phase === "lost" || !this.burstPrimed) return false;
+    this.burstPrimed = false;
     for (const e of this.alive)
       if (
         Math.hypot(e.x - player.x, e.z - player.z) < 7 &&
@@ -631,6 +770,7 @@ export class Battle {
     this.wave = 0;
     this.phase = "peace";
     this.burstCooldown = 0;
+    this.burstPrimed = false;
     this.orbCooldown = 0;
     this.weaponRank = 0;
     this.ammoReward = 0;

@@ -3,6 +3,14 @@ import { COMBAT_FEEL } from "./tuning";
 export class HitFeedback {
   remaining = 0;
   kill = false;
+  get fraction() {
+    return (
+      this.remaining /
+      (this.kill
+        ? COMBAT_FEEL.killMarkerDuration
+        : COMBAT_FEEL.hitMarkerDuration)
+    );
+  }
   confirm(kill: boolean) {
     // Preserve a recent kill without letting subsequent ordinary hits extend it forever.
     if (!kill && this.kill && this.remaining > 0) return;

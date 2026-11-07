@@ -159,6 +159,11 @@ try {
   await wait(() => window.__soulHarvester().burstCooldown > 0);
   await page.keyboard.press("KeyQ");
   await wait(() => window.__soulHarvester().orbCooldown > 0);
+  await wait(
+    () =>
+      window.__soulHarvester().pendingAbilities === 0 &&
+      window.__soulHarvester().lootRender.totals.casts === 2,
+  );
   console.log("PASS: weapon switching, melee and both magic abilities");
   await page.keyboard.press("KeyE");
   await wait(
@@ -168,6 +173,8 @@ try {
   );
   await wait(() => window.__soulHarvester().pending === 0);
   const forestState = await state();
+  assert.equal(forestState.enemyRender.frames, 4);
+  assert.ok(forestState.enemyRender.walking > 0);
   assert.ok(
     forestState.spawnZones.every((z) => z.validPoints > 0 && z.spawned > 0),
   );
@@ -211,6 +218,8 @@ try {
   assert.ok((await state()).drops.some((d) => d.kind === "gold"));
   const feedbackChecks = await page.evaluate(() => window.__feedbackChecks);
   assert.ok(feedbackChecks.hit && feedbackChecks.kill && feedbackChecks.flash);
+  assert.ok((await state()).lootRender.totals.impacts > 0);
+  assert.ok((await state()).lootRender.totals.deaths > 0);
   console.log(
     "PASS: confirmed red hit marker, white body flash, distinct kills and probabilistic gold on real enemies",
   );

@@ -8,6 +8,12 @@ export class UI {
   private bannerTime = 0;
   private damage = 0;
   private pickupTime = 0;
+  private pickupTotal = 0;
+  private pickupAnimation: Animation | null = null;
+  private goldAnimation: Animation | null = null;
+  private bannerAnimation: Animation | null = null;
+  private reducedMotion = matchMedia("(prefers-reduced-motion: reduce)")
+    .matches;
   constructor(
     readonly battle: Battle,
     readonly weapon: Weapon,
@@ -66,6 +72,9 @@ export class UI {
     );
   }
   banner(message: string) {
+    this.bannerAnimation?.cancel();
+    $("combat-banner").classList.remove("level-up");
+    $("combat-banner").dataset.detail = "";
     $("combat-banner").textContent = message;
     $("combat-banner").classList.add("show");
     clearTimeout(this.bannerTime);
@@ -74,22 +83,84 @@ export class UI {
       1600,
     );
   }
-  pickup(kind: "gold" | "xp") {
-    const el = kind === "gold" ? $("gold-counter") : $("pickup-feedback");
-    el.classList.remove("flash");
-    void el.offsetWidth;
-    el.classList.add("flash");
-    if (kind === "xp") {
-      $("pickup-feedback").textContent = "+XP";
-      clearTimeout(this.pickupTime);
-      this.pickupTime = window.setTimeout(
-        () => el.classList.remove("flash"),
-        650,
+  levelUp(level: number) {
+    this.banner("LEVEL UP");
+    const el = $("combat-banner");
+    el.classList.add("level-up");
+    el.dataset.detail = `LEVEL ${level} · +2`;
+    if (!this.reducedMotion)
+      this.bannerAnimation = el.animate(
+        [
+          { transform: "translateX(-50%) scale(.72)", opacity: 0 },
+          {
+            transform: "translateX(-50%) scale(1.08)",
+            opacity: 1,
+            offset: 0.35,
+          },
+          { transform: "translateX(-50%) scale(1)", opacity: 1 },
+        ],
+        { duration: 300 },
       );
+    this.syncHealth();
+  }
+  pickup(kind: "gold" | "xp", value: number) {
+    if (kind === "gold") {
+      $("coins-value").textContent = String(this.battle.coins);
+      this.goldAnimation?.cancel();
+      if (!this.reducedMotion)
+        this.goldAnimation = $("gold-counter").animate(
+          [
+            { filter: "brightness(1.6)", transform: "scale(1.07)" },
+            { filter: "brightness(1)", transform: "scale(1)" },
+          ],
+          { duration: 220 },
+        );
+    } else {
+      this.pickupTotal += value;
+      const el = $("pickup-feedback");
+      el.textContent = `+${this.pickupTotal} XP`;
+      el.style.opacity = "1";
+      this.pickupAnimation?.cancel();
+      if (!this.reducedMotion)
+        this.pickupAnimation = el.animate(
+          [
+            { opacity: 1, transform: "translateY(0)" },
+            { opacity: 1, transform: "translateY(-3px)", offset: 0.4 },
+            { opacity: 0, transform: "translateY(-15px)" },
+          ],
+          { duration: 650, fill: "forwards" },
+        );
+      clearTimeout(this.pickupTime);
+      this.pickupTime = window.setTimeout(() => {
+        this.pickupTotal = 0;
+        el.style.opacity = "0";
+      }, 650);
+      $("xp-fill").style.width =
+        `${(this.battle.xp / (this.battle.level * 40)) * 100}%`;
     }
+  }
+  private syncHealth() {
+    $("health-value").textContent =
+      `${Math.ceil(this.battle.health)}/${this.battle.maxHealth}`;
+    $("health-fill").style.width =
+      `${(this.battle.health / this.battle.maxHealth) * 100}%`;
   }
   hit() {
     this.damage = 1;
+    this.syncHealth();
+    $("damage-overlay").style.opacity = ".5";
+  }
+  reset() {
+    this.damage = 0;
+    this.pickupTotal = 0;
+    clearTimeout(this.pickupTime);
+    clearTimeout(this.bannerTime);
+    this.pickupAnimation?.cancel();
+    this.goldAnimation?.cancel();
+    this.bannerAnimation?.cancel();
+    $("pickup-feedback").style.opacity = "0";
+    $("combat-banner").classList.remove("show");
+    $("damage-overlay").style.opacity = "0";
   }
   open(id: string) {
     this.pause();
