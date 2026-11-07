@@ -2,6 +2,7 @@ node_modules/
 dist/
 artifacts/
 *.log
+__pycache__/
 
 .vercel/
 .env

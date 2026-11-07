@@ -150,18 +150,28 @@ it("carries critical metadata without changing supplied damage and releases a re
     z: -30,
     critical: true,
     bullet: true,
+    incomingX: 0,
+    incomingY: 0,
+    incomingZ: -1,
+    normalX: 0,
+    normalY: 0,
+    normalZ: 1,
   });
   expect(e.hp).toBe(181);
+  expect(e.hitCritical).toBe(true);
   expect(b.events[0]).toMatchObject({
     kind: "hit",
     value: 19,
     critical: true,
     bullet: true,
+    incomingZ: -1,
+    normalZ: 1,
   });
   expect(b.requestBurst()).toBe(true);
   expect(e.hp).toBe(181);
   expect(b.releaseBurst({ x: 0, z: -30 })).toBe(true);
   expect(e.hp).toBe(121);
+  expect(e.hitCritical).toBe(false);
   expect(b.releaseBurst({ x: 0, z: -30 })).toBe(false);
   expect(e.hp).toBe(121);
 });

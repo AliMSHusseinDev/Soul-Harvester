@@ -60,6 +60,8 @@ export interface Shard {
   vy: number;
   vz: number;
   angle: number;
+  angleX: number;
+  angleY: number;
   spin: number;
   size: number;
   color: number;
@@ -88,6 +90,8 @@ export class PixelShards {
     vy: 0,
     vz: 0,
     angle: 0,
+    angleX: 0,
+    angleY: 0,
     spin: 0,
     size: 0,
     color: 0,
@@ -110,12 +114,24 @@ export class PixelShards {
       adaptive = free < this.items.length * 0.3 ? 0.55 : 1;
     count = Math.ceil(count * adaptive);
     let emitted = 0;
-    const nx = direction.nx ?? 0,
-      ny = direction.ny ?? 0,
-      nz = direction.nz ?? 1;
-    const tangent = Math.hypot(nx, nz) || 1,
-      tx = nz / tangent,
-      tz = -nx / tangent;
+    const normalLength =
+        Math.hypot(direction.nx ?? 0, direction.ny ?? 0, direction.nz ?? 1) ||
+        1,
+      nx = (direction.nx ?? 0) / normalLength,
+      ny = (direction.ny ?? 0) / normalLength,
+      nz = (direction.nz ?? 1) / normalLength,
+      vertical = Math.abs(ny) > 0.9,
+      tangentLength = (vertical ? Math.hypot(nx, ny) : Math.hypot(nx, nz)) || 1,
+      tx = (vertical ? -ny : nz) / tangentLength,
+      ty = vertical ? nx / tangentLength : 0,
+      tz = vertical ? 0 : -nx / tangentLength,
+      bx = ny * tz - nz * ty,
+      by = nz * tx - nx * tz,
+      bz = nx * ty - ny * tx,
+      dx = direction.dx ?? -nx,
+      dy = direction.dy ?? -ny,
+      dz = direction.dz ?? -nz,
+      incomingLength = Math.hypot(dx, dy, dz) || 1;
     for (let i = 0; i < count; i++) {
       if (
         !death &&
@@ -138,16 +154,20 @@ export class PixelShards {
       const radial = death || direction.level;
       const dx = radial
         ? Math.cos(a) * spread
-        : nx * 3 + tx * Math.cos(a) * spread + (direction.dx ?? -nx) * 0.6;
+        : nx * 3 +
+          (tx * Math.cos(a) + bx * Math.sin(a)) * spread +
+          ((direction.dx ?? -nx) / incomingLength) * 0.6;
       const dz = radial
         ? Math.sin(a) * spread
-        : nz * 3 + tz * Math.cos(a) * spread + (direction.dz ?? -nz) * 0.6;
+        : nz * 3 +
+          (tz * Math.cos(a) + bz * Math.sin(a)) * spread +
+          ((direction.dz ?? -nz) / incomingLength) * 0.6;
       const dy = radial
         ? 1.5 + this.r() * 2
         : ny * 3 +
-          Math.sin(a) * spread * tangent +
+          (ty * Math.cos(a) + by * Math.sin(a)) * spread +
           0.7 +
-          (direction.dy ?? -ny) * 0.6;
+          ((direction.dy ?? -ny) / incomingLength) * 0.6;
       const roll = this.r();
       Object.assign(p, {
         x,
@@ -159,6 +179,8 @@ export class PixelShards {
         vy: dy,
         vz: dz,
         angle: a,
+        angleX: a * 0.7,
+        angleY: a * 1.3,
         spin: (this.r() - 0.5) * 18,
         size: (0.065 + this.r() * 0.045) * scale,
         color: direction.level
@@ -209,6 +231,8 @@ export class PixelShards {
         p.vz *= e;
         p.vy = p.vy * e + gravity * integral;
         p.angle += p.spin * dt;
+        p.angleX += p.spin * 0.63 * dt;
+        p.angleY -= p.spin * 0.47 * dt;
         const ground = floor(p.x, p.z) + 0.04;
         if (p.y < ground) {
           p.y = ground;

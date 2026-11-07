@@ -1,5 +1,7 @@
 import * as THREE from "three";
-import { fadingMaterial } from "./vfx-material";
+import { fadingMaterial, voxelFragmentMaterial } from "./vfx-material";
+import { CombatSpriteRenderer } from "./combat-sprite-renderer";
+import type { CombatSheet } from "./combat-sprites";
 import { glowTexture, guardTexture } from "./textures";
 import { groundHeight } from "./terrain";
 import { ENEMY_TYPES } from "./waves";
@@ -70,6 +72,7 @@ export class Effects {
   private viewportHeight = 1080;
   private layout = new LabelLayout();
   private projected = new THREE.Vector3();
+  private fragmentView = new THREE.Matrix4();
   reduced = false;
   resize(height: number) {
     this.viewportHeight = height;
@@ -92,6 +95,7 @@ export class Effects {
   private ray = new THREE.Ray();
   private point = new THREE.Vector3();
   private shardPool = new PixelShards();
+  private combatSprites: CombatSpriteRenderer;
   private tintColor = new THREE.Color();
   private shardMesh: THREE.InstancedMesh;
   private flashMesh: THREE.InstancedMesh;
@@ -117,9 +121,11 @@ export class Effects {
     private scene: THREE.Scene,
     private battle: Battle,
     private camera: THREE.PerspectiveCamera,
+    combatSheets?: readonly CombatSheet[],
   ) {
     this.trailClocks = new Float32Array(battle.drops.length);
-    const shardGeometry = new THREE.PlaneGeometry(1, 1),
+    this.combatSprites = new CombatSpriteRenderer(scene, camera, combatSheets);
+    const shardGeometry = new THREE.BoxGeometry(1, 1, 1),
       flashGeometry = impactSplashGeometry();
     this.shardAlpha = new THREE.InstancedBufferAttribute(
       new Float32Array(P.shardCapacity),
@@ -135,7 +141,7 @@ export class Effects {
     flashGeometry.setAttribute("vfxOpacity", this.flashAlpha);
     this.shardMesh = new THREE.InstancedMesh(
       shardGeometry,
-      fadingMaterial(true),
+      voxelFragmentMaterial(),
       P.shardCapacity,
     );
     this.flashMesh = new THREE.InstancedMesh(
@@ -326,6 +332,9 @@ export class Effects {
         ),
     );
   }
+  get ready() {
+    return this.combatSprites.ready;
+  }
   burst(point: THREE.Vector3, color = 0xaaf5d2, count = 18, speed = 3) {
     const c = new THREE.Color(color);
     for (let i = 0; i < count; i++) {
@@ -453,10 +462,21 @@ export class Effects {
     bullet = true,
     scale = 1,
     incoming?: { x: number; y: number; z: number },
+    surfaceNormal?: { x: number; y: number; z: number },
   ) {
     this.stats.impacts++;
+    const authored = this.combatSprites.spawn(
+      critical ? "critical" : "normal",
+      x,
+      y,
+      z,
+      1.25 * scale,
+    );
+    const lowDetail =
+      this.reduced ||
+      this.camera.position.distanceToSquared(this.point.set(x, y, z)) > 28 * 28;
     if (bullet) {
-      this.whiteFlash(x, y, z, scale * (critical ? 1.15 : 1));
+      if (!authored) this.whiteFlash(x, y, z, scale * (critical ? 1.15 : 1));
       // Lift fragments just off the shallow body surface to avoid depth fighting.
       this.point
         .set(
@@ -466,7 +486,7 @@ export class Effects {
         )
         .normalize()
         .multiplyScalar(0.09);
-      const normal = this.point.clone().normalize();
+      const normal = surfaceNormal ?? this.point.clone().normalize();
       const motion = {
         nx: normal.x,
         ny: normal.y,
@@ -479,11 +499,17 @@ export class Effects {
         x + this.point.x,
         y + this.point.y,
         z + this.point.z,
-        this.reduced
-          ? 10
-          : critical
-            ? COMBAT_FEEL.criticalImpactCount
-            : COMBAT_FEEL.impactCount,
+        authored
+          ? lowDetail
+            ? 3
+            : critical
+              ? 9
+              : 6
+          : this.reduced
+            ? 10
+            : critical
+              ? COMBAT_FEEL.criticalImpactCount
+              : COMBAT_FEEL.impactCount,
         false,
         scale,
         motion,
@@ -492,7 +518,15 @@ export class Effects {
         x + this.point.x,
         y + this.point.y,
         z + this.point.z,
-        this.reduced ? 3 : COMBAT_FEEL.impactStreaks,
+        authored
+          ? lowDetail
+            ? 1
+            : critical
+              ? 4
+              : 2
+          : this.reduced
+            ? 3
+            : COMBAT_FEEL.impactStreaks,
         false,
         scale,
         { ...motion, streak: true },
@@ -579,15 +613,31 @@ export class Effects {
     c.tint.value = 1;
     c.vy = 2.4;
     this.stats.deaths++;
+    const authored = this.combatSprites.spawn(
+      "death",
+      x,
+      c.sprite.position.y,
+      z,
+      1.25 * scale,
+    );
+    const lowDetail =
+      this.reduced ||
+      this.camera.position.distanceToSquared(c.sprite.position) > 28 * 28;
     this.shardPool.spawn(
       x,
       c.sprite.position.y,
       z,
-      this.reduced
-        ? 18
-        : kind === 2
-          ? COMBAT_FEEL.bruteDeathCount
-          : COMBAT_FEEL.deathCount,
+      authored
+        ? lowDetail
+          ? 5
+          : kind === 2
+            ? 16
+            : 12
+        : this.reduced
+          ? 18
+          : kind === 2
+            ? COMBAT_FEEL.bruteDeathCount
+            : COMBAT_FEEL.deathCount,
       true,
       Math.min(1.4, scale),
     );
@@ -595,12 +645,19 @@ export class Effects {
       x,
       c.sprite.position.y,
       z,
-      this.reduced ? 3 : COMBAT_FEEL.deathStreaks,
+      authored
+        ? lowDetail
+          ? 1
+          : 3
+        : this.reduced
+          ? 3
+          : COMBAT_FEEL.deathStreaks,
       true,
       scale,
       { streak: true },
     );
-    this.whiteFlash(x, c.sprite.position.y, z, scale * 1.35, 0xe83b45, true);
+    if (!authored)
+      this.whiteFlash(x, c.sprite.position.y, z, scale * 1.35, 0xe83b45, true);
     this.burst(c.sprite.position, 0xff6655, 5, 2.2);
   }
   spawn(x: number, z: number) {
@@ -668,6 +725,7 @@ export class Effects {
         }
       }
     this.shardPool.update(dt, groundHeight);
+    this.combatSprites.step(dt);
     for (const f of this.flashes) if (f.life > 0) f.life -= dt;
     for (const w of this.spawnWisps)
       if (w.life > 0) {
@@ -846,13 +904,14 @@ export class Effects {
       n.sprite.material.opacity = pose.opacity;
       n.seen = true;
     }
+    // Authored artwork reserves coverage before the complementary solid fragments.
+    this.combatSprites.render(this.viewportHeight, this.reduced);
     let shards = 0;
     for (const p of this.shardPool.items)
       if (p.life > 0) {
         const fade = p.life / p.max;
         this.dummy.position.set(p.x, p.y, p.z);
-        this.dummy.quaternion.copy(this.camera.quaternion);
-        this.dummy.rotateZ(p.angle);
+        this.dummy.rotation.set(p.angleX, p.angleY, p.angle);
         const distance = this.camera.position.distanceTo(this.dummy.position),
           focal =
             this.viewportHeight /
@@ -863,12 +922,36 @@ export class Effects {
         this.dummy.scale.set(
           size * (p.stretch > 2 ? 0.42 : 1),
           size * p.stretch,
-          1,
+          size * (p.stretch > 2 ? 0.42 : 0.7),
         );
         this.dummy.updateMatrix();
+        this.projected.copy(this.dummy.position).project(this.camera);
+        if (this.projected.z < -1 || this.projected.z > 1) continue;
+        this.fragmentView.multiplyMatrices(
+          this.camera.matrixWorldInverse,
+          this.dummy.matrix,
+        );
+        const m = this.fragmentView.elements,
+          depth = Math.max(
+            0.06,
+            -m[14] - (Math.abs(m[2]) + Math.abs(m[6]) + Math.abs(m[10])) * 0.5,
+          ),
+          width =
+            ((Math.abs(m[0]) + Math.abs(m[4]) + Math.abs(m[8])) * focal) /
+            depth,
+          height =
+            ((Math.abs(m[1]) + Math.abs(m[5]) + Math.abs(m[9])) * focal) /
+            depth,
+          opacity = this.combatSprites.fragmentOpacity(
+            this.projected.x * 0.5 + 0.5,
+            -this.projected.y * 0.5 + 0.5,
+            width / viewportWidth,
+            height / this.viewportHeight,
+          );
+        if (opacity < 0.02) continue;
         this.shardMesh.setMatrixAt(shards, this.dummy.matrix);
         this.shardMesh.setColorAt(shards, this.shardColors[p.color]);
-        this.shardAlpha.setX(shards++, Math.min(1, fade * 3));
+        this.shardAlpha.setX(shards++, Math.min(1, fade * 3) * opacity);
       }
     this.shardMesh.count = shards;
     this.shardMesh.instanceMatrix.needsUpdate = true;
@@ -932,6 +1015,7 @@ export class Effects {
       numberTextures: this.numberTextures.size,
       shards: this.shardMesh.count,
       flashes: this.flashMesh.count,
+      combatSprites: this.combatSprites.diagnostics(),
       numbers: this.numbers
         .filter((n) => n.life > 0)
         .map((n) => ({
@@ -963,6 +1047,7 @@ export class Effects {
     this.ringLife = 0;
     this.trailClocks.fill(0);
     this.shardPool.reset();
+    this.combatSprites.reset();
     for (const f of this.flashes) {
       f.life = 0;
       f.seen = true;

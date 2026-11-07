@@ -42,14 +42,17 @@ GAME_URL=http://127.0.0.1:4173 npm run test:browser
 GAME_URL=http://127.0.0.1:4173 npm run test:visual
 GAME_URL=http://127.0.0.1:4173 npm run test:handling
 npm run test:polish
+npm run test:combat-vfx
 npm run bench:ai
 ```
 
 The browser suite uses `/usr/bin/chromium` by default; set `CHROMIUM_PATH` to another Chromium executable. It exercises actual pointer capture, character upgrades, movement, jump/landing, aiming, finite-ammo reloads, weapon switching, magic, bell collision/interaction, forest-wide spawning, white hit flashes, confirmed white hit markers and red kill markers, probabilistic loot collection, all ten stacked waves, shooting moving enemies, pause/resume, sound controls, and narrow-screen menu layout. Screenshots go to ignored `artifacts/`. Software WebGL is used for automation; those frame rates are not representative of GPU-equipped clients.
 
-`test:visual` and `test:handling` use the same `GAME_URL`/preview as the browser suite. Handling checks real sprint-to-fire timing, ADS transitions, crouch/air accuracy, crosshair layout at 720p/1080p and smoke cleanup. `test:polish` starts its own isolated local fixture on port 5190. It renders the production enemy, weapon, effects and HUD classes in a controlled scene to inspect alpha-preserving flashes, damage numbers, casting, smoke, loot streams and real level-up rewards. The fixture never ships with the game. `bench:ai` measures the simulation independently of rendering with 8, 80 and 260 enemies. Run browser suites sequentially on a software renderer. See [the 0.8.0 report](docs/release-0.8.0.md) for the latest changes and validation.
+`test:visual` and `test:handling` use the same `GAME_URL`/preview as the browser suite. Handling checks real sprint-to-fire timing, ADS transitions, crouch/air accuracy, crosshair layout at 720p/1080p and smoke cleanup. `test:polish` starts its own isolated local fixture on port 5190. It renders the production enemy, weapon, effects and HUD classes in a controlled scene to inspect alpha-preserving flashes, damage numbers, casting, smoke, loot streams and real level-up rewards. The fixture never ships with the game. `bench:ai` measures the simulation independently of rendering with 8, 80 and 260 enemies. Run browser suites sequentially on a software renderer. See [the 0.9.0 report](docs/release-0.9.0.md) for the latest changes and validation. Play the [published game](https://alimshusseindev.github.io/Soul-Harvester/?v=0.9.0).
 
 ## Architecture
+
+The pending custom combat sprite system and original-image import workflow are documented in [combat-sprite-system.md](docs/combat-sprite-system.md). The original PNG files are still required; `test:combat-vfx` uses diagnostic atlases only, not substitute production artwork.
 
 - `src/game/battle.ts`: renderer-independent concurrent waves, combat, aggro, damage, economy, XP and upgrade simulation.
 - `src/game/navigation.ts`: shared Dijkstra flow fields with a binary min-heap, validated path lookahead, bounded lane offsets, non-corner-cutting grid paths, line-of-sight queries, and a spatial hash for local crowd separation.

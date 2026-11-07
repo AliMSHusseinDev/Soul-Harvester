@@ -132,7 +132,14 @@ export class Enemies {
           e.hitFlash / COMBAT_FEEL.flashDuration,
           pending ? 0.9 : 0,
         );
-      this.flashes[e.kind].setX(i, flash);
+      const decay = Math.min(1, flash);
+      this.flashes[e.kind].setX(
+        i,
+        decay *
+          decay *
+          (3 - 2 * decay) *
+          (e.hitCritical ? 1 / COMBAT_FEEL.flashStrength : 1),
+      );
       this.renderedHits[e.id] = e.damageStamp;
       const walking = Math.hypot(e.vx, e.vz) > 0.2;
       this.frames[e.kind].setX(
@@ -162,6 +169,7 @@ export class Enemies {
       distance: number;
       point: THREE.Vector3;
       uv: THREE.Vector2;
+      normal: THREE.Vector3;
     }[] = [];
     for (const e of this.battle.enemies) {
       if (!e.active) continue;
@@ -190,6 +198,7 @@ export class Enemies {
         distance: t,
         point,
         uv: new THREE.Vector2(u, v),
+        normal: normal.clone().multiplyScalar(denom < 0 ? 1 : -1),
       });
     }
     return hits.sort((a, b) => a.distance - b.distance);

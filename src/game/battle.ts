@@ -51,6 +51,7 @@ export interface Enemy extends Point {
   kind: number;
   wave: number;
   hitFlash: number;
+  hitCritical: boolean;
   damageStamp: number;
   reaction: number;
   spawnAge: number;
@@ -93,6 +94,9 @@ export type BattleEvent = {
   incomingX?: number;
   incomingY?: number;
   incomingZ?: number;
+  normalX?: number;
+  normalY?: number;
+  normalZ?: number;
 };
 export class Battle {
   readonly nav: Navigation;
@@ -118,6 +122,7 @@ export class Battle {
       kind: 0,
       wave: 1,
       hitFlash: 0,
+      hitCritical: false,
       damageStamp: 0,
       reaction: 0,
       spawnAge: 0,
@@ -238,6 +243,9 @@ export class Battle {
       incomingX?: number;
       incomingY?: number;
       incomingZ?: number;
+      normalX?: number;
+      normalY?: number;
+      normalZ?: number;
     },
   ) {
     this.events.push({ kind, x, z, value, y, ...details });
@@ -287,6 +295,7 @@ export class Battle {
       knockX: 0,
       knockZ: 0,
       hitFlash: 0,
+      hitCritical: false,
       damageStamp: 0,
       reaction: 0,
       spawnAge: 0,
@@ -700,6 +709,9 @@ export class Battle {
       incomingX?: number;
       incomingY?: number;
       incomingZ?: number;
+      normalX?: number;
+      normalY?: number;
+      normalZ?: number;
     },
   ) {
     const e = this.enemies[id];
@@ -707,6 +719,7 @@ export class Battle {
     e.hp -= damage;
     e.damageStamp = ++this.damageStamp;
     e.hitFlash = COMBAT_FEEL.flashDuration;
+    e.hitCritical = !!impact?.critical;
     e.reaction = COMBAT_FEEL.reactionDuration;
     const d = Math.hypot(e.x - from.x, e.z - from.z) || 1;
     e.knockX = ((e.x - from.x) / d) * knockback;
@@ -730,6 +743,9 @@ export class Battle {
         incomingX: impact?.incomingX,
         incomingY: impact?.incomingY,
         incomingZ: impact?.incomingZ,
+        normalX: impact?.normalX,
+        normalY: impact?.normalY,
+        normalZ: impact?.normalZ,
       },
     );
     if (e.hp <= 0) {

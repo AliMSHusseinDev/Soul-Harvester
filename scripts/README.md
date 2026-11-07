@@ -11,3 +11,7 @@
 `ai-benchmark.mjs` measures 8/80/260 mixed enemies navigating around a wall. Run `npm run bench:ai`; optionally supply an output JSON path. It measures simulation only, with a 120-step warmup followed by 1,080 measured steps per horde size. Keep rendering tests and benchmarks sequential on a software-rendered host.
 
 The 0.8 suites additionally check stamina reaching an actual 0px fill, airborne sprint pose/fire gating, water views at the bridge, integer labels and screen separation, gold fragment pixels, crimson finishing feedback, hip/ADS muzzle depth and a non-stacking level-up time envelope that recovers on unscaled time.
+
+`combat-vfx-check.mjs` starts a local fixture on port 5191 and checks the hybrid renderer at 720p/1080p using clearly marked diagnostic atlases. It covers independent UV animation, alpha, world occlusion, camera-facing sprites versus world-space cuboids, confirmed event/death priority, final-frame cleanup, pooled stress and stable GPU memory. `npm run test:combat-vfx` also runs the Pillow importer tests. It does not certify the unavailable original artwork; see `docs/combat-sprite-system.md`.
+
+`prepare-combat-assets.py inspect <PNG paths>` reports source RGBA information. Once the three original images and measured frame rectangles are available, `build <configuration.json>` repacks them with common frame bounds and gutters, writes the production catalog and creates ignored checkerboard review artifacts. Pillow is a development/import dependency, not a runtime game dependency.

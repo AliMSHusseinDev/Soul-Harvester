@@ -84,6 +84,7 @@ async function boot() {
     effects = new Effects(scene, battle, camera),
     abilityPresentation = new AbilityPresentation(),
     feedback = new HitFeedback();
+  await effects.ready;
   const accuracy = new HipAccuracy();
   const cinematic = new CinematicTime();
   const gunFX = new GunVFX(scene, camera);
@@ -363,6 +364,9 @@ async function boot() {
           incomingX: direction.x,
           incomingY: direction.y,
           incomingZ: direction.z,
+          normalX: hit.normal.x,
+          normalY: hit.normal.y,
+          normalZ: hit.normal.z,
         },
       );
       feedback.confirm(killed);
@@ -433,6 +437,13 @@ async function boot() {
                   x: event.incomingX,
                   y: event.incomingY ?? 0,
                   z: event.incomingZ ?? 0,
+                },
+            event.normalX === undefined
+              ? undefined
+              : {
+                  x: event.normalX,
+                  y: event.normalY ?? 0,
+                  z: event.normalZ ?? 1,
                 },
           );
       } else if (event.kind === "kill") {
@@ -692,7 +703,7 @@ async function boot() {
   Object.defineProperty(window, "__soulHarvester", {
     value: () => ({
       ready: true,
-      version: "0.8.0",
+      version: "0.9.0",
       timeScale: cinematic.scale,
       cinematicActive: cinematic.active,
       stamina: player.stamina,
