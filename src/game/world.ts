@@ -9,6 +9,8 @@ import {
   cloudTexture,
 } from "./textures";
 import { MAP, landHeight, terrainSlope } from "./terrain";
+import { FOREST_TREES, forestSolids } from "./forest";
+import { LIGHTING } from "./tuning";
 interface Flame {
   position: THREE.Vector3;
   light: THREE.PointLight;
@@ -26,7 +28,7 @@ export class World {
   private dummy = new THREE.Object3D();
   private stone = new THREE.MeshStandardMaterial({
     map: stoneTexture(),
-    color: 0x8bada1,
+    color: 0xb8c6bb,
     roughness: 0.95,
   });
   private darkStone = new THREE.MeshStandardMaterial({
@@ -47,11 +49,11 @@ export class World {
   private particles: THREE.Points;
   private moteBase: Float32Array;
   constructor(readonly scene: THREE.Scene) {
-    scene.background = new THREE.Color(0x103c3f);
-    scene.fog = new THREE.FogExp2(0x123c3e, 0.012);
-    scene.add(new THREE.HemisphereLight(0xa0e5d9, 0x263c21, 2.3));
-    const moonlight = new THREE.DirectionalLight(0xa2eee0, 2.8);
-    moonlight.position.set(-8, 35, -60);
+    scene.background = new THREE.Color(0x123e46);
+    scene.fog = new THREE.FogExp2(0x16434b, LIGHTING.fogDensity);
+    scene.add(new THREE.HemisphereLight(0xb6e8eb, 0x26392b, LIGHTING.sky));
+    const moonlight = new THREE.DirectionalLight(0xb2e9e6, LIGHTING.moon);
+    moonlight.position.set(-12, 42, -65);
     moonlight.castShadow = true;
     moonlight.shadow.mapSize.set(2048, 2048);
     Object.assign(moonlight.shadow.camera, {
@@ -63,7 +65,7 @@ export class World {
     });
     moonlight.shadow.bias = -0.001;
     scene.add(moonlight);
-    const fill = new THREE.DirectionalLight(0x8da89c, 0.65);
+    const fill = new THREE.DirectionalLight(0x8caab5, LIGHTING.fill);
     fill.position.set(5, 15, 25);
     scene.add(fill);
     this.skyMaterial = new THREE.ShaderMaterial({
@@ -72,7 +74,7 @@ export class World {
       uniforms: { time: { value: 0 }, clouds: { value: cloudTexture() } },
       vertexShader:
         "varying vec3 p; varying vec2 skyUv; void main(){p=position;skyUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}",
-      fragmentShader: `varying vec3 p;varying vec2 skyUv;uniform float time;uniform sampler2D clouds;void main(){float h=normalize(p).y;vec3 c=mix(vec3(.065,.20,.215),vec3(.008,.065,.09),smoothstep(-.1,.8,h));float cloud=texture2D(clouds,vec2(skyUv.x+time*.0006,skyUv.y)).r;c+=vec3(.14,.24,.22)*cloud*smoothstep(-.05,.15,h);gl_FragColor=vec4(c,1.);}`,
+      fragmentShader: `varying vec3 p;varying vec2 skyUv;uniform float time;uniform sampler2D clouds;void main(){vec3 n=normalize(p);float h=n.y;vec3 c=mix(vec3(.055,.17,.20),vec3(.005,.035,.06),smoothstep(-.1,.8,h));float cloud=texture2D(clouds,vec2(skyUv.x+time*.0006,skyUv.y)).r;float moon=pow(max(0.,dot(n,normalize(vec3(0.,52.,-220.)))),35.);c+=vec3(.10,.26,.24)*moon;c+=vec3(.19,.29,.28)*cloud*smoothstep(-.05,.15,h);gl_FragColor=vec4(c,1.);}`,
       fog: false,
     });
     scene.add(
@@ -133,7 +135,7 @@ export class World {
   private ground() {
     const groundMat = new THREE.MeshStandardMaterial({
       map: groundTexture(),
-      color: 0x92b577,
+      color: 0xadc4af,
       roughness: 1,
     });
     for (const [z, d] of [
@@ -205,7 +207,7 @@ export class World {
     const grass = new THREE.InstancedMesh(
       geo,
       new THREE.MeshStandardMaterial({
-        color: 0x5e8b44,
+        color: 0xb1c8a3,
         side: THREE.DoubleSide,
         roughness: 1,
       }),
@@ -218,7 +220,7 @@ export class World {
       if ((z < 2 && z > -14) || (Math.abs(x) < 3.2 && z > -62)) continue;
       this.dummy.position.set(x, 0.015, z);
       this.dummy.rotation.set(0, this.rng() * 6, 0);
-      const scale = 0.5 + this.rng();
+      const scale = 0.35 + this.rng() * 0.8;
       this.dummy.scale.set(scale, scale, scale);
       this.dummy.updateMatrix();
       grass.setMatrixAt(n, this.dummy.matrix);
@@ -226,8 +228,8 @@ export class World {
         n,
         new THREE.Color().setHSL(
           0.25 + this.rng() * 0.03,
-          0.28,
-          0.24 + this.rng() * 0.16,
+          0.26,
+          0.24 + this.rng() * 0.14,
         ),
       );
       n++;
@@ -354,7 +356,7 @@ export class World {
     this.scene.add(emblem);
   }
   private field() {
-    // Spawn tree sits directly below the lunar disk, beyond the bridge.
+    // Landmark tree; enemies now emerge along the entire forest fringe behind it.
     const bark = new THREE.MeshStandardMaterial({
       color: 0x384237,
       roughness: 1,
@@ -390,19 +392,6 @@ export class World {
       branch.rotation.x = Math.cos(a) * 0.7;
       this.scene.add(branch);
     }
-    // Portal sparks identify the fixed spawning area without borrowing reference art.
-    const circle = new THREE.Mesh(
-      new THREE.RingGeometry(2.5, 2.6, 48),
-      new THREE.MeshBasicMaterial({
-        color: 0x40bd8c,
-        transparent: true,
-        opacity: 0.45,
-        side: THREE.DoubleSide,
-      }),
-    );
-    circle.rotation.x = -Math.PI / 2;
-    circle.position.set(0, 0.04, -53);
-    this.scene.add(circle);
     for (const [x, z, l, h] of [
       [-23, -28, 11, 3.5],
       [24, -42, 12, 4],
@@ -435,44 +424,71 @@ export class World {
     }
   }
   private forest() {
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x173f35,
-      roughness: 1,
-    });
-    const trees = new THREE.InstancedMesh(
-      new THREE.ConeGeometry(3, 14, 7),
-      mat,
-      180,
-    );
-    for (let i = 0; i < 180; i++) {
-      const x =
-          i < 110
-            ? (this.rng() - 0.5) * 180
-            : (i % 2 ? 1 : -1) * (32 + this.rng() * 20),
-        z = i < 110 ? -74 - this.rng() * 25 : 25 - this.rng() * 100;
-      const s = 0.7 + this.rng() * 0.8;
-      this.dummy.position.set(x, 6 * s, z);
+    const tiers = [
+        [1, 0.5, 0.4],
+        [0.78, 0.46, 0.62],
+        [0.52, 0.44, 0.8],
+      ].map(([r, h, y]) => new THREE.ConeGeometry(r, h, 7).translate(0, y, 0)),
+      canopy = mergeGeometries(tiers)!,
+      trees = new THREE.InstancedMesh(
+        canopy,
+        new THREE.MeshStandardMaterial({
+          color: 0x43675b,
+          roughness: 1,
+          flatShading: true,
+        }),
+        FOREST_TREES.length,
+      ),
+      trunks = new THREE.InstancedMesh(
+        new THREE.CylinderGeometry(0.014, 0.022, 0.35, 5).translate(
+          0,
+          0.175,
+          0,
+        ),
+        new THREE.MeshStandardMaterial({ color: 0x4d4a38, roughness: 1 }),
+        FOREST_TREES.length,
+      ),
+      tint = new THREE.Color();
+    tiers.forEach((g) => g.dispose());
+    FOREST_TREES.forEach((t, i) => {
+      this.dummy.position.set(t.x, 0, t.z);
       this.dummy.rotation.set(0, this.rng() * 6, 0);
-      this.dummy.scale.set(s, s, s);
+      this.dummy.scale.set(t.width, t.height, t.width);
       this.dummy.updateMatrix();
       trees.setMatrixAt(i, this.dummy.matrix);
-    }
-    this.scene.add(trees);
-    for (let i = 0; i < 12; i++) {
-      const m = new THREE.Mesh(
-        new THREE.ConeGeometry(20, 35 + this.rng() * 25, 4),
-        new THREE.MeshBasicMaterial({ color: 0x123337 }),
-      );
-      m.position.set((i - 6) * 24, 8, -125 - this.rng() * 20);
-      this.scene.add(m);
+      tint.setScalar(t.shade);
+      trees.setColorAt(i, tint);
+      this.dummy.scale.set(t.height, t.height, t.height);
+      this.dummy.updateMatrix();
+      trunks.setMatrixAt(i, this.dummy.matrix);
+    });
+    trees.castShadow = trees.receiveShadow = true;
+    this.scene.add(trees, trunks);
+    this.solids.push(...forestSolids());
+    // Layered valley ridges replace isolated giant cones. All silhouettes share one material.
+    const ridgeMat = new THREE.MeshBasicMaterial({ color: 0x16373f });
+    for (let layer = 0; layer < 3; layer++) {
+      const shape = new THREE.Shape();
+      shape.moveTo(-180, -8);
+      for (let i = 0; i <= 30; i++) {
+        const x = -180 + i * 12,
+          valley = Math.pow(Math.abs(x) / 180, 0.65);
+        shape.lineTo(x, -8 + valley * 65 + this.rng() * 6 + layer * 4);
+      }
+      shape.lineTo(180, -8);
+      shape.closePath();
+      const ridge = new THREE.Mesh(new THREE.ShapeGeometry(shape), ridgeMat);
+      ridge.position.z = -115 - layer * 28;
+      ridge.userData.terrainExempt = true;
+      this.scene.add(ridge);
     }
   }
   update(time: number) {
     this.skyMaterial.uniforms.time.value = time;
     for (const f of this.flames) {
       const flicker = 1 + Math.sin(time * 9 + f.phase) * 0.07;
-      f.light.intensity = 24 * flicker;
-      f.sprite.scale.set(0.9 * flicker, 1.4 * flicker, 1);
+      f.light.intensity = LIGHTING.torch * flicker;
+      f.sprite.scale.set(0.65 * flicker, 0.9 * flicker, 1);
     }
     const positions = this.particles.geometry.attributes
       .position as THREE.BufferAttribute;
@@ -661,7 +677,10 @@ export class World {
         this.dummy.scale.set(1, 1, 1);
         this.dummy.updateMatrix();
         wall.setMatrixAt(n, this.dummy.matrix);
-        wall.setColorAt(n, new THREE.Color().setScalar(0.6 + this.rng() * 0.4));
+        wall.setColorAt(
+          n,
+          new THREE.Color().setScalar(0.82 + this.rng() * 0.18),
+        );
         n++;
       }
     for (let i = 0; i < cols; i += 2) {

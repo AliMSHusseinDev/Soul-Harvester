@@ -46,7 +46,7 @@ a:focus-visible {
   background: radial-gradient(
     ellipse at 50% 45%,
     transparent 40%,
-    #02080660 100%
+    #02080638 100%
   );
 }
 .grain {
@@ -570,14 +570,50 @@ h1 em {
 .crosshair.aiming {
   opacity: 0;
 }
+.crosshair.confirmed i {
+  background: #ff6658;
+}
 .hitmarker {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  font-size: 24px;
-  color: #fff0b9;
+  width: 22px;
+  height: 22px;
+  color: #ff6658;
   opacity: 0;
+  pointer-events: none;
+}
+.hitmarker i {
+  position: absolute;
+  width: 7px;
+  height: 2px;
+  background: currentColor;
+  box-shadow: 0 0 2px #160500;
+}
+.hitmarker i:nth-child(1) {
+  left: 0;
+  top: 3px;
+  transform: rotate(45deg);
+}
+.hitmarker i:nth-child(2) {
+  right: 0;
+  top: 3px;
+  transform: rotate(-45deg);
+}
+.hitmarker i:nth-child(3) {
+  left: 0;
+  bottom: 3px;
+  transform: rotate(-45deg);
+}
+.hitmarker i:nth-child(4) {
+  right: 0;
+  bottom: 3px;
+  transform: rotate(45deg);
+}
+.hitmarker.kill {
+  color: #ffb46c;
+  transform: translate(-50%, -50%) scale(1.22);
 }
 .hitmarker.show {
   opacity: 1;

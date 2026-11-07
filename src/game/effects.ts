@@ -3,6 +3,7 @@ import { glowTexture, guardTexture } from "./textures";
 import { groundHeight } from "./terrain";
 import { ENEMY_TYPES } from "./waves";
 import type { Battle } from "./battle";
+import { COMBAT_FEEL, LOOT_FEEL } from "./tuning";
 interface Particle {
   life: number;
   max: number;
@@ -51,10 +52,13 @@ export class Effects {
   private occluders: THREE.Box3[];
   private ray = new THREE.Ray();
   private point = new THREE.Vector3();
+  private trailClocks: Float32Array;
+  private spawnWisps: { sprite: THREE.Sprite; life: number }[] = [];
   constructor(
     private scene: THREE.Scene,
     private battle: Battle,
   ) {
+    this.trailClocks = new Float32Array(battle.drops.length);
     this.geometry.setAttribute(
       "position",
       new THREE.BufferAttribute(this.positions, 3),
@@ -67,7 +71,7 @@ export class Effects {
       this.geometry,
       new THREE.PointsMaterial({
         map: glowTexture(),
-        size: 0.095,
+        size: COMBAT_FEEL.particleSize,
         vertexColors: true,
         transparent: true,
         depthTest: true,
@@ -78,24 +82,36 @@ export class Effects {
     points.frustumCulled = false;
     scene.add(points);
     this.coinMesh = new THREE.InstancedMesh(
-      new THREE.CylinderGeometry(0.21, 0.21, 0.055, 12),
+      new THREE.CylinderGeometry(
+        LOOT_FEEL.goldRadius,
+        LOOT_FEEL.goldRadius,
+        0.035,
+        12,
+      ),
       new THREE.MeshStandardMaterial({
-        color: 0xffd277,
-        metalness: 0.35,
-        roughness: 0.4,
+        color: 0xe8b74c,
+        metalness: 0.4,
+        roughness: 0.42,
         emissive: 0xa85c0c,
-        emissiveIntensity: 0.7,
+        emissiveIntensity: 0.28,
       }),
       battle.drops.length,
     );
     this.crystalMesh = new THREE.InstancedMesh(
-      new THREE.OctahedronGeometry(0.19),
-      new THREE.MeshBasicMaterial({ color: 0x7bdcff }),
+      new THREE.OctahedronGeometry(LOOT_FEEL.xpRadius),
+      new THREE.MeshStandardMaterial({
+        color: 0x42b7e4,
+        roughness: 0.35,
+        metalness: 0.15,
+        emissive: 0x1878b0,
+        emissiveIntensity: 0.35,
+        flatShading: true,
+      }),
       battle.drops.length,
     );
     this.missileMesh = new THREE.InstancedMesh(
-      new THREE.IcosahedronGeometry(0.12),
-      new THREE.MeshBasicMaterial({ color: 0xdc78ff }),
+      new THREE.IcosahedronGeometry(0.075),
+      new THREE.MeshBasicMaterial({ color: 0xc97ae2 }),
       battle.missiles.length,
     );
     // Dynamic instance bounds cannot be reused from an empty initial frame.
@@ -104,6 +120,21 @@ export class Effects {
       mesh.frustumCulled = false;
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       scene.add(mesh);
+    }
+    const wispMap = glowTexture();
+    for (let i = 0; i < 16; i++) {
+      const sprite = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: wispMap,
+          color: 0x477b7a,
+          transparent: true,
+          opacity: 0,
+          depthWrite: false,
+        }),
+      );
+      sprite.visible = false;
+      scene.add(sprite);
+      this.spawnWisps.push({ sprite, life: 0 });
     }
     for (let i = 0; i < 32; i++) {
       const sprite = new THREE.Sprite(
@@ -183,7 +214,7 @@ export class Effects {
         }
       }
       if (!p) break;
-      const life = 0.25 + Math.random() * 0.35;
+      const life = 0.18 + Math.random() * 0.25;
       Object.assign(p, {
         life,
         max: life,
@@ -209,11 +240,24 @@ export class Effects {
       1.6,
     );
   }
-  number(x: number, z: number, value: number) {
+  number(x: number, z: number, value: number, y = groundHeight(x, z) + 1.5) {
     const n = this.numbers.find((n) => n.life <= 0) || this.numbers[0],
       rounded = Math.round(value);
     let texture = this.numberTextures.get(rounded);
     if (!texture) {
+      if (this.numberTextures.size >= 64) {
+        for (const [key, map] of this.numberTextures) {
+          if (
+            this.numbers.some(
+              (n) => n.life > 0 && n.sprite.material.map === map,
+            )
+          )
+            continue;
+          map.dispose();
+          this.numberTextures.delete(key);
+          break;
+        }
+      }
       const canvas = document.createElement("canvas");
       canvas.width = 128;
       canvas.height = 64;
@@ -234,7 +278,7 @@ export class Effects {
       angle = i * 2.39996;
     n.sprite.position.set(
       x + Math.cos(angle) * 0.18,
-      groundHeight(x, z) + 1.65 + Math.sin(angle) * 0.1,
+      y + 0.22 + Math.sin(angle) * 0.07,
       z,
     );
     n.life = 0.65;
@@ -251,7 +295,14 @@ export class Effects {
     c.sprite.visible = true;
     c.life = 0.65;
     c.vy = 2.4;
-    this.burst(c.sprite.position, 0x8eb598, 12, 2.5);
+    this.burst(c.sprite.position, 0x8eb598, COMBAT_FEEL.deathCount, 2.2);
+  }
+  spawn(x: number, z: number) {
+    const w = this.spawnWisps.find((w) => w.life <= 0);
+    if (!w) return;
+    w.sprite.position.set(x, groundHeight(x, z) + 0.45, z);
+    w.life = 0.65;
+    w.sprite.visible = true;
   }
   pulse(x: number, z: number) {
     this.ringOrigin.set(x, z);
@@ -265,12 +316,17 @@ export class Effects {
     o.mesh.position.copy(position).addScaledVector(direction, 0.8);
     o.velocity.copy(direction).multiplyScalar(19);
   }
-  pickup(kind: "gold" | "xp", x: number, z: number) {
+  pickup(
+    kind: "gold" | "xp",
+    x: number,
+    z: number,
+    y = groundHeight(x, z) + 1,
+  ) {
     this.burst(
-      new THREE.Vector3(x, groundHeight(x, z) + 0.9, z),
+      new THREE.Vector3(x, y, z),
       kind === "gold" ? 0xffd06c : 0x7cddff,
-      7,
-      1.1,
+      4,
+      0.7,
     );
   }
   update(dt: number, time: number, simulate: boolean) {
@@ -281,7 +337,7 @@ export class Effects {
       if (!d.active) continue;
       this.dummy.position.set(
         d.x,
-        d.y + (d.magnet ? 0 : Math.sin(time * 3 + d.id) * 0.045),
+        d.y + (d.magnet || d.age < 1.5 ? 0 : Math.sin(time * 3 + d.id) * 0.02),
         d.z,
       );
       this.dummy.rotation.set(
@@ -289,17 +345,29 @@ export class Effects {
         time * 2 + d.id,
         0,
       );
-      this.dummy.scale.set(1, d.kind === "xp" ? 1.4 : 1, 1);
+      // Shrink as it reaches the player, avoiding a screen-filling pickup in the near plane.
+      const scale = d.magnet
+        ? Math.max(
+            0.2,
+            Math.min(
+              1,
+              Math.hypot(d.x - this.playerX, d.z - this.playerZ) / 1.25,
+            ),
+          )
+        : 1;
+      this.dummy.scale.set(scale, (d.kind === "xp" ? 1.55 : 1) * scale, scale);
       this.dummy.updateMatrix();
       if (d.kind === "gold")
         this.coinMesh.setMatrixAt(gold++, this.dummy.matrix);
       else this.crystalMesh.setMatrixAt(xp++, this.dummy.matrix);
+      if (simulate) this.trailClocks[d.id] += dt;
       if (
         simulate &&
         d.magnet &&
         trails < 4 &&
-        (Math.floor(time * 20) + d.id) % 4 === 0
+        this.trailClocks[d.id] >= 0.065
       ) {
+        this.trailClocks[d.id] = 0;
         this.burst(
           new THREE.Vector3(d.x, d.y, d.z),
           d.kind === "gold" ? 0xf7c95e : 0x66ceff,
@@ -339,13 +407,26 @@ export class Effects {
           p.vz *= 0.7;
         }
       }
-      this.positions.set(p.life > 0 ? [p.x, p.y, p.z] : [0, -100, 0], i * 3);
+      const at = i * 3;
+      this.positions[at] = p.life > 0 ? p.x : 0;
+      this.positions[at + 1] = p.life > 0 ? p.y : -100;
+      this.positions[at + 2] = p.life > 0 ? p.z : 0;
       const fade = Math.max(0, p.life / p.max);
-      this.colors.set([p.r * fade, p.g * fade, p.b * fade], i * 3);
+      this.colors[at] = p.r * fade;
+      this.colors[at + 1] = p.g * fade;
+      this.colors[at + 2] = p.b * fade;
     }
     this.geometry.attributes.position.needsUpdate = true;
     this.geometry.attributes.color.needsUpdate = true;
     if (!simulate) return;
+    for (const w of this.spawnWisps)
+      if (w.life > 0) {
+        w.life = Math.max(0, w.life - dt);
+        w.sprite.visible = w.life > 0;
+        w.sprite.position.y += dt * 0.28;
+        w.sprite.scale.set(0.8 + (0.65 - w.life) * 1.5, 0.7, 1);
+        w.sprite.material.opacity = Math.sin((w.life / 0.65) * Math.PI) * 0.22;
+      }
     for (const n of this.numbers)
       if (n.life > 0) {
         n.life -= dt;
@@ -400,7 +481,7 @@ export class Effects {
         }
         if (hit || o.life <= 0) {
           this.battle.explode(end);
-          this.burst(end, 0xffb259, 36, 5);
+          this.burst(end, 0xffb259, 22, 4);
           o.life = 0;
           o.mesh.visible = false;
         }
@@ -428,6 +509,8 @@ export class Effects {
       xp: this.crystalMesh.count,
       cullingDisabled:
         !this.coinMesh.frustumCulled && !this.crystalMesh.frustumCulled,
+      particles: this.particles.filter((p) => p.life > 0).length,
+      numberTextures: this.numberTextures.size,
     };
   }
   reset() {
@@ -445,5 +528,16 @@ export class Effects {
       o.mesh.visible = false;
     }
     this.ringLife = 0;
+    this.trailClocks.fill(0);
+    for (const w of this.spawnWisps) {
+      w.life = 0;
+      w.sprite.visible = false;
+    }
+  }
+  private playerX = 0;
+  private playerZ = 0;
+  followPlayer(x: number, z: number) {
+    this.playerX = x;
+    this.playerZ = z;
   }
 }

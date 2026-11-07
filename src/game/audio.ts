@@ -4,6 +4,7 @@ export class Audio {
   private master: GainNode | null = null;
   enabled = false;
   private ambience: OscillatorNode[] = [];
+  private shotNoise: AudioBuffer | null = null;
   async toggle() {
     this.enabled = !this.enabled;
     if (this.enabled) {
@@ -62,28 +63,51 @@ export class Audio {
     g.connect(this.master!);
     o.start();
     o.stop(c.currentTime + duration);
+    o.onended = () => {
+      o.disconnect();
+      g.disconnect();
+    };
   }
   shot() {
     this.tone(130, 0.17, 0.22, "sawtooth", 30);
     this.tone(740, 0.07, 0.045, "triangle", 90);
     if (!this.ctx || !this.enabled) return;
-    const c = this.ctx,
-      b = c.createBuffer(1, c.sampleRate * 0.13, c.sampleRate),
-      d = b.getChannelData(0);
-    for (let i = 0; i < d.length; i++)
-      d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3);
+    const c = this.ctx;
+    if (!this.shotNoise) {
+      this.shotNoise = c.createBuffer(1, c.sampleRate * 0.13, c.sampleRate);
+      const d = this.shotNoise.getChannelData(0);
+      for (let i = 0; i < d.length; i++)
+        d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3);
+    }
     const n = c.createBufferSource(),
       g = c.createGain();
-    n.buffer = b;
+    n.buffer = this.shotNoise;
     g.gain.value = 0.26;
     n.connect(g);
     g.connect(this.master!);
     n.start();
+    n.onended = () => {
+      n.disconnect();
+      g.disconnect();
+    };
   }
   reload() {
     this.tone(460, 0.06, 0.05, "square", 170);
   }
-  hit() {
+  hit(kill = false) {
+    this.tone(
+      kill ? 1150 : 850,
+      kill ? 0.1 : 0.055,
+      0.045,
+      "triangle",
+      kill ? 1600 : 500,
+    );
+    if (kill) this.tone(1720, 0.14, 0.025, "sine", 2100);
+  }
+  death() {
+    this.tone(95, 0.1, 0.035, "triangle", 45);
+  }
+  level() {
     this.tone(650, 0.25, 0.06, "sine", 1300);
   }
   bell() {
@@ -96,15 +120,21 @@ export class Audio {
       this.tone(f, 3.3, v);
   }
   private lastPickup = 0;
+  private pickupCombo = 0;
   pickup(kind: "gold" | "xp") {
     if (!this.ctx || this.ctx.currentTime - this.lastPickup < 0.035) return;
+    this.pickupCombo =
+      this.ctx.currentTime - this.lastPickup < 0.55
+        ? Math.min(8, this.pickupCombo + 1)
+        : 0;
     this.lastPickup = this.ctx.currentTime;
+    const pitch = Math.pow(1.055, this.pickupCombo);
     this.tone(
-      kind === "gold" ? 980 : 1450,
+      (kind === "gold" ? 980 : 1350) * pitch,
       0.12,
       0.045,
       "sine",
-      kind === "gold" ? 1450 : 1950,
+      (kind === "gold" ? 1450 : 1850) * pitch,
     );
   }
   melee() {

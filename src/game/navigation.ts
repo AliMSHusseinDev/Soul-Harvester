@@ -46,6 +46,7 @@ export class Navigation {
   readonly width = Math.ceil((MAP.maxX - MAP.minX) / this.cell);
   readonly height = Math.ceil((MAP.maxZ - MAP.minZ) / this.cell);
   readonly blocked = new Uint8Array(this.width * this.height);
+  private links: { id: number; cost: number }[][];
   constructor(private readonly solids: readonly Solid[]) {
     for (let i = 0; i < this.blocked.length; i++) {
       const p = this.point(i);
@@ -61,6 +62,9 @@ export class Navigation {
           ),
       );
     }
+    this.links = Array.from({ length: this.blocked.length }, (_, i) =>
+      this.buildNeighbors(i),
+    );
   }
   index(x: number, z: number) {
     const col = Math.floor((x - MAP.minX) / this.cell),
@@ -79,7 +83,20 @@ export class Navigation {
     const i = this.index(x, z);
     return i >= 0 && !this.blocked[i];
   }
+  canStand(x: number, z: number, radius = 0.34) {
+    return (
+      this.walkable(x, z) &&
+      !this.solids.some((s) => {
+        const dx = x - Math.max(s.minX, Math.min(x, s.maxX)),
+          dz = z - Math.max(s.minZ, Math.min(z, s.maxZ));
+        return dx * dx + dz * dz < radius * radius;
+      })
+    );
+  }
   neighbors(i: number) {
+    return this.links[i];
+  }
+  private buildNeighbors(i: number) {
     const result: { id: number; cost: number }[] = [];
     const x = i % this.width,
       z = Math.floor(i / this.width);
@@ -181,7 +198,7 @@ export class SpatialGrid<T extends Point> {
   private buckets = new Map<string, T[]>();
   constructor(private size = 2) {}
   clear() {
-    this.buckets.clear();
+    for (const bucket of this.buckets.values()) bucket.length = 0;
   }
   add(p: T) {
     const k = `${Math.floor(p.x / this.size)},${Math.floor(p.z / this.size)}`;
@@ -189,13 +206,16 @@ export class SpatialGrid<T extends Point> {
     if (b) b.push(p);
     else this.buckets.set(k, [p]);
   }
+  private result: T[] = [];
   near(p: Point) {
-    const result: T[] = [];
+    this.result.length = 0;
     const x = Math.floor(p.x / this.size),
       z = Math.floor(p.z / this.size);
     for (let dz = -1; dz <= 1; dz++)
-      for (let dx = -1; dx <= 1; dx++)
-        result.push(...(this.buckets.get(`${x + dx},${z + dz}`) || []));
-    return result;
+      for (let dx = -1; dx <= 1; dx++) {
+        const bucket = this.buckets.get(`${x + dx},${z + dz}`);
+        if (bucket) for (const item of bucket) this.result.push(item);
+      }
+    return this.result;
   }
 }

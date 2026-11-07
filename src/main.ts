@@ -20,6 +20,9 @@ import { Battle } from "./game/battle";
 import { Effects } from "./game/effects";
 import { UI, $ } from "./game/ui";
 import { MAP, groundHeight } from "./game/terrain";
+import { LIGHTING, COMBAT_FEEL } from "./game/tuning";
+import { HitFeedback, shotTarget } from "./game/feedback";
+import { WAVE_LIMIT } from "./game/waves";
 async function boot() {
   const canvas = $<HTMLCanvasElement>("world");
   const renderer = new THREE.WebGLRenderer({
@@ -39,7 +42,7 @@ async function boot() {
   renderer.setSize(innerWidth, innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.18;
+  renderer.toneMappingExposure = LIGHTING.exposure;
   renderer.shadowMap.enabled = !software;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.autoClear = false;
@@ -58,8 +61,10 @@ async function boot() {
   viewScene.environment = pmrem.fromScene(room, 0.04).texture;
   room.dispose();
   pmrem.dispose();
-  viewScene.add(new THREE.HemisphereLight(0xd5e6cb, 0x31483b, 2.5));
-  const viewLight = new THREE.DirectionalLight(0xffe2a6, 2);
+  viewScene.add(
+    new THREE.HemisphereLight(0xcde6e4, 0x31483b, LIGHTING.viewSky),
+  );
+  const viewLight = new THREE.DirectionalLight(0xffe2bb, LIGHTING.viewKey);
   viewLight.position.set(-2, 3, 2);
   viewScene.add(viewLight);
   const world = new World(scene),
@@ -70,7 +75,8 @@ async function boot() {
     enemies = new Enemies(scene, battle),
     audio = new Audio(),
     clock = new FixedClock(),
-    effects = new Effects(scene, battle);
+    effects = new Effects(scene, battle),
+    feedback = new HitFeedback();
   const ui = new UI(battle, weapon, () => {
     input.clear();
     if (document.pointerLockElement) document.exitPointerLock();
@@ -88,8 +94,15 @@ async function boot() {
     bellTimer = 0,
     footstep = 0,
     kick = 0,
-    hitTimer = 0,
     uiTimer = 0;
+  let lastBulletHit: {
+    enemyId: number;
+    killed: boolean;
+    point: number[];
+    time: number;
+  } | null = null;
+  let confirmedHits = 0,
+    confirmedKills = 0;
   const rng = seededRandom(92);
   const direction = new THREE.Vector3(),
     center = new THREE.Vector2(),
@@ -102,6 +115,9 @@ async function boot() {
       ),
   );
   const intersection = new THREE.Vector3();
+  const solidPoint = new THREE.Vector3(),
+    bellPoint = new THREE.Vector3(),
+    bellSphere = new THREE.Sphere(world.bellPosition, 0.8);
   function setActive(value: boolean) {
     active = value && !ui.dialogOpen && battle.phase !== "lost";
     clock.reset();
@@ -129,6 +145,10 @@ async function boot() {
     bellTimer = 0;
     time = 0;
     ui.update(0, false);
+    feedback.reset();
+    lastBulletHit = null;
+    confirmedHits = 0;
+    confirmedKills = 0;
   }
   async function enter() {
     if (battle.phase === "lost") reset();
@@ -177,7 +197,7 @@ async function boot() {
     if (battle.startWave()) {
       bellTimer = 1.2;
       audio.bell();
-    } else ui.toast("10 / 10");
+    } else ui.toast(`${WAVE_LIMIT} / ${WAVE_LIMIT}`);
   }
   function interact() {
     if (player.position.distanceTo(world.skillStation) < 3.5)
@@ -250,45 +270,55 @@ async function boot() {
       camera.position,
       new THREE.Vector3(Math.cos(input.yaw), 0, -Math.sin(input.yaw)),
     );
-    const hits = enemies.raycast(raycaster.ray);
-    for (const hit of hits) {
-      const blocked = occluders.some(
-        (box) =>
-          raycaster.ray.intersectBox(box, intersection) !== null &&
-          intersection.distanceTo(camera.position) < hit.distance,
-      );
-      if (blocked) break;
+    const hit = enemies.raycast(raycaster.ray, time, input.yaw)[0];
+    let solidDistance = Infinity;
+    for (const box of occluders) {
+      if (raycaster.ray.intersectBox(box, intersection)) {
+        const d = intersection.distanceTo(camera.position);
+        if (d < solidDistance) {
+          solidDistance = d;
+          solidPoint.copy(intersection);
+        }
+      }
+    }
+    const bellDistance = raycaster.ray.intersectSphere(bellSphere, bellPoint)
+      ? camera.position.distanceTo(bellPoint)
+      : Infinity;
+    const target = shotTarget(
+      hit?.distance ?? Infinity,
+      bellDistance < 40 ? bellDistance : Infinity,
+      solidDistance,
+    );
+    if (target === "enemy" && hit) {
       const critical =
         (hit.uv?.y ?? 0) > 0.73 || rng() < 0.05 + battle.stats.instinct * 0.03;
       const damage =
         weapon.config.damage * battle.damageMultiplier * (critical ? 1.5 : 1);
-      battle.damageEnemy(
+      const killed = battle.damageEnemy(
         hit.enemyId,
         damage,
         player.position,
         weapon.id === "rifle" ? 2 : 4,
+        hit.point,
       );
-      effects.burst(hit.point, 0xb9f5ca, 12, 3);
-      $("hitmarker").classList.add("show");
-      clearTimeout(hitTimer);
-      hitTimer = window.setTimeout(
-        () => $("hitmarker").classList.remove("show"),
-        120,
+      effects.burst(
+        hit.point,
+        killed ? 0xe0ba79 : 0xc5e6d5,
+        COMBAT_FEEL.impactCount,
+        2,
       );
-      break;
-    }
-    if (
-      raycaster.ray.distanceToPoint(world.bellPosition) < 0.85 &&
-      camera.position.distanceTo(world.bellPosition) < 40 &&
-      !occluders.some(
-        (box) =>
-          raycaster.ray.intersectBox(box, intersection) !== null &&
-          intersection.distanceTo(camera.position) <
-            camera.position.distanceTo(world.bellPosition) - 0.8,
-      ) &&
-      world.bellPosition.clone().sub(camera.position).dot(direction) > 0
-    )
-      ringBell();
+      feedback.confirm(killed);
+      audio.hit(killed);
+      confirmedHits++;
+      if (killed) confirmedKills++;
+      lastBulletHit = {
+        enemyId: hit.enemyId,
+        killed,
+        point: hit.point.toArray(),
+        time,
+      };
+    } else if (target === "bell") ringBell();
+    else if (target === "solid") effects.burst(solidPoint, 0xbbad85, 5, 1.5);
     kick = Math.min(
       0.12,
       kick +
@@ -299,15 +329,15 @@ async function boot() {
   function processEvents() {
     for (const event of battle.events) {
       if (event.kind === "gold" || event.kind === "xp") {
-        effects.pickup(event.kind, event.x, event.z);
+        effects.pickup(event.kind, event.x, event.z, event.y);
         audio.pickup(event.kind);
         ui.pickup(event.kind);
       } else if (event.kind === "complete") ui.banner("KEEP DEFENDED");
       else if (event.kind === "hit")
-        effects.number(event.x, event.z, event.value);
+        effects.number(event.x, event.z, event.value, event.y);
       else if (event.kind === "kill") {
         effects.death(event.x, event.z, event.value);
-        audio.hit();
+        audio.death();
       } else if (event.kind === "playerHit") {
         ui.hit();
         audio.hurt();
@@ -323,19 +353,9 @@ async function boot() {
       } else if (event.kind === "level") {
         ui.banner(`LEVEL ${event.value} · +2 SKILL POINTS`);
         effects.pulse(player.position.x, player.position.z);
-        audio.hit();
+        audio.level();
       } else if (event.kind === "lost") ui.lost();
-      else if (event.kind === "spawn")
-        effects.burst(
-          new THREE.Vector3(
-            event.x,
-            groundHeight(event.x, event.z) + 0.8,
-            event.z,
-          ),
-          0x71c9ae,
-          8,
-          2,
-        );
+      else if (event.kind === "spawn") effects.spawn(event.x, event.z);
     }
     battle.events.length = 0;
   }
@@ -370,6 +390,7 @@ async function boot() {
       const alpha = clock.advance(dt, (step) => {
         if (!active) return;
         time += step;
+        feedback.update(step);
         player.athletics = battle.skills.athletics;
         player.moveMultiplier = 1 + battle.stats.agility * 0.04;
         weapon.reloadMultiplier = 1 / (1 + battle.skills.marksmanship * 0.15);
@@ -400,6 +421,7 @@ async function boot() {
           weapon.addAmmo(battle.ammoReward);
           battle.ammoReward = 0;
         }
+        effects.followPlayer(player.position.x, player.position.z);
         effects.update(step, time, true);
         processEvents();
       });
@@ -422,7 +444,7 @@ async function boot() {
         label =
           battle.baseHealth < 500 && battle.phase === "battle"
             ? "REPAIR BELL · 15 GOLD"
-            : battle.wave < 10
+            : battle.wave < WAVE_LIMIT
               ? "CALL NEXT WAVE"
               : "";
       $("interact").classList.toggle("hidden", !label || input.aiming);
@@ -443,6 +465,9 @@ async function boot() {
       effects.update(0, time, false);
     }
     weapon.group.visible = active;
+    $("hitmarker").classList.toggle("show", feedback.remaining > 0);
+    $("hitmarker").classList.toggle("kill", feedback.kill);
+    $("crosshair").classList.toggle("confirmed", feedback.remaining > 0);
     world.update(ambientTime);
     if (bellTimer > 0) {
       bellTimer = Math.max(0, bellTimer - dt);
@@ -474,6 +499,7 @@ async function boot() {
   Object.defineProperty(window, "__soulHarvester", {
     value: () => ({
       ready: true,
+      version: "0.4.0",
       active,
       started,
       softwareRenderer: software,
@@ -511,8 +537,11 @@ async function boot() {
         windup: e.windup,
         kind: e.kind,
         wave: e.wave,
+        hitFlash: e.hitFlash,
+        spawnZone: e.spawnZone,
       })),
       targets: enemies.positions,
+      enemyRender: enemies.diagnostics(),
       drops: battle.drops
         .filter((d) => d.active)
         .map((d) => ({
@@ -522,10 +551,25 @@ async function boot() {
           y: d.y,
           z: d.z,
           magnet: d.magnet,
+          age: d.age,
+          bounces: d.bounces,
+          value: d.value,
         })),
       lootRender: effects.diagnostics(),
       activeWaves: battle.activeWaves,
       pending: battle.pending,
+      plannedEnemies: battle.waveJobs.reduce((n, j) => n + j.plan.length, 0),
+      spawnZones: battle.spawner.zones.map((z, i) => ({
+        validPoints: z.length,
+        spawned: battle.spawner.counts[i],
+      })),
+      hitFeedback: {
+        visible: feedback.remaining > 0,
+        kill: feedback.kill,
+        confirmedHits,
+        confirmedKills,
+        lastBulletHit,
+      },
       sightProjection: weapon
         .sightPoints()
         .map((p) => p.project(camera).toArray()),
@@ -533,6 +577,10 @@ async function boot() {
       fps,
       drawCalls: renderer.info.render.calls,
       triangles: renderer.info.render.triangles,
+      memory: {
+        geometries: renderer.info.memory.geometries,
+        textures: renderer.info.memory.textures,
+      },
     }),
     writable: false,
   });

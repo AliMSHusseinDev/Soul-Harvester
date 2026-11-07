@@ -11,7 +11,7 @@ it("launches ten overlapping waves without deleting or upgrading earlier enemies
   expect(b.startWave()).toBe(false);
   expect(b.wave).toBe(10);
   expect(first.hp).toBe(hp);
-  for (let i = 0; i < 180; i++) b.update(1 / 60, { x: 24, z: 25 });
+  for (let i = 0; i < 1200; i++) b.update(1 / 60, { x: 24, z: 25 });
   expect(b.pending).toBe(0);
   expect(b.alive.length).toBe(ENEMY_CAPACITY);
   for (let w = 1; w <= 10; w++)
@@ -30,7 +30,7 @@ it("varies composition, movement and attack behavior with deterministic plans", 
 it("does not automatically start waves when the field is clear", () => {
   const b = new Battle([]);
   b.startWave();
-  for (let i = 0; i < 80; i++) b.update(1 / 60, { x: 24, z: 25 });
+  for (let i = 0; i < 400; i++) b.update(1 / 60, { x: 24, z: 25 });
   for (const e of b.alive) b.damageEnemy(e.id, 10000, { x: 24, z: 25 });
   for (let i = 0; i < 1500; i++) b.update(1 / 60, { x: 24, z: 25 });
   expect(b.wave).toBe(1);
@@ -52,6 +52,7 @@ it("a ranged witch fires a real projectile that can hit or be dodged", () => {
       wave: 4,
       cooldown: 0,
       windup: 0,
+      spawnAge: 1,
       target: "bell",
     });
     for (let i = 0; i < 90 && !b.missiles.some((m) => m.active); i++)
@@ -66,4 +67,29 @@ it("a ranged witch fires a real projectile that can hit or be dodged", () => {
   const dodge = fire();
   for (let i = 0; i < 240; i++) dodge.update(1 / 60, { x: 8, z: -24, y: 0 });
   expect(dodge.health).toBe(100);
+});
+
+it("strictly increases enemy count and threat across every wave with group intervals", () => {
+  let lastCount = 0,
+    lastThreat = 0;
+  for (let w = 1; w <= 10; w++) {
+    const plan = wavePlan(w),
+      threat =
+        plan.reduce(
+          (n, k) => n + ENEMY_TYPES[k].hp * ENEMY_TYPES[k].damage,
+          0,
+        ) *
+        (1 + (w - 1) * 0.065);
+    expect(plan.length).toBeGreaterThan(lastCount);
+    expect(threat).toBeGreaterThan(lastThreat);
+    lastCount = plan.length;
+    lastThreat = threat;
+  }
+  expect(wavePlan(10)).toHaveLength(44);
+  expect(ENEMY_CAPACITY).toBe(260);
+  const b = new Battle([]);
+  b.startWave();
+  for (let i = 0; i < 60; i++) b.update(1 / 60, { x: 0, z: 14 });
+  expect(b.alive.length).toBe(3);
+  expect(b.pending).toBe(5);
 });

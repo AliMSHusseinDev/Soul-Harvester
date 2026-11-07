@@ -1,8 +1,17 @@
-import { seededRandom, resolveCircle, type Solid } from "./math";
+import { resolveCircle, type Solid } from "./math";
 import { Navigation, SpatialGrid, type Point } from "./navigation";
 import { MAP, inMap, isRiver, groundHeight } from "./terrain";
 import { Loot, type Drop } from "./loot";
-import { ENEMY_TYPES, ENEMY_CAPACITY, WAVE_LIMIT, wavePlan } from "./waves";
+import {
+  ENEMY_TYPES,
+  ENEMY_CAPACITY,
+  WAVE_LIMIT,
+  wavePlan,
+  waveCadence,
+} from "./waves";
+import { ForestSpawner } from "./spawning";
+import { RewardRoller } from "./rewards";
+import { COMBAT_FEEL, DIFFICULTY, SPAWNING } from "./tuning";
 export type Stat =
   "constitution" | "instinct" | "lethality" | "agility" | "magnetism" | "greed";
 export type Skill =
@@ -41,6 +50,10 @@ export interface Enemy extends Point {
   phase: number;
   kind: number;
   wave: number;
+  hitFlash: number;
+  reaction: number;
+  spawnAge: number;
+  spawnZone: number;
 }
 export type BattleEvent = {
   kind:
@@ -59,6 +72,7 @@ export type BattleEvent = {
   x: number;
   z: number;
   value: number;
+  y?: number;
 };
 export class Battle {
   readonly nav: Navigation;
@@ -83,13 +97,19 @@ export class Battle {
       phase: id * 2.4,
       kind: 0,
       wave: 1,
+      hitFlash: 0,
+      reaction: 0,
+      spawnAge: 0,
+      spawnZone: -1,
     }),
   );
   readonly drops: Drop[];
   private loot: Loot;
   readonly events: BattleEvent[] = [];
   private grid = new SpatialGrid<Enemy>();
-  private rng = seededRandom(744);
+  readonly spawner: ForestSpawner;
+  private rewards = new RewardRoller();
+  private spawnCursor = 0;
   readonly waveJobs: {
     wave: number;
     plan: number[];
@@ -155,6 +175,7 @@ export class Battle {
     this.loot = new Loot(this.nav);
     this.drops = this.loot.drops;
     this.bellField = this.nav.field(MAP.bell);
+    this.spawner = new ForestSpawner(this.nav, this.bellField);
     this.playerField = this.bellField;
   }
   get maxHealth() {
@@ -166,8 +187,8 @@ export class Battle {
   get alive() {
     return this.enemies.filter((e) => e.active);
   }
-  private emit(kind: BattleEvent["kind"], x = 0, z = 0, value = 0) {
-    this.events.push({ kind, x, z, value });
+  private emit(kind: BattleEvent["kind"], x = 0, z = 0, value = 0, y?: number) {
+    this.events.push({ kind, x, z, value, y });
   }
   get pending() {
     return this.waveJobs.reduce((n, j) => n + j.plan.length - j.index, 0);
@@ -197,24 +218,15 @@ export class Battle {
   private spawn(wave: number, kind: number) {
     const e = this.enemies.find((e) => !e.active);
     if (!e) return false;
-    let x = 0,
-      z = 0,
-      ok = false;
-    for (let i = 0; i < 12; i++) {
-      x = MAP.spawn.x + (this.rng() - 0.5) * 8;
-      z = MAP.spawn.z + (this.rng() - 0.5) * 5;
-      if (this.nav.walkable(x, z)) {
-        ok = true;
-        break;
-      }
-    }
-    if (!ok) return false;
+    const position = this.spawner.next(this.enemies);
+    if (!position) return false;
+    const { x, z, zone } = position;
     Object.assign(e, {
       active: true,
       x,
       z,
-      hp: ENEMY_TYPES[kind].hp * (1 + (wave - 1) * 0.055),
-      maxHp: ENEMY_TYPES[kind].hp * (1 + (wave - 1) * 0.055),
+      hp: ENEMY_TYPES[kind].hp * (1 + (wave - 1) * DIFFICULTY.healthPerWave),
+      maxHp: ENEMY_TYPES[kind].hp * (1 + (wave - 1) * DIFFICULTY.healthPerWave),
       wave,
       kind,
       target: "bell",
@@ -222,8 +234,12 @@ export class Battle {
       cooldown: 0.4,
       knockX: 0,
       knockZ: 0,
+      hitFlash: 0,
+      reaction: 0,
+      spawnAge: 0,
+      spawnZone: zone,
     });
-    this.emit("spawn", x, z, 0);
+    this.emit("spawn", x, z, zone);
     return true;
   }
   update(dt: number, player: Point & { y?: number }) {
@@ -238,16 +254,32 @@ export class Battle {
         this.maxHealth,
         this.health + dt * this.skills.survival * 0.8,
       );
-    for (const job of this.waveJobs) {
-      job.clock -= dt;
-      let emitted = 0;
-      while (job.index < job.plan.length && job.clock <= 0 && emitted < 4) {
-        if (!this.spawn(job.wave, job.plan[job.index])) break;
-        job.index++;
-        job.clock += 0.075;
-        emitted++;
+    for (const job of this.waveJobs)
+      if (job.index < job.plan.length) job.clock -= dt;
+    let emitted = 0;
+    // Round-robin jobs keep simultaneous bell calls fair and bound work in one step.
+    for (
+      let n = 0;
+      n < this.waveJobs.length && emitted < DIFFICULTY.maxSpawnsPerStep;
+      n++
+    ) {
+      const i = (this.spawnCursor + n) % this.waveJobs.length,
+        job = this.waveJobs[i];
+      if (job.index >= job.plan.length || job.clock > 0) continue;
+      if (!this.spawn(job.wave, job.plan[job.index])) {
+        job.clock = SPAWNING.retryInterval;
+        continue;
       }
+      job.index++;
+      const cadence = waveCadence(job.wave);
+      job.clock =
+        job.index % cadence.groupSize
+          ? cadence.memberInterval
+          : cadence.groupInterval;
+      emitted++;
     }
+    if (this.waveJobs.length)
+      this.spawnCursor = (this.spawnCursor + 1) % this.waveJobs.length;
     this.fieldTimer -= dt;
     const cell = this.nav.index(player.x, player.z);
     if (this.fieldTimer <= 0 && cell !== this.playerCell) {
@@ -259,6 +291,10 @@ export class Battle {
     for (const e of this.enemies) if (e.active) this.grid.add(e);
     for (const e of this.enemies) {
       if (!e.active) continue;
+      e.hitFlash = Math.max(0, e.hitFlash - dt);
+      e.reaction = Math.max(0, e.reaction - dt);
+      e.spawnAge += dt;
+      if (e.spawnAge < 0.35) continue;
       const distance = Math.hypot(e.x - player.x, e.z - player.z);
       if (e.target === "bell" && distance < 9 && this.nav.lineClear(e, player))
         e.target = "player";
@@ -290,7 +326,8 @@ export class Battle {
                 1.3
               )
                 this.hurtPlayer(
-                  ENEMY_TYPES[e.kind].damage * (1 + e.wave * 0.035),
+                  ENEMY_TYPES[e.kind].damage *
+                    (1 + e.wave * DIFFICULTY.damagePerWave),
                 );
             } else {
               if (e.kind === 3) this.castMissile(e, MAP.bell);
@@ -298,7 +335,8 @@ export class Battle {
                 this.baseHealth = Math.max(
                   0,
                   this.baseHealth -
-                    ENEMY_TYPES[e.kind].damage * (1 + e.wave * 0.035),
+                    ENEMY_TYPES[e.kind].damage *
+                      (1 + e.wave * DIFFICULTY.damagePerWave),
                 );
                 this.emit("baseHit", e.x, e.z, ENEMY_TYPES[e.kind].damage);
                 if (this.baseHealth <= 0) this.lose();
@@ -335,7 +373,7 @@ export class Battle {
         }
       }
       const speed =
-        ENEMY_TYPES[e.kind].speed * (1 + Math.min(e.wave * 0.018, 0.18));
+        ENEMY_TYPES[e.kind].speed * (1 + e.wave * DIFFICULTY.speedPerWave);
       let vx = v.x * speed + Math.max(-1.3, Math.min(1.3, sx)),
         vz = v.z * speed + Math.max(-1.3, Math.min(1.3, sz));
       const p = resolveCircle(
@@ -365,7 +403,7 @@ export class Battle {
       e.knockZ *= Math.exp(-dt * 8);
     }
     for (const pickup of this.loot.update(dt, player, this.stats.magnetism)) {
-      this.emit(pickup.kind, pickup.x, pickup.z, pickup.value);
+      this.emit(pickup.kind, pickup.x, pickup.z, pickup.value, pickup.y);
       if (pickup.kind === "gold")
         this.coins += Math.ceil(pickup.value * (1 + this.stats.greed * 0.15));
       else {
@@ -388,7 +426,7 @@ export class Battle {
     ) {
       this.phase = "intermission";
       this.coins += 15;
-      if (this.wave === 10 && !this.completeEmitted) {
+      if (this.wave === WAVE_LIMIT && !this.completeEmitted) {
         this.completeEmitted = true;
         this.emit("complete");
       }
@@ -406,7 +444,8 @@ export class Battle {
       vx: ((target.x - enemy.x) / d) * 7,
       vz: ((target.z - enemy.z) / d) * 7,
       life: 3,
-      damage: ENEMY_TYPES[3].damage * (1 + enemy.wave * 0.035),
+      damage:
+        ENEMY_TYPES[3].damage * (1 + enemy.wave * DIFFICULTY.damagePerWave),
       target: enemy.target,
     });
   }
@@ -454,21 +493,35 @@ export class Battle {
     this.phase = "lost";
     this.emit("lost");
   }
-  damageEnemy(id: number, damage: number, from: Point, knockback = 3) {
+  damageEnemy(
+    id: number,
+    damage: number,
+    from: Point,
+    knockback = 3,
+    impact?: Point & { y: number },
+  ) {
     const e = this.enemies[id];
     if (!e?.active || this.phase === "lost") return false;
     e.hp -= damage;
+    e.hitFlash = COMBAT_FEEL.flashDuration;
+    e.reaction = COMBAT_FEEL.reactionDuration;
     const d = Math.hypot(e.x - from.x, e.z - from.z) || 1;
     e.knockX = ((e.x - from.x) / d) * knockback;
     e.knockZ = ((e.z - from.z) / d) * knockback;
     e.windup = 0;
     e.cooldown = 0.2;
-    this.emit("hit", e.x, e.z, damage);
+    this.emit(
+      "hit",
+      impact?.x ?? e.x,
+      impact?.z ?? e.z,
+      damage,
+      impact?.y ?? groundHeight(e.x, e.z) + 0.9 * ENEMY_TYPES[e.kind].scale,
+    );
     if (e.hp <= 0) {
       e.active = false;
       this.souls++;
       this.emit("kill", e.x, e.z, e.kind);
-      this.loot.release(e.x, e.z);
+      this.loot.release(e.x, e.z, this.rewards.roll(e.kind, e.wave));
       return true;
     }
     return false;
@@ -584,7 +637,9 @@ export class Battle {
     this.missiles.forEach((m) => (m.active = false));
     this.fieldTimer = 0;
     this.playerCell = -1;
-    this.rng = seededRandom(744);
+    this.spawner.reset();
+    this.rewards.reset();
+    this.spawnCursor = 0;
     for (const key of Object.keys(this.stats) as Stat[]) this.stats[key] = 0;
     for (const key of Object.keys(this.skills) as Skill[])
       this.skills[key] = key === "athletics" ? 1 : 0;

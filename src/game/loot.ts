@@ -1,7 +1,9 @@
 import { springStep, seededRandom } from "./math";
 import { groundHeight } from "./terrain";
 import type { Navigation, Point } from "./navigation";
+import type { Reward } from "./rewards";
 import { ENEMY_CAPACITY } from "./waves";
+import { LOOT_FEEL as F } from "./tuning";
 export interface Drop extends Point {
   id: number;
   active: boolean;
@@ -13,6 +15,8 @@ export interface Drop extends Point {
   vz: number;
   age: number;
   magnet: boolean;
+  magnetAge: number;
+  bounces: number;
 }
 export class Loot {
   readonly drops: Drop[] = Array.from(
@@ -30,77 +34,97 @@ export class Loot {
       vz: 0,
       age: 0,
       magnet: false,
+      magnetAge: 0,
+      bounces: 0,
     }),
   );
+  private collected: (Point & {
+    kind: "gold" | "xp";
+    value: number;
+    y: number;
+  })[] = [];
   private random = seededRandom(481);
   constructor(private navigation: Navigation) {}
-  release(x: number, z: number) {
-    for (const kind of ["gold", "xp"] as const) {
+  release(x: number, z: number, reward: Reward) {
+    const startAngle = this.random() * Math.PI * 2;
+    for (const [i, kind] of (["xp", "gold"] as const).entries()) {
+      const value = reward[kind];
+      if (value <= 0) continue;
       const d = this.drops.find((d) => !d.active);
       if (!d)
         throw new Error(
           "Loot pool exhausted: preserve all outstanding rewards",
         );
-      const angle = this.random() * Math.PI * 2,
-        spread = 0.25 + this.random() * 0.35;
-      const candidate = {
-        x: x + Math.cos(angle) * spread,
-        z: z + Math.sin(angle) * spread,
-      };
-      const safe =
-        this.navigation.walkable(candidate.x, candidate.z) &&
-        this.navigation.lineClear({ x, z }, candidate)
-          ? candidate
-          : { x, z };
+      const angle = startAngle + i * 2.39996 + this.random() * 0.3,
+        speed = F.launchSpeed * (0.75 + this.random() * 0.5);
       Object.assign(d, {
         active: true,
         kind,
-        value: kind === "gold" ? 4 : 12,
-        x: safe.x,
-        z: safe.z,
-        y: groundHeight(x, z) + 0.85,
-        vx: Math.cos(angle) * 1.4,
-        vy: 2 + this.random(),
-        vz: Math.sin(angle) * 1.4,
+        value,
+        x,
+        z,
+        y: groundHeight(x, z) + F.releaseHeight,
+        vx: Math.cos(angle) * speed,
+        vy: F.launchUp + this.random() * 0.5,
+        vz: Math.sin(angle) * speed,
         age: 0,
         magnet: false,
+        magnetAge: 0,
+        bounces: 0,
       });
     }
   }
   update(dt: number, player: Point & { y?: number }, magnetism: number) {
-    const collected: {
-      kind: "gold" | "xp";
-      value: number;
-      x: number;
-      y: number;
-      z: number;
-    }[] = [];
-    const targetY = (player.y ?? groundHeight(player.x, player.z)) + 0.8;
+    this.collected.length = 0;
+    const targetY =
+      (player.y ?? groundHeight(player.x, player.z)) + F.targetHeight;
     for (const d of this.drops) {
       if (!d.active) continue;
       d.age += dt;
-      const distance = Math.hypot(d.x - player.x, d.z - player.z);
-      if (
-        distance < 4.4 + magnetism * 0.65 &&
-        this.navigation.lineClear(d, player)
-      )
-        d.magnet = true;
-      if (distance > 13 || !this.navigation.lineClear(d, player))
+      const distance = Math.hypot(d.x - player.x, d.z - player.z),
+        inRange = distance < F.magnetRadius + magnetism * F.magnetPerPoint,
+        clear = (d.magnet || inRange) && this.navigation.lineClear(d, player);
+      if (d.age >= F.magnetDelay && inRange && clear) d.magnet = true;
+      if (distance > 13 || !clear) {
         d.magnet = false;
+        d.magnetAge = 0;
+      }
       if (d.magnet) {
-        const x = springStep(d.x, d.vx, player.x, 6, dt),
-          y = springStep(d.y, d.vy, targetY, 6, dt),
-          z = springStep(d.z, d.vz, player.z, 6, dt);
-        d.x = x.position;
-        d.vx = x.velocity;
-        d.y = y.position;
-        d.vy = y.velocity;
-        d.z = z.position;
-        d.y = Math.max(d.y, groundHeight(d.x, d.z) + 0.15);
-        d.vz = z.velocity;
-        if (Math.hypot(d.x - player.x, d.y - targetY, d.z - player.z) < 0.35) {
+        d.magnetAge += dt;
+        const t = Math.min(1, d.magnetAge / F.accelerationTime),
+          omega =
+            F.springStart + (F.springEnd - F.springStart) * t * t * (3 - 2 * t),
+          x = springStep(d.x, d.vx, player.x, omega, dt),
+          y = springStep(d.y, d.vy, targetY, omega, dt),
+          z = springStep(d.z, d.vz, player.z, omega, dt),
+          step = Math.hypot(
+            x.position - d.x,
+            y.position - d.y,
+            z.position - d.z,
+          ),
+          scale = step > F.maxSpeed * dt ? (F.maxSpeed * dt) / step : 1;
+        const next = {
+          x: d.x + (x.position - d.x) * scale,
+          z: d.z + (z.position - d.z) * scale,
+        };
+        if (!this.navigation.lineClear(d, next)) {
+          d.magnet = false;
+          d.magnetAge = 0;
+          continue;
+        }
+        d.x = next.x;
+        d.z = next.z;
+        d.y += (y.position - d.y) * scale;
+        d.y = Math.max(d.y, groundHeight(d.x, d.z) + F.floorOffset);
+        d.vx = x.velocity * scale;
+        d.vy = y.velocity * scale;
+        d.vz = z.velocity * scale;
+        if (
+          Math.hypot(d.x - player.x, d.y - targetY, d.z - player.z) <
+          F.collectRadius
+        ) {
           d.active = false;
-          collected.push({
+          this.collected.push({
             kind: d.kind,
             value: d.value,
             x: d.x,
@@ -109,33 +133,41 @@ export class Loot {
           });
         }
       } else {
-        d.vy -= 9 * dt;
-        const nextX = d.x + d.vx * dt,
-          nextZ = d.z + d.vz * dt;
+        d.vy -= F.gravity * dt;
+        const next = { x: d.x + d.vx * dt, z: d.z + d.vz * dt };
         if (
-          this.navigation.walkable(nextX, nextZ) &&
-          this.navigation.lineClear(d, { x: nextX, z: nextZ })
+          this.navigation.walkable(next.x, next.z) &&
+          this.navigation.lineClear(d, next)
         ) {
-          d.x = nextX;
-          d.z = nextZ;
+          d.x = next.x;
+          d.z = next.z;
         } else {
           d.vx *= -0.3;
           d.vz *= -0.3;
         }
         d.y += d.vy * dt;
-        const floor = groundHeight(d.x, d.z) + 0.25;
+        const floor = groundHeight(d.x, d.z) + F.floorOffset;
+        let grounded = false;
         if (d.y < floor) {
           d.y = floor;
-          d.vy = Math.abs(d.vy) > 0.6 ? -d.vy * 0.22 : 0;
+          if (d.vy < -0.7) {
+            d.vy = -d.vy * F.restitution;
+            d.bounces++;
+          } else {
+            d.vy = 0;
+            grounded = true;
+          }
         }
-        d.vx *= Math.exp(-dt * 4);
-        d.vz *= Math.exp(-dt * 4);
+        const drag = Math.exp(-dt * (grounded ? F.groundDrag : F.airDrag));
+        d.vx *= drag;
+        d.vz *= drag;
       }
     }
-    return collected;
+    return this.collected;
   }
   reset() {
     this.random = seededRandom(481);
+    this.collected.length = 0;
     for (const d of this.drops) d.active = false;
   }
 }

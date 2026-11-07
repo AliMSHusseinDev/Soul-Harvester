@@ -1,5 +1,6 @@
 import { seededRandom } from "./math";
-export const WAVE_LIMIT = 10;
+import { DIFFICULTY } from "./tuning";
+export const WAVE_LIMIT = DIFFICULTY.waveLimit;
 export const ENEMY_TYPES = [
   {
     name: "Hollowguard",
@@ -26,7 +27,7 @@ export const ENEMY_TYPES = [
     hp: 135,
     speed: 1.25,
     damage: 18,
-    scale: 1.55,
+    scale: 1.45,
     range: 1.85,
     windup: 0.8,
     interval: 1.5,
@@ -42,34 +43,39 @@ export const ENEMY_TYPES = [
     interval: 2.2,
   },
 ] as const;
-/** Deterministic weighted composition; introductions and threat mix evolve every wave. */
+export function waveSize(wave: number) {
+  return wave >= 1 && wave <= WAVE_LIMIT
+    ? DIFFICULTY.firstCount + (wave - 1) * DIFFICULTY.countPerWave
+    : 0;
+}
+/** Quotas give each wave a growing threat budget; shuffle changes entry order. */
 export function wavePlan(wave: number): number[] {
-  if (wave < 1 || wave > WAVE_LIMIT) return [];
-  const r = seededRandom(941 + wave * 37),
-    count = 6 + wave * 2,
-    unlocked = Math.min(4, wave),
-    weights = [
-      Math.max(0.24, 0.8 - wave * 0.055),
-      0.28 + wave * 0.01,
-      0.12 + wave * 0.018,
-      0.08 + wave * 0.015,
-    ];
-  const kinds: number[] = [];
-  if (wave > 1) kinds.push(unlocked - 1);
-  while (kinds.length < count) {
-    const total = weights.slice(0, unlocked).reduce((a, b) => a + b, 0);
-    let pick = r() * total;
-    for (let k = 0; k < unlocked; k++) {
-      pick -= weights[k];
-      if (pick <= 0) {
-        kinds.push(k);
-        break;
-      }
-    }
+  const count = waveSize(wave);
+  if (!count) return [];
+  const ravener = wave >= 2 ? Math.floor(count * 0.3) : 0,
+    brute = wave >= 3 ? 1 + Math.floor((wave - 3) * 0.9) : 0,
+    witch = wave >= 4 ? 1 + Math.floor((wave - 4) * 0.85) : 0,
+    kinds = [count - ravener - brute - witch, ravener, brute, witch].flatMap(
+      (n, kind) => Array<number>(n).fill(kind),
+    ),
+    random = seededRandom(941 + wave * 37);
+  for (let i = kinds.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [kinds[i], kinds[j]] = [kinds[j], kinds[i]];
   }
   return kinds;
 }
-export const ENEMY_CAPACITY = Array.from(
-  { length: WAVE_LIMIT },
-  (_, i) => wavePlan(i + 1).length,
+export function waveCadence(wave: number) {
+  return {
+    groupSize: Math.min(
+      DIFFICULTY.maxGroupSize,
+      DIFFICULTY.groupSize + Math.floor((wave - 1) / DIFFICULTY.groupGrowth),
+    ),
+    memberInterval: DIFFICULTY.memberInterval,
+    groupInterval:
+      DIFFICULTY.groupInterval - (wave - 1) * DIFFICULTY.intervalReduction,
+  };
+}
+export const ENEMY_CAPACITY = Array.from({ length: WAVE_LIMIT }, (_, i) =>
+  waveSize(i + 1),
 ).reduce((a, b) => a + b, 0);

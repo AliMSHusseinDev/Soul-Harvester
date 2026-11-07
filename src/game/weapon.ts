@@ -71,9 +71,9 @@ export class Weapon {
         roughness: 0.32,
       }),
       gold = new THREE.MeshStandardMaterial({
-        color: 0xc1a25b,
+        color: 0xaf8a45,
         metalness: 0.65,
-        roughness: 0.32,
+        roughness: 0.42,
       }),
       wood = new THREE.MeshStandardMaterial({
         color: 0x452b27,
@@ -134,7 +134,13 @@ export class Weapon {
         box(g, 0.15, 0.13, 0.24, 0, -0.02, 0.23, wood);
       }
       box(g, 0.15, 0.15, 0.22, 0.02, -0.18, 0.16, glove);
-      box(g, 0.17, 0.16, 0.65, 0.025, -0.3, 0.46, skin).rotation.x = -0.15;
+      const arm = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.078, 0.1, 0.65, 8),
+        skin,
+      );
+      arm.position.set(0.025, -0.3, 0.46);
+      arm.rotation.x = Math.PI / 2 - 0.15;
+      g.add(arm);
       for (let i = 0; i < 4; i++)
         box(g, 0.027, 0.08, 0.13, -0.05 + i * 0.035, -0.12, 0.08, glove);
       const chamber = new THREE.Mesh(
@@ -170,7 +176,13 @@ export class Weapon {
     this.group.add(blade);
     this.leftHand = new THREE.Group();
     box(this.leftHand, 0.17, 0.14, 0.2, 0, 0, 0, glove);
-    box(this.leftHand, 0.16, 0.16, 0.5, 0, -0.07, 0.25, skin);
+    const forearm = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.072, 0.09, 0.5, 8),
+      skin,
+    );
+    forearm.position.set(0, -0.07, 0.25);
+    forearm.rotation.x = Math.PI / 2;
+    this.leftHand.add(forearm);
     for (let i = 0; i < 4; i++)
       box(
         this.leftHand,
@@ -192,7 +204,7 @@ export class Weapon {
         depthWrite: false,
       }),
     );
-    this.flash.scale.set(0.5, 0.5, 1);
+    this.flash.scale.set(0.24, 0.24, 1);
     this.group.add(this.flash);
     this.light = new THREE.PointLight(0xffd98c, 0, 4);
     this.group.add(this.light);
@@ -283,7 +295,7 @@ export class Weapon {
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.flashTime -= dt;
     this.flash.visible = this.flashTime > 0;
-    this.light.intensity = this.flash.visible ? 4 : 0;
+    this.light.intensity = this.flash.visible ? 1.5 : 0;
     this.flash.position.set(0, 0.035, this.id === "rifle" ? -0.91 : -0.51);
     this.light.position.copy(this.flash.position);
     // Critically damped spring: recoil remains stable across frame rates.

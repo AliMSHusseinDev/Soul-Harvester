@@ -13,7 +13,7 @@ const browser = await chromium.launch({
   ],
 });
 const page = await browser.newPage({
-  viewport: { width: 960, height: 640 },
+  viewport: { width: 800, height: 500 },
   deviceScaleFactor: 1,
 });
 const errors = [];
@@ -49,6 +49,28 @@ try {
   await page.locator("#loading").waitFor({ state: "detached" });
   await page.evaluate(() => document.fonts.ready);
   assert.equal((await state()).wave, 0);
+  await page.evaluate(() => {
+    window.__feedbackChecks = {
+      hit: false,
+      kill: false,
+      flash: false,
+      bounce: false,
+    };
+    const sample = () => {
+      const s = window.__soulHarvester(),
+        c = window.__feedbackChecks;
+      c.hit ||=
+        s.hitFeedback.visible &&
+        document.querySelector("#hitmarker").classList.contains("show");
+      c.kill ||=
+        s.hitFeedback.kill &&
+        document.querySelector("#hitmarker").classList.contains("kill");
+      c.flash ||= s.enemyRender.flashing > 0;
+      c.bounce ||= s.drops.some((d) => d.bounces > 0 && !d.magnet);
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
   await page.screenshot({ path: "artifacts/courtyard-menu.png" });
   await page.locator("#notes").click();
   assert.equal(await page.locator("#guide").evaluate((el) => el.open), true);
@@ -124,7 +146,10 @@ try {
   );
   await page.mouse.click(mx, my);
   await wait(() => window.__soulHarvester().ammo < 12);
-  console.log("PASS: a quick mouse tap is buffered until a simulation update");
+  assert.equal((await state()).hitFeedback.confirmedHits, 0);
+  console.log(
+    "PASS: a quick mouse tap is buffered; environmental shots show no hit marker",
+  );
   await page.keyboard.press("Digit1");
   await wait(() => window.__soulHarvester().weapon === "blade");
   await page.keyboard.press("KeyV");
@@ -141,8 +166,13 @@ try {
       window.__soulHarvester().wave === 1 &&
       window.__soulHarvester().enemies.length > 0,
   );
-  const first = (await state()).enemies[0];
-  assert.ok(Math.abs(first.x) < 4.5 && first.z < -48);
+  await wait(() => window.__soulHarvester().pending === 0);
+  const forestState = await state();
+  assert.ok(
+    forestState.spawnZones.every((z) => z.validPoints > 0 && z.spawned > 0),
+  );
+  const first = forestState.enemies[0];
+  assert.ok(Math.abs(first.x) < 25 && first.z < -48);
   await page.waitForFunction(
     (before) => {
       const e = window
@@ -153,11 +183,19 @@ try {
     first,
     { timeout: 30000 },
   );
-  console.log("PASS: fixed tree spawn and moving enemy");
+  console.log(
+    "PASS: seven accessible forest zones spread spawns across the entire width",
+  );
   // Follow the real moving target using relative mouse inputs; no simulation mutation.
-  for (let i = 0; i < 12 && (await state()).souls === 0; i++) {
+  for (
+    let i = 0;
+    i < 28 && !(await state()).drops.some((d) => d.kind === "gold");
+    i++
+  ) {
     const s = await state(),
-      e = s.enemies[0];
+      e = s.enemies
+        .filter((e) => Math.abs(e.x) < 12)
+        .sort((a, b) => Math.abs(a.x) - Math.abs(b.x))[0];
     if (!e) break;
     await aimAt(e.x, 0.95, e.z);
     const ammoBefore = (await state()).ammo;
@@ -170,7 +208,12 @@ try {
     await page.mouse.up();
   }
   await wait(() => window.__soulHarvester().souls > 0);
-  console.log("PASS: firing hits and releases an actual moving hollowguard");
+  assert.ok((await state()).drops.some((d) => d.kind === "gold"));
+  const feedbackChecks = await page.evaluate(() => window.__feedbackChecks);
+  assert.ok(feedbackChecks.hit && feedbackChecks.kill && feedbackChecks.flash);
+  console.log(
+    "PASS: confirmed red hit marker, white body flash, distinct kills and probabilistic gold on real enemies",
+  );
   await aimAt(0, 1.72, -65);
   await page.keyboard.down("ShiftLeft");
   await page.keyboard.down("KeyW");
@@ -245,6 +288,7 @@ try {
   );
   await page.keyboard.up("KeyW");
   assert.ok((await state()).lootRender.cullingDisabled);
+  assert.ok(await page.evaluate(() => window.__feedbackChecks.bounce));
   console.log(
     "PASS: gold and XP stay rendered in the field and magnetically collect into real rewards",
   );
@@ -271,31 +315,56 @@ try {
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   );
-  await page.setViewportSize({ width: 960, height: 640 });
+  await page.setViewportSize({ width: 800, height: 500 });
   await page.reload();
   await wait(() => window.__soulHarvester?.().ready);
   await page.locator("#loading").waitFor({ state: "detached" });
   await enter();
   const bell = (await state()).bellPosition;
   await aimAt(...bell);
+  await page.mouse.click(mx, my);
+  await wait(() => window.__soulHarvester().wave === 1);
+  assert.equal((await state()).ammo, 29);
+  const retained = (await state()).enemies[0];
   await page.mouse.down();
   await wait(() => window.__soulHarvester().wave === 10);
   await wait(() => window.__soulHarvester().ammo <= 18);
   await page.mouse.up();
-  await wait(() => window.__soulHarvester().pending === 0);
+  await page.waitForFunction(
+    () => window.__soulHarvester().pending === 0,
+    undefined,
+    { timeout: 180000 },
+  );
   const stacked = await state();
   assert.equal(stacked.wave, 10);
-  assert.equal(stacked.enemies.length, 170);
+  assert.equal(stacked.enemies.length, 260);
+  assert.equal(stacked.plannedEnemies, 260);
+  assert.equal(
+    stacked.enemies.find((e) => e.id === retained.id).hp,
+    retained.hp,
+  );
+  assert.ok(stacked.spawnZones.every((z) => z.spawned > 15));
+  for (let w = 1; w <= 10; w++)
+    assert.equal(
+      stacked.enemies.filter((e) => e.wave === w).length,
+      8 + (w - 1) * 4,
+    );
   assert.equal(stacked.activeWaves.length, 10);
   assert.equal(new Set(stacked.enemies.map((e) => e.kind)).size, 4);
   assert.ok(
-    stacked.drawCalls < 100,
+    stacked.drawCalls < 115,
     "instanced crowd should keep draw calls bounded",
   );
   await page.screenshot({ path: "artifacts/ten-waves.png" });
   console.log(
-    "PASS: actual shots stack all ten waves (170 enemies, four types); extra shots do not create wave 11",
+    "PASS: single shots trigger exactly one wave; all ten waves persist (260 enemies, four types); no wave 11",
   );
+  await page.keyboard.press("Escape");
+  await wait(() => !window.__soulHarvester().active);
+  const memory = (await state()).memory;
+  await page.waitForTimeout(1500);
+  assert.deepEqual((await state()).memory, memory);
+  assert.ok((await state()).lootRender.numberTextures <= 64);
   assert.deepEqual(errors, []);
   console.log("PASS: responsive menu and no browser/renderer errors");
   const summary = await state();

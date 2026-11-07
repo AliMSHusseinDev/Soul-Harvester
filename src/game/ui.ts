@@ -1,5 +1,6 @@
 import { Battle, STATS, SKILLS, type Stat, type Skill } from "./battle";
 import type { Weapon } from "./weapon";
+import { WAVE_LIMIT } from "./waves";
 export const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
   document.getElementById(id) as T;
 export class UI {
@@ -131,7 +132,8 @@ export class UI {
     const b = this.battle;
     $("lost-title").textContent =
       b.baseHealth <= 0 ? "The bell falls silent." : "The dark claims another.";
-    $("lost-summary").textContent = `Wave ${b.wave}/10 · ${b.souls} souls`;
+    $("lost-summary").textContent =
+      `Wave ${b.wave}/${WAVE_LIMIT} · ${b.souls} souls`;
     this.open("lost-dialog");
   }
   update(dt: number, aiming: boolean, nearBell = false) {
@@ -150,8 +152,8 @@ export class UI {
       b.phase === "peace"
         ? ""
         : b.phase === "intermission"
-          ? `WAVE ${b.wave}/10 · CLEAR`
-          : `WAVE ${b.wave}/10`;
+          ? `WAVE ${b.wave}/${WAVE_LIMIT} · CLEAR`
+          : `WAVE ${b.wave}/${WAVE_LIMIT}`;
     for (const [name, cd] of [
       ["burst", b.burstCooldown],
       ["orb", b.orbCooldown],

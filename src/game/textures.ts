@@ -11,7 +11,7 @@ export function stoneTexture() {
     for (let x = -1; x < 4; x++) {
       const px = x * 85 + (y % 2) * 42,
         py = y * 64;
-      const shade = Math.floor(53 + rng() * 20);
+      const shade = Math.floor(65 + rng() * 22);
       ctx.fillStyle = `rgb(${shade},${shade + 6},${shade + 1})`;
       ctx.fillRect(px + 3, py + 3, 80, 58);
       ctx.fillStyle = "#70776a44";
@@ -40,7 +40,7 @@ export function groundTexture() {
   c.width = c.height = 512;
   const ctx = c.getContext("2d")!,
     r = seededRandom(45);
-  ctx.fillStyle = "#263a2d";
+  ctx.fillStyle = "#304837";
   ctx.fillRect(0, 0, 512, 512);
   for (let i = 0; i < 70000; i++) {
     const k = r();
