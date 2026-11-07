@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { damp, resolveCircle, type Solid } from "./math";
 import type { Input } from "./input";
 import { MAP, groundHeight } from "./terrain";
+import { Handling } from "./handling";
 export class Player {
   readonly position = new THREE.Vector3(0, groundHeight(0, 14), 14);
   readonly previous = this.position.clone();
@@ -17,6 +18,11 @@ export class Player {
   moveMultiplier = 1;
   private jumpCount = 0;
   private jumpHeld = false;
+  readonly handling = new Handling();
+  crouching = false;
+  busy = false;
+  private eyeHeight = 1.72;
+  readonly velocity = new THREE.Vector3();
   constructor(
     private input: Input,
     private solids: Solid[],
@@ -39,12 +45,32 @@ export class Player {
     }
     if (this.stamina <= 0.06) this.exhausted = true;
     if (this.stamina >= 0.3) this.exhausted = false;
-    const sprint =
+    const jump = this.input.keys.has("Space");
+    const requested = this.input.jumpQueued || (jump && !this.jumpHeld);
+    this.crouching =
+      !requested &&
+      this.grounded &&
+      (this.input.keys.has("KeyC") || this.input.keys.has("ControlLeft"));
+    const sprintWanted =
       !this.exhausted &&
-      length > 0 &&
+      z < 0 &&
+      !this.crouching &&
+      !requested &&
       (this.input.keys.has("ShiftLeft") || this.input.keys.has("ShiftRight")) &&
       this.stamina > 0.06;
-    const speed = (sprint ? 7.2 : 4.2) * this.moveMultiplier;
+    this.handling.update(dt, {
+      sprint: sprintWanted,
+      fire: !!(this.input.firing || this.input.fireQueued),
+      aim: !!this.input.aiming,
+      busy: this.busy,
+      grounded: this.grounded && !requested,
+      verticalSpeed: requested ? 1 : this.vy,
+      moving: length > 0,
+    });
+    const sprint = this.handling.sprinting;
+    const speed =
+      (sprint ? 7.2 : this.crouching ? 2.3 : this.input.aiming ? 3 : 4.2) *
+      this.moveMultiplier;
     this.stamina = Math.max(
       0,
       Math.min(1, this.stamina + dt * (sprint ? -0.17 : 0.23)),
@@ -53,8 +79,6 @@ export class Player {
       s = Math.sin(this.input.yaw);
     this.vx = damp(this.vx, (x * c + z * s) * speed, 13, dt);
     this.vz = damp(this.vz, (z * c - x * s) * speed, 13, dt);
-    const jump = this.input.keys.has("Space");
-    const requested = this.input.jumpQueued || (jump && !this.jumpHeld);
     this.input.jumpQueued = false;
     if (
       requested &&
@@ -131,8 +155,14 @@ export class Player {
       this.vy = 0;
       this.grounded = true;
     }
-    this.speed = Math.hypot(this.vx, this.vz);
+    this.velocity.set(
+      (this.position.x - this.previous.x) / dt,
+      this.vy,
+      (this.position.z - this.previous.z) / dt,
+    );
+    this.speed = Math.hypot(this.velocity.x, this.velocity.z);
     this.distance += this.speed * dt;
+    this.eyeHeight = damp(this.eyeHeight, this.crouching ? 1.18 : 1.72, 16, dt);
   }
   render(
     camera: THREE.PerspectiveCamera,
@@ -141,10 +171,12 @@ export class Player {
   ) {
     camera.position.lerpVectors(this.previous, this.position, alpha);
     camera.position.y +=
-      1.72 +
+      this.eyeHeight +
       (reducedMotion
         ? 0
-        : Math.sin(this.distance * 2.1) * 0.032 * Math.min(this.speed / 4, 1));
+        : Math.sin(this.distance * 2.1) *
+          (this.handling.sprinting ? 0.024 : 0.018) *
+          Math.min(this.speed / 4, 1));
     camera.rotation.set(this.input.pitch, this.input.yaw, 0, "YXZ");
   }
   reset() {
@@ -153,14 +185,19 @@ export class Player {
     this.vx = 0;
     this.vz = 0;
     this.vy = 0;
+    this.velocity.set(0, 0, 0);
     this.jumpCount = 0;
     this.jumpHeld = false;
     this.stamina = 1;
     this.grounded = true;
     this.distance = 0;
     this.speed = 0;
+    this.eyeHeight = 1.72;
+    this.crouching = this.busy = false;
+    this.handling.reset();
   }
   stop() {
+    this.velocity.set(0, 0, 0);
     this.vx = 0;
     this.vz = 0;
     this.previous.copy(this.position);

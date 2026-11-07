@@ -5,3 +5,7 @@
 `visual-check.mjs` captures the textured forest, dagger, rifle sights and 360-degree sky. It uses actual pointer input, checks rifle ADS alignment and records browser/renderer errors. Run it against a production preview with `npm run test:visual`. Images are saved in ignored `artifacts/`.
 
 `polish-check.mjs` starts an isolated Vite fixture on localhost:5190 and renders the actual gameplay classes in a controlled scene. It verifies four alpha-preserving enemy atlas frames, captures the white body flash, normal/critical numbers, pixel impacts and open-hand casting, then kills forty enemies and checks the resulting loot stream, level-up banner and real rewards. Run `npm run test:polish`; no production preview is needed. The scene is a test fixture, not gameplay footage, and is excluded from the production build.
+
+`handling-check.mjs` uses actual pointer/keyboard input against a production preview. It checks 720p/1080p crosshair layout, actual spread/stance transitions, complete sprint-to-fire timing and a single buffered shot, ADS exits, melee, smoke/tracer visibility and cleanup, and absence of the removed tree collider. Run `npm run test:handling` with the same `GAME_URL` override as other browser suites.
+
+`ai-benchmark.mjs` measures 8/80/260 mixed enemies navigating around a wall. Run `npm run bench:ai`; optionally supply an output JSON path. It measures simulation only, with a 120-step warmup followed by 1,080 measured steps per horde size. Keep rendering tests and benchmarks sequential on a software-rendered host.

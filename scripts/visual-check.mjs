@@ -33,7 +33,11 @@ try {
   await page.goto(process.env.GAME_URL || "http://127.0.0.1:4180/");
   await page.waitForFunction(() => window.__soulHarvester?.().ready);
   const tiles = (await state()).surfaces;
-  assert.equal(tiles.length, 20);
+  assert.equal(tiles.length, 19); // The removed landmark's separate canopy tile is no longer loaded.
+  assert.ok(
+    tiles.some((t) => t.name === "pine") &&
+      tiles.some((t) => t.name === "bark"),
+  );
   assert.ok(
     tiles.every(
       (t) =>
@@ -61,6 +65,18 @@ try {
   await page.screenshot({ path: "artifacts/visual-rifle-ads.png" });
   await page.mouse.up({ button: "right" });
   await frame();
+  await page.keyboard.down("KeyW");
+  await page.keyboard.down("ShiftLeft");
+  await page.waitForFunction(() => window.__soulHarvester().sprinting);
+  const sprintStart = (await state()).simulationTime;
+  await page.waitForFunction(
+    (start) => window.__soulHarvester().simulationTime > start + 0.35,
+    sprintStart,
+  );
+  await page.screenshot({ path: "artifacts/visual-sprint.png" });
+  await page.keyboard.up("ShiftLeft");
+  await page.keyboard.up("KeyW");
+  await page.waitForFunction(() => window.__soulHarvester().fireReady);
   await page.addStyleTag({ content: "#hud{visibility:hidden}" });
   for (const [i, yaw] of [0, Math.PI / 2, Math.PI, -Math.PI / 2].entries()) {
     const s = await state();
@@ -73,7 +89,7 @@ try {
   }
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: pixel forest/weapon/dagger screenshots, rifle ADS alignment and sky in all four directions; no renderer errors",
+    "PASS: pixel forest/weapon/dagger/sprint screenshots, rifle ADS alignment and sky in all four directions; no renderer errors",
   );
   console.log("Visual diagnostics:", {
     version: (await state()).version,

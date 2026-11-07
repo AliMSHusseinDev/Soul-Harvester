@@ -102,7 +102,10 @@ export class Audio {
       "triangle",
       kill ? 1600 : critical ? 1700 : 500,
     );
-    if (kill) this.tone(1720, 0.14, 0.025, "sine", 2100);
+    if (kill) {
+      this.tone(1720, 0.14, 0.025, "sine", 2100);
+      this.tone(110, 0.13, 0.09, "triangle", 42);
+    }
   }
   death() {
     this.tone(95, 0.1, 0.035, "triangle", 45);

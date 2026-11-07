@@ -1,6 +1,6 @@
 {
   "name": "soul-harvester",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,7 +12,9 @@
     "format": "prettier --write src scripts index.html package.json tsconfig.json README.md",
     "format:check": "prettier --check src scripts index.html package.json tsconfig.json README.md",
     "test:visual": "node scripts/visual-check.mjs",
-    "test:polish": "node scripts/polish-check.mjs"
+    "test:polish": "node scripts/polish-check.mjs",
+    "test:handling": "node scripts/handling-check.mjs",
+    "bench:ai": "node scripts/ai-benchmark.mjs"
   },
   "dependencies": {
     "@fontsource/cormorant-garamond": "^5.3.0",

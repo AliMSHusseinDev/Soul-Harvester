@@ -96,7 +96,7 @@ export class Enemies {
       this.meshes.push(mesh);
     }
   }
-  update(time: number, yaw = 0) {
+  update(time: number, yaw = 0, alpha = 1) {
     this.yaw = yaw;
     this.time = time;
     const counts = [0, 0, 0, 0];
@@ -108,7 +108,13 @@ export class Enemies {
         continue;
       }
       const p = pose(e, time);
-      this.dummy.position.set(e.x, p.y, e.z);
+      const x = e.previousX + (e.x - e.previousX) * alpha,
+        z = e.previousZ + (e.z - e.previousZ) * alpha;
+      this.dummy.position.set(
+        x,
+        p.y + groundHeight(x, z) - groundHeight(e.x, e.z),
+        z,
+      );
       this.dummy.rotation.set(0, yaw, p.roll);
       this.dummy.scale.set(p.sx, p.sy, 1);
       this.dummy.updateMatrix();

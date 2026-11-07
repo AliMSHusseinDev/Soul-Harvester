@@ -530,48 +530,50 @@ h1 em {
 .inventory > div.selected svg {
   fill: #f7ffe9;
 }
+/* Gap is projected from the same angular cone used by bullet sampling. */
 .crosshair {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 14px;
-  height: 14px;
-  transform: translate(-50%, -50%);
-  opacity: 0.65;
+  width: 0;
+  height: 0;
+  --gap: 10px;
+  --dash: 10px;
+  opacity: 1;
+  pointer-events: none;
 }
 .crosshair i {
   position: absolute;
-  background: #e4efdf;
+  background: #fff;
+  box-shadow: 0 0 0 1px #071311;
 }
 .crosshair i:nth-child(1) {
-  width: 1px;
-  height: 3px;
-  left: 7px;
-  top: 0;
+  width: 2px;
+  height: var(--dash);
+  left: -1px;
+  bottom: var(--gap);
 }
 .crosshair i:nth-child(2) {
-  width: 1px;
-  height: 3px;
-  left: 7px;
-  bottom: 0;
+  width: 2px;
+  height: var(--dash);
+  left: -1px;
+  top: var(--gap);
 }
 .crosshair i:nth-child(3) {
-  height: 1px;
-  width: 3px;
-  left: 0;
-  top: 7px;
+  height: 2px;
+  width: var(--dash);
+  top: -1px;
+  right: var(--gap);
 }
 .crosshair i:nth-child(4) {
-  height: 1px;
-  width: 3px;
-  right: 0;
-  top: 7px;
+  height: 2px;
+  width: var(--dash);
+  top: -1px;
+  left: var(--gap);
 }
-.crosshair.aiming {
+.crosshair.aiming,
+.crosshair.sprinting {
   opacity: 0;
-}
-.crosshair.confirmed i {
-  background: #ff6658;
 }
 .hitmarker {
   position: absolute;
@@ -580,7 +582,7 @@ h1 em {
   transform: translate(-50%, -50%);
   width: 22px;
   height: 22px;
-  color: #ff6658;
+  color: #fff;
   opacity: 0;
   pointer-events: none;
 }
@@ -612,7 +614,7 @@ h1 em {
   transform: rotate(45deg);
 }
 .hitmarker.kill {
-  color: #ffb46c;
+  color: #ff403b;
   transform: translate(-50%, -50%) scale(1.22);
 }
 .hitmarker.show {

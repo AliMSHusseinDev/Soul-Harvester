@@ -1,11 +1,17 @@
 import * as THREE from "three";
+import { fadingMaterial } from "./vfx-material";
 import { glowTexture, guardTexture } from "./textures";
 import { groundHeight } from "./terrain";
 import { ENEMY_TYPES } from "./waves";
 import type { Battle } from "./battle";
 import { COMBAT_FEEL, LOOT_FEEL } from "./tuning";
 import { surface } from "./surfaces";
-import { PixelShards, SHARD_COLORS, damageNumberPose } from "./presentation";
+import {
+  PixelShards,
+  SHARD_COLORS,
+  damageNumberPose,
+  damageLabel,
+} from "./presentation";
 import { PRESENTATION as P } from "./tuning";
 interface Particle {
   life: number;
@@ -51,7 +57,15 @@ export class Effects {
     seed: number;
     origin: THREE.Vector3;
     seen: boolean;
+    important: boolean;
+    headshot: boolean;
+    glyphRatio: number;
   }[] = [];
+  private numberSerial = 0;
+  private viewportHeight = 1080;
+  resize(height: number) {
+    this.viewportHeight = height;
+  }
   private numberTextures = new Map<string, THREE.CanvasTexture>();
   private corpses: { sprite: THREE.Sprite; life: number; vy: number }[] = [];
   private corpseMaps = [0, 1, 2, 3].map(guardTexture);
@@ -79,16 +93,6 @@ export class Effects {
     scale: 1,
     seen: true,
   }));
-  private traces = Array.from({ length: 24 }, () => ({
-    life: 0,
-    seen: true,
-    start: new THREE.Vector3(),
-    end: new THREE.Vector3(),
-  }));
-  private traceGeometry = new THREE.BufferGeometry();
-  private tracePositions = new Float32Array(24 * 6);
-  private traceColors = new Float32Array(24 * 6);
-  private traceLines: THREE.LineSegments;
   private stats = { impacts: 0, criticalNumbers: 0, deaths: 0, casts: 0 };
   private trailClocks: Float32Array;
   private spawnWisps: { sprite: THREE.Sprite; life: number }[] = [];
@@ -129,27 +133,6 @@ export class Effects {
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       scene.add(mesh);
     }
-    this.traceGeometry.setAttribute(
-      "position",
-      new THREE.BufferAttribute(this.tracePositions, 3),
-    );
-    this.traceGeometry.setAttribute(
-      "color",
-      new THREE.BufferAttribute(this.traceColors, 3),
-    );
-    this.traceLines = new THREE.LineSegments(
-      this.traceGeometry,
-      new THREE.LineBasicMaterial({
-        vertexColors: true,
-        transparent: true,
-        opacity: 0.45,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      }),
-    );
-    this.traceLines.frustumCulled = false;
-    this.traceGeometry.setDrawRange(0, 0);
-    scene.add(this.traceLines);
     this.geometry.setAttribute(
       "position",
       new THREE.BufferAttribute(this.positions, 3),
@@ -250,6 +233,9 @@ export class Effects {
         seed: i,
         origin: new THREE.Vector3(),
         seen: true,
+        important: false,
+        headshot: false,
+        glyphRatio: 0.625,
       });
     }
     for (let i = 0; i < 20; i++) {
@@ -349,12 +335,24 @@ export class Effects {
     value: number,
     y = groundHeight(x, z) + 1.5,
     critical = false,
+    details: { headshot?: boolean; killed?: boolean } = {},
   ) {
-    const n =
-        this.numbers.find((n) => n.life <= 0) ||
-        this.numbers.reduce((a, b) => (a.life < b.life ? a : b)),
-      rounded = Math.round(value),
-      key = `${rounded}:${critical}`;
+    let n = this.numbers.find((n) => n.life <= 0);
+    const important = critical || !!details.killed;
+    if (!n)
+      for (const candidate of this.numbers) {
+        if (candidate.important && !important) continue;
+        if (
+          !n ||
+          (!candidate.important && n.important) ||
+          (candidate.important === n.important && candidate.life < n.life)
+        )
+          n = candidate;
+      }
+    if (!n) return;
+    const label = damageLabel(value),
+      fontSize = Math.min(40, 104 / (label.length * 0.62)),
+      key = `${label}:${critical}:${!!details.headshot}`;
     let texture = this.numberTextures.get(key);
     if (!texture) {
       if (this.numberTextures.size >= 64)
@@ -374,13 +372,17 @@ export class Effects {
       canvas.height = 64;
       const g = canvas.getContext("2d")!;
       g.imageSmoothingEnabled = false;
-      g.font = '600 40px "Pixelify Sans",monospace';
+      g.font = `600 ${fontSize}px "Pixelify Sans",monospace`;
       g.textAlign = "center";
       g.lineWidth = 6;
       g.strokeStyle = "#10221d";
-      g.strokeText(String(rounded), 64, 45);
-      g.fillStyle = critical ? "#ffbe61" : "#f5fff0";
-      g.fillText(String(rounded), 64, 45);
+      g.strokeText(label, 64, 45);
+      g.fillStyle = details.headshot
+        ? "#ff9254"
+        : critical
+          ? "#ffbe61"
+          : "#f5fff0";
+      g.fillText(label, 64, 45);
       texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.magFilter = texture.minFilter = THREE.NearestFilter;
@@ -388,6 +390,7 @@ export class Effects {
     }
     n.sprite.material.map = texture;
     n.sprite.material.needsUpdate = true;
+    n.seed = ++this.numberSerial;
     const angle = n.seed * 2.39996;
     n.origin.set(
       x + Math.cos(angle) * 0.13,
@@ -397,7 +400,10 @@ export class Effects {
     n.life = critical ? P.criticalNumberLife : P.numberLife;
     n.age = 0;
     n.critical = critical;
-    n.value = rounded;
+    n.value = Number(label);
+    n.important = important;
+    n.headshot = !!details.headshot;
+    n.glyphRatio = fontSize / 64;
     n.seen = false;
     if (critical) this.stats.criticalNumbers++;
   }
@@ -427,14 +433,6 @@ export class Effects {
     const f = this.flashes.find((f) => f.life <= 0 && f.seen);
     if (!f) return;
     Object.assign(f, { x, y, z, scale, max: 0.085, life: 0.085, seen: false });
-  }
-  tracer(start: THREE.Vector3, end: THREE.Vector3) {
-    const t = this.traces.find((t) => t.life <= 0 && t.seen);
-    if (!t) return;
-    t.start.copy(start);
-    t.end.copy(end);
-    t.life = 0.065;
-    t.seen = false;
   }
   cast(point: THREE.Vector3, orb: boolean) {
     this.stats.casts++;
@@ -545,7 +543,6 @@ export class Effects {
       }
     this.shardPool.update(dt, groundHeight);
     for (const f of this.flashes) if (f.life > 0) f.life -= dt;
-    for (const t of this.traces) if (t.life > 0) t.life -= dt;
     for (const w of this.spawnWisps)
       if (w.life > 0) {
         w.life = Math.max(0, w.life - dt);
@@ -684,7 +681,19 @@ export class Effects {
       n.sprite.position.y += pose.rise;
       n.sprite.position.x += Math.cos(this.camera.rotation.y) * pose.side;
       n.sprite.position.z -= Math.sin(this.camera.rotation.y) * pose.side;
-      n.sprite.scale.set(0.68 * pose.scale, 0.34 * pose.scale, 1);
+      const distance = n.origin.distanceTo(this.camera.position),
+        focal =
+          this.viewportHeight /
+          (2 * Math.tan((this.camera.fov * Math.PI) / 360));
+      const height = Math.max(
+        0.2,
+        Math.min(3.6, (18 * distance) / (focal * n.glyphRatio)),
+      );
+      const lane = ((n.seed % 5) - 2) * height * 0.32;
+      n.sprite.position.x += Math.cos(this.camera.rotation.y) * lane;
+      n.sprite.position.z -= Math.sin(this.camera.rotation.y) * lane;
+      n.sprite.position.y += (n.seed % 3) * height * 0.16;
+      n.sprite.scale.set(height * 2 * pose.scale, height * pose.scale, 1);
       n.sprite.material.opacity = pose.opacity;
       n.seen = true;
     }
@@ -738,24 +747,6 @@ export class Effects {
     this.flashMesh.count = flashes;
     this.flashMesh.instanceMatrix.needsUpdate = true;
     this.flashAlpha.needsUpdate = true;
-    let traces = 0;
-    for (const t of this.traces)
-      if (t.life > 0 || !t.seen) {
-        const at = traces * 6,
-          fade = t.seen ? Math.max(0, t.life / 0.065) : 1;
-        this.tracePositions.set(t.start.toArray(), at);
-        this.tracePositions.set(t.end.toArray(), at + 3);
-        for (let j = 0; j < 2; j++) {
-          this.traceColors[at + j * 3] = 0.95 * fade;
-          this.traceColors[at + j * 3 + 1] = 0.65 * fade;
-          this.traceColors[at + j * 3 + 2] = 0.25 * fade;
-        }
-        traces++;
-        t.seen = true;
-      }
-    this.traceGeometry.setDrawRange(0, traces * 2);
-    this.traceGeometry.attributes.position.needsUpdate = true;
-    this.traceGeometry.attributes.color.needsUpdate = true;
     const radius = 1 + (1 - this.ringLife / 0.6) * 6;
     for (let i = 0; i <= 64; i++)
       for (let side = 0; side < 2; side++) {
@@ -784,11 +775,18 @@ export class Effects {
       flashes: this.flashMesh.count,
       numbers: this.numbers
         .filter((n) => n.life > 0)
-        .map((n) => ({ value: n.value, critical: n.critical, age: n.age })),
+        .map((n) => ({
+          value: n.value,
+          critical: n.critical,
+          age: n.age,
+          headshot: n.headshot,
+          important: n.important,
+        })),
       totals: { ...this.stats },
     };
   }
   reset() {
+    this.numberSerial = 0;
     this.particles.forEach((p) => (p.life = 0));
     for (const n of this.numbers) {
       n.life = 0;
@@ -810,10 +808,6 @@ export class Effects {
       f.life = 0;
       f.seen = true;
     }
-    for (const t of this.traces) {
-      t.life = 0;
-      t.seen = true;
-    }
     this.stats = { impacts: 0, criticalNumbers: 0, deaths: 0, casts: 0 };
     for (const w of this.spawnWisps) {
       w.life = 0;
@@ -826,37 +820,4 @@ export class Effects {
     this.playerX = x;
     this.playerZ = z;
   }
-}
-
-function fadingMaterial(colored: boolean) {
-  const material = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
-    vertexColors: colored,
-    transparent: true,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    alphaTest: 0.01,
-    blending: colored ? THREE.NormalBlending : THREE.AdditiveBlending,
-  });
-  material.onBeforeCompile = (shader) => {
-    shader.vertexShader = shader.vertexShader
-      .replace(
-        "#include <common>",
-        "#include <common>\nattribute float vfxOpacity; varying float vfOpacity;",
-      )
-      .replace(
-        "#include <begin_vertex>",
-        "#include <begin_vertex>\nvfOpacity=vfxOpacity;",
-      );
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        "#include <common>",
-        "#include <common>\nvarying float vfOpacity;",
-      )
-      .replace(
-        "#include <color_fragment>",
-        "#include <color_fragment>\ndiffuseColor.a*=vfOpacity;",
-      );
-  };
-  return material;
 }

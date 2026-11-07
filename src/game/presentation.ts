@@ -8,8 +8,8 @@ export function damageNumberPose(age: number, critical: boolean, seed: number) {
   return {
     scale: (critical ? 1.3 : 1) * pop,
     opacity: Math.max(0, Math.min(1, (life - age) / 0.25)),
-    rise: age * (critical ? 0.85 : 0.62),
-    side: Math.sin(seed * 2.39996) * age * 0.22,
+    rise: (1 - Math.exp(-age * 4.5)) * (critical ? 0.44 : 0.34),
+    side: Math.sin(seed * 2.39996) * (1 - Math.exp(-age * 4)) * 0.1,
     life,
   };
 }
@@ -145,3 +145,6 @@ export class PixelShards {
     this.r = seededRandom(2601);
   }
 }
+
+/** Keeps fractional damage readable instead of changing 28.5 into 29. */
+export const damageLabel = (value: number) => String(Number(value.toFixed(2)));

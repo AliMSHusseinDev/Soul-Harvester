@@ -13,16 +13,17 @@ npm run dev
 
 Open the address printed by Vite in a desktop browser with WebGL 2 support. Click **Enter the courtyard** to capture the mouse. Pointer lock requires a direct user gesture; an embedded host must explicitly permit `pointer-lock`. If an embedding host blocks it, use a standalone browser tab.
 
-| Control    | Action                                |
-| ---------- | ------------------------------------- |
-| W A S D    | Move                                  |
-| Mouse      | Look                                  |
-| Left mouse | Fire                                  |
-| Shift      | Sprint; consumes regenerating stamina |
-| Space      | Jump                                  |
-| R          | Reload                                |
-| E          | Ring the bell when nearby             |
-| Escape     | Release mouse and pause               |
+| Control       | Action                                |
+| ------------- | ------------------------------------- |
+| W A S D       | Move                                  |
+| Mouse         | Look                                  |
+| Left mouse    | Fire                                  |
+| Shift         | Sprint; consumes regenerating stamina |
+| C / Left Ctrl | Hold to crouch; tighter hip fire      |
+| Space         | Jump                                  |
+| R             | Reload                                |
+| E             | Ring the bell when nearby             |
+| Escape        | Release mouse and pause               |
 
 Sound is opt-in through the top-right button. The menu adapts to smaller screens, but touch gameplay is not implemented. Reduced-motion preferences disable camera/weapon walking bob.
 
@@ -38,21 +39,24 @@ With the production preview running, in another terminal:
 
 ```sh
 GAME_URL=http://127.0.0.1:4173 npm run test:browser
-npm run test:visual
+GAME_URL=http://127.0.0.1:4173 npm run test:visual
+GAME_URL=http://127.0.0.1:4173 npm run test:handling
 npm run test:polish
+npm run bench:ai
 ```
 
-The browser suite uses `/usr/bin/chromium` by default; set `CHROMIUM_PATH` to another Chromium executable. It exercises actual pointer capture, character upgrades, movement, jump/landing, aiming, finite-ammo reloads, weapon switching, magic, bell collision/interaction, forest-wide spawning, white hit flashes, confirmed red hit markers, probabilistic loot collection, all ten stacked waves, shooting moving enemies, pause/resume, sound controls, and narrow-screen menu layout. Screenshots go to ignored `artifacts/`. Software WebGL is used for automation; those frame rates are not representative of GPU-equipped clients.
+The browser suite uses `/usr/bin/chromium` by default; set `CHROMIUM_PATH` to another Chromium executable. It exercises actual pointer capture, character upgrades, movement, jump/landing, aiming, finite-ammo reloads, weapon switching, magic, bell collision/interaction, forest-wide spawning, white hit flashes, confirmed white hit markers and red kill markers, probabilistic loot collection, all ten stacked waves, shooting moving enemies, pause/resume, sound controls, and narrow-screen menu layout. Screenshots go to ignored `artifacts/`. Software WebGL is used for automation; those frame rates are not representative of GPU-equipped clients.
 
-`test:visual` uses the same `GAME_URL`/preview as the browser suite. `test:polish` starts its own isolated local fixture on port 5190. It renders the production enemy, weapon, effects and HUD classes in a controlled scene to inspect alpha-preserving flashes, normal/critical numbers, casting, loot streams and real level-up rewards. The fixture never ships with the game. See [the 0.6.0 report](docs/release-0.6.0.md) for the latest changes and validation.
+`test:visual` and `test:handling` use the same `GAME_URL`/preview as the browser suite. Handling checks real sprint-to-fire timing, ADS transitions, crouch/air accuracy, crosshair layout at 720p/1080p and smoke cleanup. `test:polish` starts its own isolated local fixture on port 5190. It renders the production enemy, weapon, effects and HUD classes in a controlled scene to inspect alpha-preserving flashes, damage numbers, casting, smoke, loot streams and real level-up rewards. The fixture never ships with the game. `bench:ai` measures the simulation independently of rendering with 8, 80 and 260 enemies. Run browser suites sequentially on a software renderer. See [the 0.7.0 report](docs/release-0.7.0.md) for the latest changes and validation.
 
 ## Architecture
 
 - `src/game/battle.ts`: renderer-independent concurrent waves, combat, aggro, damage, economy, XP and upgrade simulation.
 - `src/game/navigation.ts`: shared Dijkstra flow fields with a binary min-heap, validated path lookahead, bounded lane offsets, non-corner-cutting grid paths, line-of-sight queries, and a spatial hash for local crowd separation.
 - `src/game/terrain.ts`: a C2-continuous raised-keep ramp shared by scenery, collision, AI, pickups and effects.
-- `src/game/world.ts`: seeded original environment, instanced pixel-cut grass/masonry, merged static props, huge moon, seamless direction-space clouds, lanterns, a landmark tree, layered pixel-cut forest silhouettes, NPCs and bell.
+- `src/game/world.ts`: seeded original environment, instanced pixel-cut grass/masonry, merged static props, huge moon, seamless direction-space clouds, lanterns, layered pixel-cut forest silhouettes, NPCs and bell. The oversized central tree and its collider have been removed.
 - `src/game/player.ts`: fixed-step acceleration, gravity, circle/AABB collision substeps, prop landing, sprint hysteresis, high jump and double jump.
+- `src/game/handling.ts`: deterministic sprint/sprint-out/fire/ADS readiness and per-weapon angular accuracy shared by bullet sampling and crosshair projection.
 - `src/game/weapon.ts`: textured, batched weapon models and tapered forearms, ammunition, reload/weapon switching, critically damped recoil spring, aim-down-sights, melee and casting motion.
 - `src/game/enemies.ts`: four instanced shallow 3D sprite batches with four-frame atlases, alpha-aware analytical hit tests, pixel-boundary extrusion, distance-driven walk animation, brief body flashes and telegraphed attacks.
 - `src/game/waves.ts`: deterministic escalating count/type quotas and ten concurrent wave jobs; each enemy retains its source wave.
@@ -66,6 +70,7 @@ The browser suite uses `/usr/bin/chromium` by default; set `CHROMIUM_PATH` to an
 - `src/game/rewards.ts`: type/wave-based loot probabilities, bounded dry streaks and reliable XP.
 - `src/game/feedback.ts`: nearest-hit resolution and simulation-time hit/kill markers.
 - `src/game/presentation.ts`: renderer-independent number animation, bounded tumbling pixel-shard pool and exactly-once ability presentation timers.
+- `src/game/ballistics.ts` / `gun-vfx.ts`: pooled world-space barrel smoke, heat/after-smoke, momentum and turbulence, plus travelling core/glow tracer ribbons independent of hitscan damage.
 - `src/game/effects.ts`: pooled layered impacts, critical-aware floating numbers, tumbling deaths, occasional tracers, instanced coins/crystals, projectile sweeps and expanding spell ring; physics and GPU uploads run separately.
 - `src/game/ui.ts`: vitality/base integrity, inventory, skill/stat panels, weapon upgrade shop and death/restart presentation.
 - `src/game/input.ts`: pointer lock, focus cleanup, aim and fire inputs.
@@ -77,7 +82,7 @@ All game visuals and audio are generated locally. Surface tiles use nearest magn
 
 ## Combat and progression
 
-Ring the bell to start. Enemies emerge in spaced groups from seven zones across the forest fringe, rather than the central landmark tree, and navigate across the bridge toward the bell. Within 9 metres and line of sight they chase the player; beyond 13 metres they return to the bell. Hollowguard attacks have a 0.42-second windup, and retreating during that window avoids the hit. A global short damage grace period limits simultaneous player damage from a crowd.
+Ring the bell to start. Enemies emerge in spaced groups from seven zones across the forest fringe, and navigate across the bridge toward the bell. Within 9 metres and line of sight they chase the player; beyond 13 metres they return to the bell. Hollowguard attacks have a 0.42-second windup, and retreating during that window avoids the hit. A global short damage grace period limits simultaneous player damage from a crowd.
 
 Every successful bullet hitting the bell calls the next wave immediately, even while earlier waves are fighting. The limit is **ten waves per run**; further bell hits cannot create wave eleven. Waves do not start automatically. All pending wave jobs emit concurrently in staggered groups across the forest, and earlier enemies are retained. A pool sized for the complete run holds all **260 enemies** from waves 1–10 without deleting older enemies. Enemies keep their own wave's tuning rather than inheriting the latest wave number.
 
@@ -87,11 +92,13 @@ Every kill leaves XP; gold is probabilistic. Base gold chances are 32% / 42% / 9
 
 Drops launch upward/outward from the defeated enemy and bounce under lightweight gravity/drag. Magnetic attraction begins after a 0.52–0.585-second animation window inside a base 4.2-metre radius. Acquisition has a frame-rate-independent budget and slight timing/trajectory variation, forming a stream through dense loot. Exact critically damped springs accelerate pickups toward the player, with a speed limit, wall checks, ground clearance and visual shrinking near collection. Brief trails, sparks and rising-pitch chimes confirm collection. Rewards persist until collected or reset. Dynamic batches disable stale frustum-bound culling, so loot stays visible on both sides of the bridge. Each level grants two upgrade points and shows a pixel-style LEVEL UP pop, sparkles and chord.
 
-Confirmed bullet damage briefly flashes the textured enemy white without losing its alpha silhouette, adds a restrained recoil reaction and impact particles at the actual intersection, and shows a red hit marker. Kills use a larger warm marker and a distinct confirmation sound. Only the first intersection of a bullet counts: an enemy or wall in front of the bell blocks that shot from starting a wave.
+Confirmed bullet damage briefly flashes the textured enemy white without losing its alpha silhouette, adds a restrained recoil reaction and impact particles at the actual intersection, and shows a white X hit marker. Kills use a larger red X and a heavier confirmation sound. Only the first intersection of a bullet counts: an enemy or wall in front of the bell blocks that shot from starting a wave.
 
-Hits emit a tiny white ring and 7–10 warm pixel shards; stronger enemies receive larger death bursts. White normal damage numbers and 30%-larger gold critical numbers pop, drift and fade according to the confirmed critical flag, without changing damage calculations. Shared pools bound particle counts and number texture memory. Dynamic effect buffers upload once per displayed frame, after simulation catch-up.
+Hits emit a tiny white ring and 7–10 warm pixel shards; stronger enemies receive larger death bursts. White normal damage numbers, 30%-larger gold critical numbers and orange headshot numbers pop, decelerate and fade according to confirmed combat metadata, without changing damage calculations. Fractional damage is displayed to two decimal places instead of rounding a 28.5 hit into 29. Text scales with viewing distance and screen resolution; staggered lanes reduce overlap, and normal hits cannot evict live critical/kill feedback. Shared pools bound particle counts and number texture memory. Dynamic effect buffers upload once per displayed frame, after simulation catch-up.
 
-Enemies use smoothly damped velocity, individual speed variation, safe flow-field lookahead and spatial separation, including stationary attackers. Walk poses follow distance travelled; attack frames show their windup. Gunfire keeps ordinary attack timing intact; heavy melee/magic knockback can interrupt. Weapons add a running pose, animated magazine removal/reinsertion and an open-hand casting sequence. F/Q reserve their cooldown immediately and release once after a short anticipation; pause/reset cannot duplicate a release. Player hits update health immediately, fade a red vignette and apply a restrained weapon/camera reaction that respects reduced-motion preferences.
+Enemies use acceleration-limited velocity, individual speed variation, safe flow-field lookahead and spatial separation, including stationary attackers. Target acquisition and steering are staggered at lower frequencies while motion/collision run every simulation step. Static wall queries use indexed local cells. Walk poses follow distance travelled; attack frames show their windup. Gunfire keeps ordinary attack timing intact; heavy melee/magic knockback can interrupt. Weapons add a running pose, animated magazine removal/reinsertion and an open-hand casting sequence. F/Q reserve their cooldown immediately and release once after a short anticipation; pause/reset cannot duplicate a release. Player hits update health immediately, fade a red vignette and apply a restrained weapon/camera reaction that respects reduced-motion preferences.
+
+Forward sprint hides the crosshair immediately and prevents gunfire/ADS. A fire tap initiates sprint-out, remains buffered and fires once when ready (rifle: 0.225 seconds). Holding ADS also exits sprint. The original weapon models tilt up/right, with interpolated viewmodel transforms and forearms anchored below the screen. Four white 2px crosshair dashes show the exact hip-fire cone, including movement, airborne and shot penalties; crouch reduces the weapon baseline by 15%. ADS remains accurate. No prone stance is implemented. Layered muzzle flashes sit beyond the actual barrel exit; smoke inherits world velocity, rises/curls and never rotates with the camera after emission.
 
 The gameplay HUD uses a self-hosted pixel font and compact corner clusters. Controls live in the pause guide, not in permanent paragraphs over the world. The stats/skills panel uses rank pips, discipline tiers and a single contextual description. Aim-down-sights places both sight tips on the camera's optical axis, suppresses walking bob and hides the crosshair and interaction prompt.
 
@@ -121,7 +128,7 @@ In the repository's **Settings → Pages**, set **Source** to **GitHub Actions**
 
 ### Local production build
 
-Run `npm run build` followed by `npm run preview -- --port 4173`. Use the existing browser-check instructions above. `vite.config.ts` makes all built asset paths relative, so the same build can run on a root domain or inside a GitHub Pages project path. The JavaScript bundle is about 174 KB gzipped before fonts; Vite reports its advisory about the uncompressed Three.js bundle size.
+Run `npm run build` followed by `npm run preview -- --port 4173`. Use the existing browser-check instructions above. `vite.config.ts` makes all built asset paths relative, so the same build can run on a root domain or inside a GitHub Pages project path. The JavaScript bundle is about 177 KB gzipped before fonts; Vite reports its advisory about the uncompressed Three.js bundle size.
 
 Public hosting must be verified after the hosting account's deployment succeeds. Do not treat a saved environment draft, a ZIP archive, or a localhost address as a public game link.
 

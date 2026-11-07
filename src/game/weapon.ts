@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { damp, aimPose, springStep } from "./math";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { surface, surfaceUV } from "./surfaces";
+import { glowTexture } from "./textures";
 export type WeaponId = "rifle" | "pistol" | "blade";
 export const WEAPONS = {
   rifle: {
@@ -44,6 +45,8 @@ export class Weapon {
   reloadMultiplier = 1;
   private models: Record<WeaponId, THREE.Group>;
   private flash: THREE.Sprite;
+  private flashCore: THREE.Sprite;
+  private flashHalo: THREE.Sprite;
   private light: THREE.PointLight;
   private recoil = 0;
   private velocity = 0;
@@ -53,8 +56,25 @@ export class Weapon {
   private flashTime = 0;
   private meleeTime = 0;
   private castTime = 0;
+  private castBlend = 0;
   private aim = 0;
   private running = 0;
+  private rotationKick = 0;
+  private posePosition = new THREE.Vector3();
+  private priorPosition = new THREE.Vector3();
+  private poseRotation = new THREE.Quaternion();
+  private priorRotation = new THREE.Quaternion();
+  private poseReady = false;
+  private muzzleLocal = new THREE.Vector3();
+  private arms: {
+    mesh: THREE.Mesh;
+    parent: THREE.Group;
+    wrist: THREE.Vector3;
+    anchor: THREE.Vector3;
+  }[] = [];
+  private armEnd = new THREE.Vector3();
+  private armDirection = new THREE.Vector3();
+  private upAxis = new THREE.Vector3(0, 1, 0);
   private fireStamp = 0;
   private presentedStamp = 0;
   private magazineMeshes: {
@@ -64,7 +84,10 @@ export class Weapon {
   }[] = [];
   private castHand = new THREE.Group();
   get casting() {
-    return this.castTime > 0;
+    return this.castTime > 0 || this.castBlend > 0.02;
+  }
+  get attacking() {
+    return this.meleeTime > 0;
   }
   get reloadProgress() {
     return this.reloading ? 1 - this.reloadTime / this.reloadDuration : 0;
@@ -73,15 +96,66 @@ export class Weapon {
     return this.castHand.localToWorld(new THREE.Vector3(0, 0.13, -0.06));
   }
   muzzlePoint() {
-    return this.group.localToWorld(
-      new THREE.Vector3(0, 0.035, this.id === "rifle" ? -0.91 : -0.51),
-    );
+    return this.group
+      .localToWorld(
+        this.muzzleLocal.set(0, 0.02, this.id === "rifle" ? -0.94 : -0.54),
+      )
+      .clone();
   }
-  present() {
+  private addArm(
+    parent: THREE.Group,
+    wrist: THREE.Vector3,
+    left: boolean,
+    material: THREE.Material,
+  ) {
+    const mesh = forearmBetween(
+      new THREE.Vector3(),
+      new THREE.Vector3(0, 1, 0),
+      material,
+    );
+    mesh.userData.animated = true;
+    parent.add(mesh);
+    this.arms.push({
+      mesh,
+      parent,
+      wrist,
+      anchor: new THREE.Vector3(left ? -0.4 : 0.45, -0.72, 0.08),
+    });
+  }
+  private placeArms() {
+    this.group.updateWorldMatrix(true, true);
+    for (const arm of this.arms) {
+      this.armEnd.copy(arm.anchor).applyMatrix4(this.camera.matrixWorld);
+      arm.parent.worldToLocal(this.armEnd);
+      this.armDirection.copy(this.armEnd).sub(arm.wrist);
+      const length = this.armDirection.length();
+      arm.mesh.position.copy(arm.wrist).addScaledVector(this.armDirection, 0.5);
+      arm.mesh.quaternion.setFromUnitVectors(
+        this.upAxis,
+        this.armDirection.normalize(),
+      );
+      arm.mesh.scale.y = length;
+    }
+  }
+  present(alpha = 1) {
+    this.group.position.lerpVectors(
+      this.priorPosition,
+      this.posePosition,
+      alpha,
+    );
+    this.group.quaternion.slerpQuaternions(
+      this.priorRotation,
+      this.poseRotation,
+      alpha,
+    );
+    this.placeArms();
     this.flash.visible =
       this.id !== "blade" &&
       (this.flashTime > 0 || this.fireStamp !== this.presentedStamp);
     this.light.intensity = this.flash.visible ? 1.5 : 0;
+    this.flashCore.visible = this.flashHalo.visible = this.flash.visible;
+    this.flashCore.position.copy(this.flash.position);
+    this.flashHalo.position.copy(this.flash.position);
     this.presentedStamp = this.fireStamp;
   }
   hurt() {
@@ -98,7 +172,7 @@ export class Weapon {
   }
   private switchTime = 0;
   private leftHand: THREE.Group;
-  constructor(camera: THREE.PerspectiveCamera) {
+  constructor(private camera: THREE.PerspectiveCamera) {
     const steel = new THREE.MeshStandardMaterial({
         map: surface("steel"),
         color: 0xc1ccc2,
@@ -211,12 +285,7 @@ export class Weapon {
         });
       }
       box(g, 0.15, 0.15, 0.22, 0.02, -0.18, 0.16, glove);
-      const arm = forearmBetween(
-        new THREE.Vector3(0.025, -0.24, 0.18),
-        new THREE.Vector3(0.22, -0.4, 0.76),
-        skin,
-      );
-      g.add(arm);
+      this.addArm(g, new THREE.Vector3(0.025, -0.24, 0.18), false, skin);
       for (let i = 0; i < 4; i++)
         box(g, 0.027, 0.08, 0.13, -0.05 + i * 0.035, -0.12, 0.08, glove);
       const chamber = new THREE.Mesh(
@@ -265,22 +334,11 @@ export class Weapon {
     edge.rotation.x = -Math.PI / 2;
     blade.add(edge);
     box(blade, 0.15, 0.14, 0.2, 0, -0.08, 0.12, glove);
-    blade.add(
-      forearmBetween(
-        new THREE.Vector3(0, -0.14, 0.16),
-        new THREE.Vector3(0.23, -0.35, 0.75),
-        skin,
-      ),
-    );
+    this.addArm(blade, new THREE.Vector3(0, -0.14, 0.16), false, skin);
     this.group.add(blade);
     this.leftHand = new THREE.Group();
     box(this.leftHand, 0.17, 0.14, 0.2, 0, 0, 0, glove);
-    const forearm = forearmBetween(
-      new THREE.Vector3(0, -0.055, 0.04),
-      new THREE.Vector3(-0.29, -0.3, 0.6),
-      skin,
-    );
-    this.leftHand.add(forearm);
+    this.addArm(this.leftHand, new THREE.Vector3(0, -0.055, 0.04), true, skin);
     for (let i = 0; i < 4; i++)
       box(
         this.leftHand,
@@ -298,13 +356,7 @@ export class Weapon {
       box(this.castHand, 0.027, 0.14, 0.035, -0.05 + i * 0.033, 0.11, 0, glove);
     box(this.castHand, 0.08, 0.035, 0.04, -0.09, 0.01, 0, glove).rotation.z =
       0.4;
-    this.castHand.add(
-      forearmBetween(
-        new THREE.Vector3(0, -0.055, 0.04),
-        new THREE.Vector3(-0.24, -0.28, 0.58),
-        skin,
-      ),
-    );
+    this.addArm(this.castHand, new THREE.Vector3(0, -0.055, 0.04), true, skin);
     this.group.add(this.castHand);
     for (const model of [
       ...Object.values(this.models),
@@ -319,10 +371,39 @@ export class Weapon {
         transparent: true,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
+        depthTest: false,
+        toneMapped: false,
       }),
     );
     this.flash.scale.set(0.24, 0.24, 1);
     this.group.add(this.flash);
+    this.flashCore = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: surface("flash"),
+        color: 0xffffff,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        depthWrite: false,
+        depthTest: false,
+        toneMapped: false,
+      }),
+    );
+    this.flashCore.scale.set(0.12, 0.12, 1);
+    this.group.add(this.flashCore);
+    this.flashHalo = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: glowTexture(),
+        color: 0xffb45c,
+        opacity: 0.28,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        depthWrite: false,
+        depthTest: false,
+        toneMapped: false,
+      }),
+    );
+    this.flashHalo.scale.set(0.36, 0.36, 1);
+    this.group.add(this.flashHalo);
     this.light = new THREE.PointLight(0xffd98c, 0, 4);
     this.group.add(this.light);
     this.group.scale.setScalar(0.68);
@@ -360,6 +441,11 @@ export class Weapon {
     this.velocity += this.config.kick * 25;
     this.flashTime = 0.04;
     this.fireStamp++;
+    this.flash.material.rotation = this.fireStamp * 2.39996;
+    const size = 0.2 + Math.sin(this.fireStamp * 1.7) * 0.035;
+    this.flash.scale.set(size, size, 1);
+    this.rotationKick +=
+      Math.sin(this.fireStamp * 2.39996) * this.config.kick * 0.35;
     return true;
   }
   reload() {
@@ -381,6 +467,7 @@ export class Weapon {
   }
   cast() {
     this.castTime = 0.55;
+    this.meleeTime = 0;
     this.reloading = false;
   }
   addAmmo(amount: number) {
@@ -402,10 +489,13 @@ export class Weapon {
     this.cooldown = 0;
     this.meleeTime = 0;
     this.castTime = 0;
+    this.castBlend = 0;
     this.aim = 0;
     this.running = 0;
     this.flashTime = 0;
     this.fireStamp = this.presentedStamp = 0;
+    this.rotationKick = 0;
+    this.poseReady = false;
   }
   update(
     dt: number,
@@ -413,12 +503,16 @@ export class Weapon {
     speed: number,
     reducedMotion: boolean,
     aiming = false,
+    sprinting = false,
+    distance = time * speed,
   ) {
+    this.priorPosition.copy(this.posePosition);
+    this.priorRotation.copy(this.poseRotation);
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.flashTime -= dt;
     this.flash.visible = this.flashTime > 0;
     this.light.intensity = this.flash.visible ? 1.5 : 0;
-    this.flash.position.set(0, 0.035, this.id === "rifle" ? -0.91 : -0.51);
+    this.flash.position.set(0, 0.02, this.id === "rifle" ? -0.94 : -0.54);
     this.light.position.copy(this.flash.position);
     // Critically damped spring: recoil remains stable across frame rates.
     const spring = springStep(
@@ -430,6 +524,7 @@ export class Weapon {
     );
     this.recoil = spring.position;
     this.velocity = spring.velocity;
+    this.rotationKick = damp(this.rotationKick, 0, 16, dt);
     if (this.reloading) {
       this.reloadTime -= dt;
       if (this.reloadTime <= 0) {
@@ -444,6 +539,7 @@ export class Weapon {
     }
     this.meleeTime = Math.max(0, this.meleeTime - dt);
     this.castTime = Math.max(0, this.castTime - dt);
+    this.castBlend = damp(this.castBlend, this.castTime > 0.15 ? 1 : 0, 18, dt);
     this.switchTime = Math.max(0, this.switchTime - dt);
     this.aim = damp(
       this.aim,
@@ -451,20 +547,22 @@ export class Weapon {
       14,
       dt,
     );
-    this.running = damp(this.running, speed > 6 && !aiming ? 1 : 0, 9, dt);
+    this.running = damp(this.running, sprinting ? 1 : 0, 15, dt);
     const rp = this.reloading ? 1 - this.reloadTime / this.reloadDuration : 0,
       reload = Math.sin(rp * Math.PI),
       melee = Math.sin((this.meleeTime / 0.38) * Math.PI),
-      cast = Math.sin((this.castTime / 0.55) * Math.PI),
+      cast = this.castBlend,
       bob = reducedMotion
         ? 0
-        : Math.sin(time * (8 + this.running * 3)) * Math.min(speed, 7) * 0.003;
+        : Math.sin(distance * 2.1) *
+          Math.min(speed, 7) *
+          (0.003 + this.running * 0.002);
     const pose = aimPose(this.aim);
     const idle = reducedMotion
       ? 0
       : Math.sin(time * 1.6) * 0.001 * (1 - this.aim);
     this.group.position.set(
-      pose.x + idle * 0.5,
+      pose.x + idle * 0.5 + this.running * 0.12,
       pose.y +
         idle -
         reload * 0.14 -
@@ -475,9 +573,9 @@ export class Weapon {
       pose.z + this.recoil - melee * 0.35 + this.switchTime * 0.7,
     );
     this.group.rotation.set(
-      this.recoil * 0.8 + reload * 0.12,
-      -reload * 0.45,
-      melee * -0.8 + reload * 0.5 - this.running * 0.09,
+      this.recoil * 0.8 + reload * 0.12 + this.running * 1.05,
+      -reload * 0.45 - this.running * 0.32 + this.rotationKick * 0.4,
+      melee * -0.8 + reload * 0.5 - this.running * 0.22 + this.rotationKick,
     );
     for (const id of Object.keys(this.models) as WeaponId[])
       this.models[id].visible = id === this.id;
@@ -510,6 +608,13 @@ export class Weapon {
         rp > 0.35 &&
         rp < 0.58
       );
+    }
+    this.posePosition.copy(this.group.position);
+    this.poseRotation.copy(this.group.quaternion);
+    if (!this.poseReady) {
+      this.priorPosition.copy(this.posePosition);
+      this.priorRotation.copy(this.poseRotation);
+      this.poseReady = true;
     }
   }
 }

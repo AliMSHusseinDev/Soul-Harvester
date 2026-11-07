@@ -57,6 +57,7 @@ try {
       { UI },
       { surface },
       { guardAtlas, GUARD_FRAMES },
+      { GunVFX },
     ] = await Promise.all([
       import("/node_modules/three/build/three.module.js"),
       import("/src/game/battle.ts"),
@@ -66,6 +67,7 @@ try {
       import("/src/game/ui.ts"),
       import("/src/game/surfaces.ts"),
       import("/src/game/textures.ts"),
+      import("/src/game/gun-vfx.ts"),
     ]);
     await document.fonts.ready;
     document.querySelector("#loading")?.remove();
@@ -105,6 +107,9 @@ try {
       en = new Enemies(scene, b),
       w = new Weapon(camera),
       ui = new UI(b, w, () => {});
+    v.resize(600);
+    const gun = new GunVFX(scene, camera);
+    gun.resize(600);
     const player = { x: 0, z: -33, y: 0 },
       f = { freeze: true, time: 0, b, v, en, w, ui };
     window.__polish = f;
@@ -174,9 +179,40 @@ try {
       w.update(0.15, f.time, 0, false);
       v.cast(w.castOrigin(), true);
     };
+    f.flash = () => {
+      w.reset();
+      w.update(0, 0, 0, false);
+      w.fire();
+      w.update(0.01, 0, 0, false);
+    };
+    f.clearFlash = () => w.update(0.25, 0, 0, false);
+    f.gun = () => {
+      w.reset();
+      w.update(0, 0, 0, false);
+      for (let i = 0; i < 12; i++) {
+        const muzzle = w.muzzlePoint(),
+          end = new T.Vector3(0.4, 1.7, -39);
+        gun.shot(muzzle, end, new T.Vector3(), true);
+        gun.step(
+          0.06,
+          i * 0.06,
+          muzzle,
+          new T.Vector3(0, 0, -1),
+          new T.Vector3(),
+        );
+      }
+      gun.render();
+      return gun.diagnostics();
+    };
     f.impact = () => {
       v.impact(0, 2.5, -36, false, true);
       v.step(0.025, 0.145);
+    };
+    f.priority = () => {
+      for (let i = 0; i < 40; i++) v.number(0, -39, 100 + i, 1, false);
+      v.number(0, -39, 28.5, 1, true);
+      for (let i = 0; i < 40; i++) v.number(0, -39, 3, 1, false);
+      return v.diagnostics();
     };
     f.loot = () => {
       b.reset();
@@ -229,11 +265,32 @@ try {
       v.followPlayer(player.x, player.z);
       camera.updateMatrixWorld();
       v.render(f.time);
+      gun.render();
       ui.update(dt, false);
       renderer.clear();
       renderer.render(scene, camera);
       renderer.clearDepth();
       renderer.render(view, camera);
+      const pixels = new Uint8Array(80 * 100 * 4);
+      renderer
+        .getContext()
+        .readPixels(
+          360,
+          370,
+          80,
+          100,
+          renderer.getContext().RGBA,
+          renderer.getContext().UNSIGNED_BYTE,
+          pixels,
+        );
+      f.coralPixels = 0;
+      for (let i = 0; i < pixels.length; i += 4)
+        if (
+          pixels[i] > 150 &&
+          pixels[i + 2] > pixels[i + 1] * 1.05 &&
+          pixels[i] > pixels[i + 1] * 1.25
+        )
+          f.coralPixels++;
     };
     requestAnimationFrame(tick);
   });
@@ -258,7 +315,7 @@ try {
     () => window.__polish.v.diagnostics().numbers,
   );
   assert.ok(
-    numbers.some((n) => n.critical && n.value === 29) &&
+    numbers.some((n) => n.critical && n.value === 28.5) &&
       numbers.some((n) => !n.critical && n.value === 19),
   );
   await page.screenshot({ path: "artifacts/polish-critical.png" });
@@ -266,11 +323,29 @@ try {
   await frame();
   const impact = await page.evaluate(() => window.__polish.v.diagnostics());
   assert.ok(impact.shards >= 7 && impact.flashes >= 1);
+  assert.ok(
+    await page.evaluate(() => window.__polish.coralPixels > 0),
+    "coral instance fragments must render in color, not black",
+  );
   await page.screenshot({ path: "artifacts/polish-impact.png" });
+  await page.evaluate(() => window.__polish.flash());
+  await frame();
+  await page.screenshot({ path: "artifacts/polish-muzzle-flash.png" });
+  await page.evaluate(() => window.__polish.clearFlash());
   await page.evaluate(() => window.__polish.cast());
   await frame();
   assert.equal(await page.evaluate(() => window.__polish.w.casting), true);
   await page.screenshot({ path: "artifacts/polish-cast.png" });
+  const smoke = await page.evaluate(() => window.__polish.gun());
+  assert.ok(smoke.smoke > 10 && smoke.smoke <= 96);
+  await frame();
+  await page.screenshot({ path: "artifacts/polish-gun-smoke.png" });
+  const priority = await page.evaluate(() => window.__polish.priority());
+  assert.ok(
+    priority.numbers.length <= 32 &&
+      priority.numbers.some((n) => n.critical && n.value === 28.5) &&
+      priority.numberTextures <= 64,
+  );
   await page.evaluate(() => window.__polish.loot());
   await page.waitForFunction(
     () =>

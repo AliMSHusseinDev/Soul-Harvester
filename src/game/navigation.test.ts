@@ -1,6 +1,18 @@
 import { it, expect } from "vitest";
 import { Navigation } from "./navigation";
 import { isRiver, MAP } from "./terrain";
+import { resolveCircle } from "./math";
+it("indexes negative-coordinate walls without duplicate collision candidates or missed occlusion", () => {
+  const wall = { minX: -7, maxX: 7, minZ: -35, maxZ: -34, height: 4 };
+  const nav = new Navigation([wall]);
+  const candidates = nav.collisionNear(0, -33.9);
+  expect(candidates).toEqual([wall]);
+  const p = resolveCircle(0, -33.9, 0.34, 0, candidates);
+  expect(p.z).toBeGreaterThan(-33.7);
+  expect(nav.lineClear({ x: -2, z: -40 }, { x: -2, z: -30 })).toBe(false);
+  expect(nav.lineClear({ x: 10, z: -40 }, { x: 10, z: -30 })).toBe(true);
+  expect(nav.collisionNear(24, 20)).toHaveLength(0);
+});
 it("routes enemies from the outer field across the bridge to the bell", () => {
   const nav = new Navigation([]),
     field = nav.field(MAP.bell),

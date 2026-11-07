@@ -193,6 +193,8 @@ try {
   console.log(
     "PASS: seven accessible forest zones spread spawns across the entire width",
   );
+  await page.mouse.down({ button: "right" });
+  await wait(() => window.__soulHarvester().aimAmount > 0.999);
   // Follow the real moving target using relative mouse inputs; no simulation mutation.
   for (
     let i = 0;
@@ -214,6 +216,7 @@ try {
     );
     await page.mouse.up();
   }
+  await page.mouse.up({ button: "right" });
   await wait(() => window.__soulHarvester().souls > 0);
   assert.ok((await state()).drops.some((d) => d.kind === "gold"));
   const feedbackChecks = await page.evaluate(() => window.__feedbackChecks);
@@ -221,7 +224,7 @@ try {
   assert.ok((await state()).lootRender.totals.impacts > 0);
   assert.ok((await state()).lootRender.totals.deaths > 0);
   console.log(
-    "PASS: confirmed red hit marker, white body flash, distinct kills and probabilistic gold on real enemies",
+    "PASS: confirmed white hit marker / red kill marker, white body flash, distinct kills and probabilistic gold on real enemies",
   );
   await aimAt(0, 1.72, -65);
   await page.keyboard.down("ShiftLeft");

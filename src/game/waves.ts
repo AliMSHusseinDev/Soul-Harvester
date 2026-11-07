@@ -5,7 +5,7 @@ export const ENEMY_TYPES = [
   {
     name: "Hollowguard",
     hp: 43,
-    speed: 1.9,
+    speed: 2.55,
     damage: 7,
     scale: 1,
     range: 1.35,
@@ -15,7 +15,7 @@ export const ENEMY_TYPES = [
   {
     name: "Ravener",
     hp: 29,
-    speed: 3.15,
+    speed: 3.8,
     damage: 5,
     scale: 0.82,
     range: 1.3,
@@ -25,7 +25,7 @@ export const ENEMY_TYPES = [
   {
     name: "Grave brute",
     hp: 135,
-    speed: 1.25,
+    speed: 1.7,
     damage: 18,
     scale: 1.45,
     range: 1.85,
@@ -35,7 +35,7 @@ export const ENEMY_TYPES = [
   {
     name: "Ember witch",
     hp: 56,
-    speed: 1.65,
+    speed: 2.2,
     damage: 10,
     scale: 1.05,
     range: 8,

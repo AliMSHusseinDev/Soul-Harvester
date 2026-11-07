@@ -1,5 +1,6 @@
 import { type Solid } from "./math";
 import { inMap, isRiver, MAP } from "./terrain";
+const EMPTY_SOLIDS: readonly Solid[] = [];
 export interface Point {
   x: number;
   z: number;
@@ -47,7 +48,26 @@ export class Navigation {
   readonly height = Math.ceil((MAP.maxZ - MAP.minZ) / this.cell);
   readonly blocked = new Uint8Array(this.width * this.height);
   private links: { id: number; cost: number }[][];
+  private solidCells = new Map<number, Solid[]>();
+  private nearby: Solid[] = [];
+  private seenSolids = new Set<Solid>();
   constructor(private readonly solids: readonly Solid[]) {
+    for (const solid of solids)
+      for (
+        let z = Math.floor(solid.minZ / 4);
+        z <= Math.floor(solid.maxZ / 4);
+        z++
+      )
+        for (
+          let x = Math.floor(solid.minX / 4);
+          x <= Math.floor(solid.maxX / 4);
+          x++
+        ) {
+          const key = x * 4096 + z,
+            bucket = this.solidCells.get(key);
+          if (bucket) bucket.push(solid);
+          else this.solidCells.set(key, [solid]);
+        }
     for (let i = 0; i < this.blocked.length; i++) {
       const p = this.point(i);
       this.blocked[i] = Number(
@@ -179,7 +199,7 @@ export class Navigation {
         z = a.z + (b.z - a.z) * t;
       if (
         !inMap(x, z) ||
-        this.solids.some(
+        this.cellSolids(x, z).some(
           (s) =>
             s.height - (s.base ?? 0) > 1 &&
             x > s.minX &&
@@ -191,6 +211,30 @@ export class Navigation {
         return false;
     }
     return true;
+  }
+  private cellSolids(x: number, z: number): readonly Solid[] {
+    return (
+      this.solidCells.get(Math.floor(x / 4) * 4096 + Math.floor(z / 4)) ??
+      EMPTY_SOLIDS
+    );
+  }
+  /** Reuses scratch storage; consume before making another query. */
+  collisionNear(x: number, z: number) {
+    this.nearby.length = 0;
+    this.seenSolids.clear();
+    const cx = Math.floor(x / 4),
+      cz = Math.floor(z / 4);
+    for (let dz = -1; dz <= 1; dz++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const bucket = this.solidCells.get((cx + dx) * 4096 + cz + dz);
+        if (bucket)
+          for (const b of bucket)
+            if (!this.seenSolids.has(b)) {
+              this.seenSolids.add(b);
+              this.nearby.push(b);
+            }
+      }
+    return this.nearby;
   }
   /** Three-cell lookahead removes waypoint zigzags; lateral lanes stay inside the safe grid. */
   steerSmooth(
@@ -247,13 +291,13 @@ export class Navigation {
 }
 /** Rebuilt once per simulation step, O(N) insertion and local separation queries. */
 export class SpatialGrid<T extends Point> {
-  private buckets = new Map<string, T[]>();
+  private buckets = new Map<number, T[]>();
   constructor(private size = 2) {}
   clear() {
     for (const bucket of this.buckets.values()) bucket.length = 0;
   }
   add(p: T) {
-    const k = `${Math.floor(p.x / this.size)},${Math.floor(p.z / this.size)}`;
+    const k = Math.floor(p.x / this.size) * 4096 + Math.floor(p.z / this.size);
     const b = this.buckets.get(k);
     if (b) b.push(p);
     else this.buckets.set(k, [p]);
@@ -265,7 +309,7 @@ export class SpatialGrid<T extends Point> {
       z = Math.floor(p.z / this.size);
     for (let dz = -1; dz <= 1; dz++)
       for (let dx = -1; dx <= 1; dx++) {
-        const bucket = this.buckets.get(`${x + dx},${z + dz}`);
+        const bucket = this.buckets.get((x + dx) * 4096 + z + dz);
         if (bucket) for (const item of bucket) this.result.push(item);
       }
     return this.result;

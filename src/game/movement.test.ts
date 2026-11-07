@@ -43,6 +43,25 @@ it("uses individual speeds and lateral motion without forcing a straight marchin
   );
   expect(b.alive.every((e) => e.gait > 0)).toBe(true);
 });
+it("staggered decisions and steering retain continuous acceleration-limited movement", () => {
+  const b = new Battle([]),
+    e = b.enemies[0];
+  Object.assign(e, { active: true, x: 0, z: -40, hp: 100, spawnAge: 1 });
+  let decisions = 0,
+    steering = 0,
+    previous = 0;
+  for (let i = 0; i < 60; i++) {
+    b.update(1 / 60, { x: 24, z: 25 });
+    decisions += b.metrics.decisions;
+    steering += b.metrics.steering;
+    const speed = Math.hypot(e.vx, e.vz);
+    expect(speed - previous).toBeLessThanOrEqual(7.5 / 60 + 1e-5);
+    previous = speed;
+  }
+  expect(decisions).toBeLessThan(12);
+  expect(steering).toBeLessThan(18);
+  expect(e.z).toBeGreaterThan(-39);
+});
 it("ordinary bullet hits keep attacks responsive, while heavy knockback interrupts", () => {
   const b = new Battle([]),
     e = b.enemies[0];

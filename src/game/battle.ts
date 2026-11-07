@@ -60,6 +60,12 @@ export interface Enemy extends Point {
   gait: number;
   speedFactor: number;
   stalled: number;
+  decisionClock: number;
+  steerClock: number;
+  seekX: number;
+  seekZ: number;
+  previousX: number;
+  previousZ: number;
 }
 export type BattleEvent = {
   kind:
@@ -81,6 +87,8 @@ export type BattleEvent = {
   y?: number;
   critical?: boolean;
   bullet?: boolean;
+  headshot?: boolean;
+  killed?: boolean;
 };
 export class Battle {
   readonly nav: Navigation;
@@ -115,6 +123,12 @@ export class Battle {
       gait: 0,
       speedFactor: 1,
       stalled: 0,
+      decisionClock: 0,
+      steerClock: 0,
+      seekX: 0,
+      seekZ: 0,
+      previousX: 0,
+      previousZ: 0,
     }),
   );
   readonly drops: Drop[];
@@ -211,7 +225,12 @@ export class Battle {
     z = 0,
     value = 0,
     y?: number,
-    details?: { critical?: boolean; bullet?: boolean },
+    details?: {
+      critical?: boolean;
+      bullet?: boolean;
+      headshot?: boolean;
+      killed?: boolean;
+    },
   ) {
     this.events.push({ kind, x, z, value, y, ...details });
   }
@@ -268,13 +287,24 @@ export class Battle {
       vz: 0,
       gait: 0,
       stalled: 0,
+      decisionClock: 0,
+      steerClock: 0,
+      seekX: 0,
+      seekZ: 0,
+      previousX: x,
+      previousZ: z,
       speedFactor: 1 + Math.sin(e.phase + wave) * MOTION.speedVariation,
     });
     this.emit("spawn", x, z, zone);
     return true;
   }
+  readonly metrics = { decisions: 0, steering: 0, neighbours: 0 };
   update(dt: number, player: Point & { y?: number }) {
     if (this.phase === "lost") return;
+    this.metrics.decisions =
+      this.metrics.steering =
+      this.metrics.neighbours =
+        0;
     this.invulnerable = Math.max(0, this.invulnerable - dt);
     this.regenDelay = Math.max(0, this.regenDelay - dt);
     this.meleeCooldown = Math.max(0, this.meleeCooldown - dt);
@@ -322,6 +352,8 @@ export class Battle {
     for (const e of this.enemies) if (e.active) this.grid.add(e);
     for (const e of this.enemies) {
       if (!e.active) continue;
+      e.previousX = e.x;
+      e.previousZ = e.z;
       e.hitFlash = Math.max(0, e.hitFlash - dt);
       e.reaction = Math.max(0, e.reaction - dt);
       e.spawnAge += dt;
@@ -332,7 +364,7 @@ export class Battle {
           e.z + e.knockZ * dt,
           0.34,
           groundHeight(e.x, e.z),
-          this.solids,
+          this.nav.collisionNear(e.x, e.z),
         );
         if (this.nav.walkable(p.x, p.z)) {
           e.x = p.x;
@@ -341,20 +373,33 @@ export class Battle {
       }
       e.knockX *= Math.exp(-dt * 8);
       e.knockZ *= Math.exp(-dt * 8);
-      const distance = Math.hypot(e.x - player.x, e.z - player.z);
       if (
-        e.target === "bell" &&
-        distance < MOTION.aggroEnter &&
-        this.nav.lineClear(e, player)
-      )
-        e.target = "player";
-      else if (
         e.target === "player" &&
-        (distance > MOTION.aggroExit ||
+        ((e.x - player.x) ** 2 + (e.z - player.z) ** 2 >
+          MOTION.aggroExit ** 2 ||
           !inMap(player.x, player.z) ||
           isRiver(player.x, player.z))
       )
         e.target = "bell";
+      e.decisionClock -= dt;
+      if (e.decisionClock <= 0) {
+        this.metrics.decisions++;
+        e.decisionClock = 0.12 + (e.id % 4) * 0.02;
+        const distance = Math.hypot(e.x - player.x, e.z - player.z);
+        if (
+          e.target === "bell" &&
+          distance < MOTION.aggroEnter &&
+          this.nav.lineClear(e, player)
+        )
+          e.target = "player";
+        else if (
+          e.target === "player" &&
+          (distance > MOTION.aggroExit ||
+            !inMap(player.x, player.z) ||
+            isRiver(player.x, player.z))
+        )
+          e.target = "bell";
+      }
       const target = e.target === "player" ? player : MAP.bell,
         d = Math.hypot(e.x - target.x, e.z - target.z),
         range =
@@ -407,16 +452,25 @@ export class Battle {
         continue;
       }
       const field = e.target === "player" ? this.playerField : this.bellField;
-      const recovering = e.stalled > MOTION.stalledAfter,
-        lane = recovering
+      const recovering = e.stalled > MOTION.stalledAfter;
+      e.steerClock -= dt;
+      if (e.steerClock <= 0 || recovering) {
+        this.metrics.steering++;
+        e.steerClock = 0.08 + (e.id % 3) * 0.012;
+        const lane = recovering
           ? 0
-          : Math.sin(e.gait * 0.09 + e.phase) * MOTION.laneWidth,
-        v = recovering
+          : Math.sin(e.gait * 0.09 + e.phase) * MOTION.laneWidth;
+        const desired = recovering
           ? this.nav.steer(e, target, field)
           : this.nav.steerSmooth(e, target, field, lane);
+        e.seekX = desired.x;
+        e.seekZ = desired.z;
+      }
+      const v = { x: e.seekX, z: e.seekZ };
       let sx = 0,
         sz = 0;
       for (const other of this.grid.near(e)) {
+        this.metrics.neighbours++;
         if (other === e) continue;
         let dx = e.x - other.x,
           dz = e.z - other.z,
@@ -441,18 +495,18 @@ export class Battle {
           e.speedFactor *
           (1 + e.wave * DIFFICULTY.speedPerWave),
         force = MOTION.separationForce * (recovering ? 0.25 : 1);
-      e.vx = damp(
-        e.vx,
-        v.x * speed + Math.max(-force, Math.min(force, sx)),
-        MOTION.turnRate,
-        dt,
-      );
-      e.vz = damp(
-        e.vz,
-        v.z * speed + Math.max(-force, Math.min(force, sz)),
-        MOTION.turnRate,
-        dt,
-      );
+      const arrival = Math.min(1, Math.max(0.25, (d - range + 0.6) / 1.5));
+      const desiredX =
+          v.x * speed * arrival + Math.max(-force, Math.min(force, sx)),
+        desiredZ =
+          v.z * speed * arrival + Math.max(-force, Math.min(force, sz));
+      const nextX = damp(e.vx, desiredX, MOTION.turnRate, dt),
+        nextZ = damp(e.vz, desiredZ, MOTION.turnRate, dt);
+      const change = Math.hypot(nextX - e.vx, nextZ - e.vz),
+        limit = MOTION.acceleration * dt,
+        ratio = change > limit ? limit / change : 1;
+      e.vx += (nextX - e.vx) * ratio;
+      e.vz += (nextZ - e.vz) * ratio;
       const beforeX = e.x,
         beforeZ = e.z;
       const p = resolveCircle(
@@ -460,7 +514,7 @@ export class Battle {
         e.z + e.vz * dt,
         0.34,
         groundHeight(e.x, e.z),
-        this.solids,
+        this.nav.collisionNear(e.x, e.z),
       );
       if (this.nav.walkable(p.x, p.z)) {
         e.x = p.x;
@@ -471,7 +525,7 @@ export class Battle {
           e.z + v.z * speed * dt,
           0.34,
           groundHeight(e.x, e.z),
-          this.solids,
+          this.nav.collisionNear(e.x, e.z),
         );
         if (this.nav.walkable(fallback.x, fallback.z)) {
           e.x = fallback.x;
@@ -517,6 +571,8 @@ export class Battle {
     }
   }
   private separateContacts(dt: number) {
+    this.grid.clear();
+    for (const e of this.enemies) if (e.active) this.grid.add(e);
     this.crowdX.fill(0);
     this.crowdZ.fill(0);
     for (const e of this.enemies)
@@ -554,7 +610,7 @@ export class Battle {
             e.z + dz * factor,
             0.34,
             groundHeight(e.x, e.z),
-            this.solids,
+            this.nav.collisionNear(e.x, e.z),
           );
         if (this.nav.walkable(p.x, p.z)) {
           e.x = p.x;
@@ -628,7 +684,12 @@ export class Battle {
     damage: number,
     from: Point,
     knockback = 3,
-    impact?: Point & { y: number; critical?: boolean; bullet?: boolean },
+    impact?: Point & {
+      y: number;
+      critical?: boolean;
+      bullet?: boolean;
+      headshot?: boolean;
+    },
   ) {
     const e = this.enemies[id];
     if (!e?.active || this.phase === "lost") return false;
@@ -649,7 +710,12 @@ export class Battle {
       impact?.z ?? e.z,
       damage,
       impact?.y ?? groundHeight(e.x, e.z) + 0.9 * ENEMY_TYPES[e.kind].scale,
-      { critical: impact?.critical, bullet: impact?.bullet },
+      {
+        critical: impact?.critical,
+        bullet: impact?.bullet,
+        headshot: impact?.headshot,
+        killed: e.hp <= 0,
+      },
     );
     if (e.hp <= 0) {
       e.active = false;

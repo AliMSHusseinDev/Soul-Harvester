@@ -378,58 +378,7 @@ export class World {
     this.scene.add(emblem);
   }
   private field() {
-    // Landmark tree; enemies now emerge along the entire forest fringe behind it.
-    const bark = new THREE.MeshStandardMaterial({
-        map: surface("bark"),
-        color: 0xb4a58c,
-        roughness: 1,
-      }),
-      leaves = new THREE.MeshStandardMaterial({
-        map: surface("leaves"),
-        color: 0x9cb990,
-        roughness: 1,
-      });
-    const trunk = new THREE.Mesh(
-      surfaceUV(new THREE.CylinderGeometry(0.55, 1.35, 7.8, 8)),
-      bark,
-    );
-    trunk.position.set(0, 3.9, -57);
-    trunk.castShadow = trunk.receiveShadow = true;
-    this.scene.add(trunk);
-    this.solid(0, -57, 2.5, 2.5, 9);
-    const start = new THREE.Vector3(0, 4.5, -57),
-      up = new THREE.Vector3(0, 1, 0);
-    for (let i = 0; i < 9; i++) {
-      const a = (i * Math.PI) / 4,
-        rad = i === 8 ? 0 : 3.7,
-        end = new THREE.Vector3(
-          Math.sin(a) * rad,
-          8.2 + (i % 3) * 0.55,
-          -57 + Math.cos(a) * rad,
-        ),
-        crown = new THREE.Mesh(
-          surfaceUV(new THREE.DodecahedronGeometry(2.5), 1.5),
-          leaves,
-        );
-      crown.position.copy(end);
-      crown.scale.set(1.05, 0.65, 1);
-      crown.rotation.y = (i % 3) * 0.12;
-      crown.castShadow = crown.receiveShadow = true;
-      this.scene.add(crown);
-      if (rad) {
-        const direction = end.clone().sub(start),
-          branch = new THREE.Mesh(
-            surfaceUV(
-              new THREE.CylinderGeometry(0.16, 0.4, direction.length(), 6),
-            ),
-            bark,
-          );
-        branch.position.copy(start).addScaledVector(direction, 0.5);
-        branch.quaternion.setFromUnitVectors(up, direction.normalize());
-        branch.castShadow = true;
-        this.scene.add(branch);
-      }
-    }
+    // The oversized central landmark is removed, including its collider.
     for (const [x, z, l, h] of [
       [-23, -28, 11, 3.5],
       [24, -42, 12, 4],
