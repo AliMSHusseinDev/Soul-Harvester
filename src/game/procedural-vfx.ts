@@ -66,11 +66,16 @@ export function particleMaterial(cube = false, overlay = false) {
           float width=.08+.16*(1.-abs(q.y));
           alpha=(1.-smoothstep(width,width+.09,abs(q.x-center)))*(1.-smoothstep(.55,1.,abs(q.y)));
           highlight=.35;
-        }else if(shape>7.5){
+        }else if(shape>7.5 && shape<8.5){
           float a=atan(q.y,q.x),r=length(q);
           float edge=.73+.045*sin(a*13.+t*7.+seed*20.);
           alpha=(1.-smoothstep(.022,.06,abs(r-edge)))*step(.15,sin(a*3.+seed*8.+t*2.));
           highlight=.4;
+        }else if(shape>8.5){
+          // Thin faceted flakes with an angled tip and two rose-colored faces.
+          float taper=mix(.85-.18*abs(q.y),.9*(1.-abs(q.y))+.03,step(.5,seed));
+          alpha=step(abs(q.x),taper)*step(abs(q.y),.98);
+          highlight=step(q.x+.2*q.y,0.)*.22;
         }
         alpha*=vData.y;
         if(alpha<.015)discard;
@@ -208,7 +213,12 @@ export class ProceduralVFX {
         }
         if (!p.visible) continue;
       }
-      if (p.shape === SHAPE.cube || p.shape === SHAPE.smoke || p.overlay) {
+      if (
+        p.shape === SHAPE.cube ||
+        p.shape === SHAPE.ribbon ||
+        p.shape === SHAPE.smoke ||
+        p.overlay
+      ) {
         const cx = Math.floor(
             ((this.view.x * focal) / depth / (height * this.camera.aspect) +
               0.5) *
@@ -222,7 +232,8 @@ export class ProceduralVFX {
                 ? this.smokeCoverage
                 : this.cubeCoverage,
             cell = cy * 16 + cx;
-          if (cells[cell] >= (p.overlay ? 4 : 3)) continue;
+          if (cells[cell] >= (p.overlay ? 4 : p.shape === SHAPE.ribbon ? 6 : 3))
+            continue;
           cells[cell]++;
         }
       }
@@ -243,6 +254,8 @@ export class ProceduralVFX {
       const cap =
         p.shape === SHAPE.cube ? 0.035 : p.shape === SHAPE.smoke ? 0.08 : 0.16;
       if (!p.ground) size = Math.min(size, (depth * height * cap) / focal);
+      if (p.shape === SHAPE.ribbon)
+        size = Math.min(size, (depth * height * 0.1) / (focal * p.stretch));
       if (p.shape !== SHAPE.smoke)
         size = Math.max(size, Math.min(p.size * 1.4, (depth * 2) / focal));
       let alpha =
@@ -257,7 +270,7 @@ export class ProceduralVFX {
         p.ground ? groundHeight(p.x, p.z) + 0.065 : p.y,
         p.z,
       );
-      if (p.shape === SHAPE.cube)
+      if (p.shape === SHAPE.cube || p.shape === SHAPE.ribbon)
         this.dummy.rotation.set(p.angle * 0.7, p.angle, p.angle * 0.4);
       else if (p.ground) {
         this.dummy.quaternion.copy(this.groundRotation);
@@ -274,7 +287,9 @@ export class ProceduralVFX {
       }
       this.dummy.scale.set(
         size,
-        p.shape === SHAPE.streak || p.shape === SHAPE.wisp
+        p.shape === SHAPE.streak ||
+          p.shape === SHAPE.wisp ||
+          p.shape === SHAPE.ribbon
           ? size * p.stretch
           : size,
         p.shape === SHAPE.cube ? size : 0.1,
@@ -320,6 +335,9 @@ export class ProceduralVFX {
         world: this.world.count,
         overlay: this.overlay.count,
         cubes: this.cubes.count,
+        ribbons: this.simulation.items.filter(
+          (p) => p.life > 0 && p.shape === SHAPE.ribbon,
+        ).length,
       },
     };
   }

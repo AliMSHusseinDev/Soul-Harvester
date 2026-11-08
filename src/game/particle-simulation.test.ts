@@ -25,9 +25,9 @@ it("reproduces seeded events with independent particles and distinct event profi
     new Set(a.items.filter((p) => p.life > 0).map((p) => p.shape)).size,
   ).toBe(8);
   expect(a.items.some((p) => p.overlay && p.shape === SHAPE.ring)).toBe(true);
-  expect(a.items.some((p) => p.shape === SHAPE.cube && p.priority === 2)).toBe(
-    true,
-  );
+  expect(
+    a.items.some((p) => p.shape === SHAPE.ribbon && p.priority === 2),
+  ).toBe(true);
 });
 it("bounds saturation, reserves important capacity, and reclaims unseen and visible particles", () => {
   const p = new ParticleSimulation();
@@ -84,18 +84,32 @@ it("schedules critical echoes once and preserves their birth position until acti
   p.reset();
   expect(p.active).toBe(0);
 });
-it("adds rising smoke, soul wisps and short-lived trails to finishing bursts", () => {
+it("adds rising smoke and dotted trails without a cyan burst on ordinary kills", () => {
   const p = new ParticleSimulation();
   p.emit("death", 0, 4, -8, 1, false, undefined, 0, 1, true);
   expect(
     p.items.filter((p) => p.life > 0 && p.shape === SHAPE.smoke),
   ).toHaveLength(8);
+  expect(p.items.some((p) => p.life > 0 && p.shape === SHAPE.wisp)).toBe(false);
   expect(
-    p.items.some((p) => p.life > 0 && p.shape === SHAPE.wisp && p.vy > 0),
+    p.items.some(
+      (p) => p.life > 0 && p.shape === SHAPE.ribbon && p.trail === 1,
+    ),
   ).toBe(true);
   const emitted = p.emitted;
   p.step(0.05, () => 0);
   expect(p.emitted).toBeGreaterThan(emitted);
   for (let i = 0; i < 240; i++) p.step(1 / 60, () => 0);
   expect(p.active).toBe(0);
+});
+
+it("keeps magical soul particles separate from ordinary bullet-death fragments", () => {
+  const p = new ParticleSimulation();
+  p.emit("soul", 0, 2, -8);
+  expect(
+    p.items.some((p) => p.life > 0 && p.shape === SHAPE.wisp && p.vy > 0),
+  ).toBe(true);
+  expect(
+    p.items.filter((p) => p.life > 0).every((p) => p.color !== 0xf18a9c),
+  ).toBe(true);
 });

@@ -81,18 +81,18 @@ export const PRESENTATION = {
   ambientMotes: 224,
 } as const;
 export const COMBAT_FEEL = {
-  flashDuration: 0.12,
-  flashStrength: 0.6,
+  flashDuration: 0.1,
+  flashStrength: 0.98,
   reactionDuration: 0.18,
   hitMarkerDuration: 0.2,
   killMarkerDuration: 0.25,
 } as const;
 export const LIGHTING = {
-  exposure: 1.16,
+  exposure: 1.12,
   moon: 3.0,
-  sky: 1.3,
-  fill: 0.6,
-  fogDensity: 0.0105,
+  sky: 1.45,
+  fill: 0.65,
+  fogDensity: 0.0085,
   torch: 22,
   viewSky: 1.0,
   viewKey: 1.5,

@@ -32,7 +32,7 @@ void main(){
   float band=smoothstep(.44,.72,clouds);
   float horizon=smoothstep(-.04,.14,h);
   c+=vec3(.040,.12,.115)*lunar;
-  c+=mix(vec3(.055,.085,.09),vec3(.15,.23,.20),lunar)*band*horizon;
+  c+=mix(vec3(.075,.13,.14),vec3(.19,.30,.27),lunar)*band*horizon;
   float star=step(.9995,hash(floor(n*650.)))*pow(max(0.,h),.6)*(1.-band);
   c+=vec3(.15,.19,.19)*star;
   vec3 lunarUp=normalize(cross(vec3(1.,0.,0.),moonDir));

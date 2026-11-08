@@ -101,9 +101,16 @@ try {
       draw,
       show(event, age, width, height, reduced = false) {
         fx.reset();
-        actor.visible = !["death", "death-smoke", "finisher", "near"].includes(
-          event,
-        );
+        actor.visible = ![
+          "death",
+          "death-smoke",
+          "remnant-white",
+          "remnant-burgundy",
+          "remnant-late",
+          "magic-death",
+          "finisher",
+          "near",
+        ].includes(event);
         fx.reduced = reduced;
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
@@ -122,7 +129,16 @@ try {
             -34.86,
             event === "critical" || event === "critical-echo",
           );
-        else if (event === "death" || event === "death-smoke") fx.death(0, -35);
+        else if (
+          event === "death" ||
+          event === "death-smoke" ||
+          event === "remnant-white" ||
+          event === "remnant-burgundy" ||
+          event === "remnant-late"
+        )
+          fx.death(0, -35);
+        else if (event === "magic-death")
+          fx.death(0, -35, 0, false, 0, 0, true);
         else if (event === "finisher") fx.death(0, -35, 2, true, 0, -1);
         else if (event === "orb-flight")
           fx.orb(new T.Vector3(-1, 1.6, -32), new T.Vector3(0, 0, -1));
@@ -136,6 +152,8 @@ try {
         else if (event === "explosion")
           fx["procedural"].emit("explosion", 0, 1, -35);
         else fx.pickup(event === "gold" ? "gold" : "xp", 0, -35, 1);
+        // Isolate the body phases so particle colors cannot satisfy these checks.
+        if (event.startsWith("remnant-")) fx["procedural"].simulation.reset();
         draw();
         for (let i = 0; i < Math.ceil(age * 120); i++) {
           fx.step(1 / 120, i / 120);
@@ -149,7 +167,8 @@ try {
         let gold = 0,
           white = 0,
           red = 0,
-          cyan = 0;
+          cyan = 0,
+          burgundy = 0;
         for (let i = 0; i < pixels.length; i += 4) {
           const r = pixels[i],
             g = pixels[i + 1],
@@ -158,10 +177,11 @@ try {
           if (r > 230 && g > 230 && b > 220) white++;
           if (r > 90 && r > g * 1.6 && b > g) red++;
           if (g > 150 && b > 140 && r < g * 0.9) cyan++;
+          if (r > 40 && r > g * 1.4 && b > g) burgundy++;
         }
         return {
           ...fx.diagnostics(),
-          pixels: { gold, white, red, cyan },
+          pixels: { gold, white, red, cyan, burgundy },
           memory: { ...renderer.info.memory },
         };
       },
@@ -215,6 +235,10 @@ try {
       ["finisher", 0.25],
       ["orb-flight", 0.08],
       ["death", 0.2],
+      ["remnant-white", 0.035],
+      ["remnant-burgundy", 0.17],
+      ["remnant-late", 0.3],
+      ["magic-death", 0.2],
       ["nova", 0.2],
       ["explosion", 0.2],
       ["cast", 0.08],
@@ -230,17 +254,42 @@ try {
           window.fixture.show(event, age, width, height),
         { event, age, width, height },
       );
+      await page.screenshot({
+        path: `artifacts/procedural-${height}-${event}.png`,
+      });
+      if (event.startsWith("remnant-"))
+        console.log(event, result.pixels, result.remnants);
       assert.equal(result.procedural.textures, 0);
-      assert.ok(result.procedural.rendered > 0, `${event} draws particles`);
+      if (event === "remnant-white") {
+        assert.ok(result.remnants.phases.every((p) => p.white === 1));
+        assert.ok(result.pixels.white > 15, "isolated white body is visible");
+      }
+      if (event === "remnant-burgundy")
+        assert.ok(
+          result.remnants.phases.every((p) => p.white === 0 && p.height < 1),
+        );
+      if (event === "magic-death") assert.ok(result.pixels.cyan > 15);
+      if (event === "death") assert.equal(result.procedural.events.soul, 0);
+      if (event.startsWith("remnant-")) {
+        assert.equal(result.remnants.active, 1);
+        assert.equal(result.procedural.rendered, 0);
+        if (event === "remnant-burgundy")
+          assert.ok(result.pixels.burgundy > 15, "isolated remnant is visible");
+        if (event === "remnant-late")
+          assert.ok(
+            result.remnants.phases.every(
+              (p) => p.opacity < 0.15 && p.dissolve > 0.6,
+            ),
+            "late remnant has mostly dissolved",
+          );
+      } else
+        assert.ok(result.procedural.rendered > 0, `${event} draws particles`);
       if (event === "hit" || event === "critical" || event === "explosion")
         assert.ok(result.pixels.gold > 15, `${event} gold pixels`);
       if (event === "death" || event === "hurt")
         assert.ok(result.pixels.red > 15, `${event} ruby pixels`);
       if (event === "level" || event === "nova" || event === "xp")
         assert.ok(result.pixels.cyan > 15, `${event} cyan pixels`);
-      await page.screenshot({
-        path: `artifacts/procedural-${height}-${event}.png`,
-      });
       report.push({ width, height, event, ...result });
     }
     assert.equal(
@@ -262,6 +311,7 @@ try {
   assert.ok(stress.peak.procedural.active <= 1536);
   assert.ok(stress.peak.procedural.draws <= 3);
   assert.equal(stress.end.procedural.active, 0);
+  assert.equal(stress.end.remnants.active, 0);
   assert.equal(
     requests.filter((u) => /vfx\/combat|\.png(?:\?|$)/.test(u)).length,
     0,
@@ -273,7 +323,7 @@ try {
     JSON.stringify({ report, stress }, null, 2),
   );
   console.log(
-    "PASS: texture-free shaders, 17 event scenarios at 720p/1080p, GPU colors, world occlusion, reduced mode, capacity and cleanup.",
+    "PASS: texture-free shaders, 21 event scenarios at 720p/1080p, GPU colors, world occlusion, reduced mode, capacity and cleanup.",
   );
 } finally {
   await browser?.close();

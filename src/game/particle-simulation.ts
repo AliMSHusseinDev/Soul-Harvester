@@ -12,7 +12,8 @@ export type ParticleEvent =
   | "spawn"
   | "hurt"
   | "heal"
-  | "orb";
+  | "orb"
+  | "soul";
 export const PARTICLE_SIZE_GAIN = 1.15;
 export const PARTICLE_CAPACITY = 1536;
 export const SHAPE = {
@@ -25,6 +26,7 @@ export const SHAPE = {
   plus: 6,
   wisp: 7,
   arc: 8,
+  ribbon: 9,
 } as const;
 export interface Particle {
   trail: number;
@@ -133,6 +135,7 @@ export class ParticleSimulation {
     hurt: 0,
     heal: 0,
     orb: 0,
+    soul: 0,
   };
   private random() {
     this.randomState =
@@ -168,27 +171,29 @@ export class ParticleSimulation {
       total =
         event === "trail"
           ? 1
-          : event === "pickup"
-            ? 7
-            : event === "spawn"
-              ? 10
-              : event === "orb"
-                ? 8
-                : event === "cast"
-                  ? 14
-                  : event === "hurt"
-                    ? 12
-                    : large
-                      ? event === "level"
-                        ? 128
-                        : 98
-                      : death
-                        ? finishing
-                          ? 60
-                          : 52
-                        : critical
-                          ? 42
-                          : 25,
+          : event === "soul"
+            ? 48
+            : event === "pickup"
+              ? 7
+              : event === "spawn"
+                ? 10
+                : event === "orb"
+                  ? 8
+                  : event === "cast"
+                    ? 14
+                    : event === "hurt"
+                      ? 12
+                      : large
+                        ? event === "level"
+                          ? 128
+                          : 98
+                        : death
+                          ? finishing
+                            ? 60
+                            : 52
+                          : critical
+                            ? 42
+                            : 25,
       count = Math.max(1, Math.ceil(total * (reduced ? 0.48 : 1))),
       palette = color
         ? [color]
@@ -197,7 +202,8 @@ export class ParticleSimulation {
           : event === "level" ||
               event === "nova" ||
               event === "cast" ||
-              event === "spawn"
+              event === "spawn" ||
+              event === "soul"
             ? TEAL
             : GOLD;
     let active = this.active;
@@ -326,7 +332,7 @@ export class ParticleSimulation {
         p.gravity = -0.5;
       }
       // A fast core + slower broken ring. Only these two planes bypass actors/viewmodel.
-      if (!small && event !== "hurt" && i < 2) {
+      if (!small && event !== "hurt" && event !== "soul" && !death && i < 2) {
         p.shape = i === 0 ? SHAPE.star : SHAPE.ring;
         p.overlay = !large;
         p.ground = large && i === 1;
@@ -369,15 +375,25 @@ export class ParticleSimulation {
         p.vy = 0.22 + this.random() * 0.3;
         p.spin = (this.random() - 0.5) * 0.5;
       }
-      if (death && i >= 2) {
-        p.shape = i % 4 === 0 ? SHAPE.streak : SHAPE.cube;
-        if (i % 4 === 0) {
-          p.size = 0.045 * scale;
-          p.stretch = 3;
-          p.color = 0xffa66f;
-        }
+      if (death) {
+        p.shape = i % 3 === 0 ? SHAPE.chip : SHAPE.ribbon;
+        p.color =
+          i % 3 === 0
+            ? 0x9e2844
+            : [0xf18a9c, 0xe87088, 0xd65d77, 0xf6a3ac][i % 4];
+        p.size =
+          (p.shape === SHAPE.ribbon
+            ? 0.05 + this.random() * 0.04
+            : 0.025 + this.random() * 0.035) * scale;
+        p.stretch = p.shape === SHAPE.ribbon ? 3.4 + this.random() * 2.4 : 1;
+        p.life = p.max = 0.24 + this.random() * 0.2;
+        p.gravity = 4;
+        p.drag = 2.8;
+        p.vy = (this.random() - 0.15) * 5 * scale;
+        if (p.shape === SHAPE.ribbon && i % 2 === 0) p.trail = 1;
         if (i >= count - 8) {
           p.shape = SHAPE.smoke;
+          p.trail = 0;
           p.size = (0.36 + this.random() * 0.2) * scale;
           p.x += (this.random() - 0.5) * 0.2 * scale;
           p.z += (this.random() - 0.5) * 0.2 * scale;
@@ -389,27 +405,36 @@ export class ParticleSimulation {
           p.gravity = -0.5;
           p.drag = 3;
           p.spin = (this.random() - 0.5) * 0.5;
-        } else if (i >= 3 && i <= 5) {
-          p.shape = SHAPE.wisp;
-          p.color = TEAL[i % 4];
-          p.size = 0.12 * scale;
-          p.life = p.max = 0.85 + this.random() * 0.3;
-          p.vx *= 0.15;
-          p.vz *= 0.15;
-          p.vy = 1.3 + this.random() * 0.8;
-          p.gravity = -0.4;
-          p.spin = 1.6;
-          p.stretch = 3;
-        } else if (i === 2) {
-          p.shape = SHAPE.ring;
-          p.ground = true;
-          p.size = 2.1 * scale;
-          p.color = 0xe697a5;
-          p.life = p.max = 0.42;
-          p.age = -0.025;
-          p.vx = p.vy = p.vz = p.gravity = 0;
-        } else if (i % 5 === 0) p.trail = 1;
+        }
       }
+      if (event === "soul") {
+        p.shape =
+          i % 4 === 0 ? SHAPE.wisp : i % 2 === 0 ? SHAPE.streak : SHAPE.chip;
+        p.color = TEAL[i % 4];
+        p.size =
+          (p.shape === SHAPE.wisp ? 0.07 : 0.028 + this.random() * 0.025) *
+          scale;
+        p.stretch = p.shape === SHAPE.wisp ? 4 : 3;
+        p.vx = Math.cos(a) * (2 + this.random() * 4);
+        p.vz = Math.sin(a) * (2 + this.random() * 4);
+        p.vy = 1.2 + this.random() * 4;
+        p.gravity = 1.2;
+        p.drag = 2;
+        p.life = p.max = 0.45 + this.random() * 0.25;
+      }
+      if (event === "hit" && i === 0) {
+        p.size = 0.12 * scale;
+        p.life = p.max = 0.065;
+      }
+      if (event === "hit" && i === 1) {
+        p.shape = SHAPE.chip;
+        p.overlay = false;
+        p.size = 0.04 * scale;
+        p.life = p.max = 0.18;
+        p.color = 0xc4677d;
+        p.vy = 0.8;
+      }
+      if (event === "critical" && i === 0) p.size = 0.18 * scale;
       if (
         ((critical && !death && (i === 2 || i === 3)) ||
           (death && finishing && (i === 6 || i === 7))) &&
@@ -418,6 +443,7 @@ export class ParticleSimulation {
         p.shape = i % 2 === 0 ? SHAPE.ring : SHAPE.star;
         p.overlay = true;
         p.size = (i % 2 === 0 ? 0.83 : 0.28) * scale;
+        p.trail = 0;
         p.age = -0.07;
         p.life = p.max = i % 2 === 0 ? 0.3 : 0.12;
         p.color = i % 2 === 0 ? 0xffc449 : 0xfff9d8;
@@ -498,7 +524,7 @@ export class ParticleSimulation {
           t.y = p.y;
           t.z = p.z;
           t.size = p.size * 0.48;
-          t.color = p.color;
+          t.color = p.shape === SHAPE.ribbon ? 0x98283f : p.color;
         }
       }
       const ground = floor(p.x, p.z) + 0.035;

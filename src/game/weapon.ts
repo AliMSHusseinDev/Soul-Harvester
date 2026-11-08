@@ -180,9 +180,9 @@ export class Weapon {
       }),
       gold = new THREE.MeshStandardMaterial({
         map: surface("brass"),
-        color: 0xe2cd9b,
-        metalness: 0.65,
-        roughness: 0.42,
+        color: 0xffdd9c,
+        metalness: 0.5,
+        roughness: 0.48,
       }),
       wood = new THREE.MeshStandardMaterial({
         map: surface("wood"),

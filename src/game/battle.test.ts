@@ -225,3 +225,17 @@ it("preserves critical finishing direction in the kill event without duplicating
   expect(b.souls).toBe(1);
   expect(e.active).toBe(false);
 });
+it("marks magic kills without treating ordinary bullet kills as soul bursts", () => {
+  const b = new Battle([]);
+  Object.assign(b.enemies[0], {
+    active: true,
+    x: 1,
+    z: -30,
+    hp: 1,
+    kind: 0,
+    wave: 1,
+  });
+  b.requestBurst();
+  b.releaseBurst({ x: 0, z: -30 });
+  expect(b.events.find((e) => e.kind === "kill")?.magic).toBe(true);
+});

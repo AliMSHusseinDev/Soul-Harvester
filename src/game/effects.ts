@@ -4,7 +4,7 @@ import { CombatScreen } from "./combat-screen";
 import { ProceduralVFX } from "./procedural-vfx";
 import { DamageNumbers } from "./damage-numbers";
 import { WorldVisibility } from "./world-visibility";
-import { guardTexture } from "./textures";
+import { EnemyRemnants } from "./enemy-remnants";
 import { groundHeight } from "./terrain";
 import { ENEMY_TYPES } from "./waves";
 import type { Battle } from "./battle";
@@ -21,12 +21,7 @@ export class Effects {
   resize(height: number) {
     this.viewportHeight = height;
   }
-  private corpses: {
-    sprite: THREE.Sprite;
-    life: number;
-    tint: { value: number };
-  }[] = [];
-  private corpseMaps = [0, 1, 2, 3].map(guardTexture);
+  private remnants: EnemyRemnants;
   private orbClock = { value: 0 };
   private orbs: {
     mesh: THREE.Mesh;
@@ -57,6 +52,7 @@ export class Effects {
     private battle: Battle,
     private camera: THREE.PerspectiveCamera,
   ) {
+    this.remnants = new EnemyRemnants(scene, camera);
     this.lastHealth = battle.health;
     this.trailClocks = new Float32Array(battle.drops.length);
     this.occluders = battle.solids.map(
@@ -110,33 +106,6 @@ export class Effects {
       mesh.frustumCulled = false;
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       scene.add(mesh);
-    }
-    for (let i = 0; i < 20; i++) {
-      const sprite = new THREE.Sprite(
-        new THREE.SpriteMaterial({
-          map: this.corpseMaps[0],
-          transparent: true,
-          alphaTest: 0.2,
-          depthWrite: false,
-          toneMapped: false,
-        }),
-      );
-      sprite.visible = false;
-      scene.add(sprite);
-      const tint = { value: 0 };
-      sprite.material.onBeforeCompile = (shader) => {
-        shader.uniforms.uDeathTint = tint;
-        shader.fragmentShader = shader.fragmentShader
-          .replace(
-            "#include <common>",
-            "#include <common>\nuniform float uDeathTint;",
-          )
-          .replace(
-            "#include <map_fragment>",
-            "#include <map_fragment>\ndiffuseColor.rgb=mix(diffuseColor.rgb,vec3(.807,.044,.06),uDeathTint);",
-          );
-      };
-      this.corpses.push({ sprite, life: 0, tint });
     }
     const fireMaterial = orbMaterial(this.orbClock),
       auraMaterial = new THREE.MeshBasicMaterial({
@@ -282,22 +251,15 @@ export class Effects {
     critical = false,
     incomingX = 0,
     incomingZ = 0,
+    magic = false,
   ) {
-    const c = this.corpses.find((c) => c.life <= 0) ?? this.corpses[0],
-      scale = ENEMY_TYPES[kind].scale;
-    c.sprite.material.map = this.corpseMaps[kind];
-    c.sprite.material.rotation = 0;
-    c.sprite.material.opacity = 1;
-    c.sprite.scale.set(1.25 * scale, 1.65 * scale, 1);
-    c.sprite.position.set(x, groundHeight(x, z) + 0.85 * scale, z);
-    c.sprite.visible = true;
-    c.life = 0.14;
-    c.tint.value = 1;
+    const scale = ENEMY_TYPES[kind].scale;
+    this.remnants.spawn(x, z, kind);
     this.stats.deaths++;
     this.procedural.emit(
       "death",
       x,
-      c.sprite.position.y,
+      groundHeight(x, z) + 0.85 * scale,
       z,
       scale,
       this.reduced,
@@ -306,6 +268,15 @@ export class Effects {
       incomingZ,
       critical,
     );
+    if (magic)
+      this.procedural.emit(
+        "soul",
+        x,
+        groundHeight(x, z) + 0.9 * scale,
+        z,
+        scale,
+        this.reduced,
+      );
   }
   spawn(x: number, z: number) {
     this.procedural.emit(
@@ -399,12 +370,7 @@ export class Effects {
     this.procedural.step(dt);
     this.screen.step(dt, this.reduced);
     this.numbers.step(dt);
-    for (const c of this.corpses)
-      if (c.life > 0) {
-        c.life = Math.max(0, c.life - dt);
-        c.sprite.material.opacity = Math.min(1, c.life / 0.06);
-        c.sprite.visible = c.life > 0;
-      }
+    this.remnants.step(dt);
     for (const o of this.orbs)
       if (o.life > 0) {
         o.life -= dt;
@@ -510,6 +476,7 @@ export class Effects {
     this.missileMesh.instanceMatrix.needsUpdate = true;
     this.camera.updateMatrixWorld();
     this.numbers.render(this.viewportHeight, this.reduced);
+    this.remnants.render();
     this.procedural.render(this.viewportHeight);
     const radius = 1 + (1 - this.ringLife / 0.85) * 6;
     for (let i = 0; i <= 64; i++)
@@ -535,10 +502,11 @@ export class Effects {
         !this.coinMesh.frustumCulled && !this.crystalMesh.frustumCulled,
       particles: this.procedural.simulation.active,
       numberTextures: 0,
-      shards: this.procedural.diagnostics().shapes.cubes,
+      shards: this.procedural.diagnostics().shapes.ribbons,
       flashes: 0,
       procedural: this.procedural.diagnostics(),
       screen: this.screen.diagnostics(),
+      remnants: this.remnants.diagnostics(),
       numbers: this.numbers.diagnostics(),
       totals: { ...this.stats },
     };
@@ -548,10 +516,7 @@ export class Effects {
     this.healing = this.healCooldown = 0;
     this.orbClock.value = 0;
     this.numbers.reset();
-    for (const c of this.corpses) {
-      c.life = 0;
-      c.sprite.visible = false;
-    }
+    this.remnants.reset();
     for (const o of this.orbs) {
       o.life = 0;
       o.mesh.visible = false;

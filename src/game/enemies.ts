@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { guardTexture, guardAtlas, GUARD_FRAMES } from "./textures";
 import type { Battle, Enemy } from "./battle";
-import { groundHeight } from "./terrain";
+import { groundHeight, terrainSlope } from "./terrain";
 import { ENEMY_TYPES, ENEMY_CAPACITY } from "./waves";
 import { COMBAT_FEEL } from "./tuning";
 import { spriteGeometry } from "./sprite-geometry";
@@ -21,6 +21,7 @@ function pose(e: Enemy, time: number) {
   };
 }
 export class Enemies {
+  private shadows: THREE.InstancedMesh;
   private meshes: THREE.InstancedMesh[] = [];
   private alpha: Uint8ClampedArray[] = [];
   private dummy = new THREE.Object3D();
@@ -36,6 +37,27 @@ export class Enemies {
     scene: THREE.Scene,
     private battle: Battle,
   ) {
+    this.shadows = new THREE.InstancedMesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        toneMapped: false,
+        vertexShader: `varying vec2 vUv;varying float vFade;void main(){vUv=uv;vec4 p=modelViewMatrix*instanceMatrix*vec4(position,1.);vFade=clamp(1.-length(p.xyz)/110.,0.,1.);gl_Position=projectionMatrix*p;}`,
+        fragmentShader: `varying vec2 vUv;varying float vFade;
+        void main(){vec2 q=(floor(vUv*24.)+.5)/24.*2.-1.;
+        float a=(1.-smoothstep(.2,1.,dot(q,q)))*.4*vFade;
+        if(a<.01)discard;gl_FragColor=vec4(.006,.018,.013,a);
+        #include <colorspace_fragment>
+        }`,
+      }),
+      ENEMY_CAPACITY,
+    );
+    this.shadows.name = "enemy-contact-shadows";
+    this.shadows.frustumCulled = false;
+    this.shadows.count = 0;
+    this.shadows.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    scene.add(this.shadows);
     for (let k = 0; k < ENEMY_TYPES.length; k++) {
       const texture = guardAtlas(k),
         image = guardTexture(k).image as HTMLCanvasElement;
@@ -82,8 +104,8 @@ export class Enemies {
             "#include <common>\nvarying float vHitFlash;",
           )
           .replace(
-            "#include <color_fragment>",
-            `#include <color_fragment>\ndiffuseColor.rgb = mix(diffuseColor.rgb,vec3(1.),vHitFlash * ${COMBAT_FEEL.flashStrength});`,
+            "#include <fog_fragment>",
+            `#include <fog_fragment>\ngl_FragColor.rgb = mix(gl_FragColor.rgb,vec3(1.),clamp(vHitFlash * ${COMBAT_FEEL.flashStrength},0.,1.));`,
           );
       };
       const mesh = new THREE.InstancedMesh(geometry, material, ENEMY_CAPACITY);
@@ -102,6 +124,7 @@ export class Enemies {
     const counts = [0, 0, 0, 0];
     this.flashing = 0;
     this.walking = 0;
+    let shadowCount = 0;
     for (const e of this.battle.enemies) {
       if (!e.active) {
         this.renderedHits[e.id] = 0;
@@ -118,9 +141,16 @@ export class Enemies {
       this.dummy.rotation.set(0, yaw, p.roll);
       this.dummy.scale.set(p.sx, p.sy, 1);
       this.dummy.updateMatrix();
+      const bodyMatrix = this.dummy.matrix;
       const i = counts[e.kind]++,
         mesh = this.meshes[e.kind];
-      mesh.setMatrixAt(i, this.dummy.matrix);
+      mesh.setMatrixAt(i, bodyMatrix);
+      this.dummy.position.set(x, groundHeight(x, z) + 0.03, z);
+      this.dummy.rotation.set(-Math.PI / 2 - Math.atan(terrainSlope(z)), 0, 0);
+      this.dummy.scale.set(1.2 * p.sx, 0.8 * p.sx, 1);
+      this.dummy.updateMatrix();
+      this.shadows.setMatrixAt(shadowCount++, this.dummy.matrix);
+
       this.tint
         .set(e.windup > 0 ? 0xffb59a : 0xe3f1e3)
         .multiplyScalar(0.55 + p.emergence * 0.45);
@@ -146,6 +176,8 @@ export class Enemies {
       if (walking) this.walking++;
       if (flash > 0) this.flashing++;
     }
+    this.shadows.count = shadowCount;
+    this.shadows.instanceMatrix.needsUpdate = true;
     for (let k = 0; k < 4; k++) {
       const mesh = this.meshes[k];
       mesh.count = counts[k];

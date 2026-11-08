@@ -88,6 +88,7 @@ export type BattleEvent = {
   y?: number;
   critical?: boolean;
   bullet?: boolean;
+  magic?: boolean;
   headshot?: boolean;
   killed?: boolean;
   enemyKind?: number;
@@ -237,6 +238,7 @@ export class Battle {
     details?: {
       critical?: boolean;
       bullet?: boolean;
+      magic?: boolean;
       headshot?: boolean;
       killed?: boolean;
       enemyKind?: number;
@@ -705,6 +707,7 @@ export class Battle {
       y: number;
       critical?: boolean;
       bullet?: boolean;
+      magic?: boolean;
       headshot?: boolean;
       incomingX?: number;
       incomingY?: number;
@@ -735,6 +738,7 @@ export class Battle {
       damage,
       impact?.y ?? groundHeight(e.x, e.z) + 0.9 * ENEMY_TYPES[e.kind].scale,
       {
+        magic: impact?.magic,
         critical: impact?.critical,
         bullet: impact?.bullet,
         headshot: impact?.headshot,
@@ -752,6 +756,7 @@ export class Battle {
       e.active = false;
       this.souls++;
       this.emit("kill", e.x, e.z, e.kind, undefined, {
+        magic: impact?.magic,
         critical: impact?.critical,
         incomingX: impact?.incomingX ?? (e.x - from.x) / d,
         incomingZ: impact?.incomingZ ?? (e.z - from.z) / d,
@@ -805,6 +810,12 @@ export class Battle {
           60 * (1 + this.skills.sorcery * 0.2),
           player,
           10,
+          {
+            x: e.x,
+            z: e.z,
+            y: groundHeight(e.x, e.z) + 0.9 * ENEMY_TYPES[e.kind].scale,
+            magic: true,
+          },
         );
     this.emit("cast", player.x, player.z, 1);
     return true;
@@ -823,6 +834,12 @@ export class Battle {
           80 * (1 + this.skills.sorcery * 0.2) * (1 - d / 6),
           point,
           8,
+          {
+            x: e.x,
+            z: e.z,
+            y: groundHeight(e.x, e.z) + 0.9 * ENEMY_TYPES[e.kind].scale,
+            magic: true,
+          },
         );
     }
     this.emit("cast", point.x, point.z, 2);

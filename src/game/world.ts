@@ -74,7 +74,7 @@ export class World {
   }
   constructor(readonly scene: THREE.Scene) {
     scene.background = new THREE.Color(0x123e46);
-    scene.fog = new THREE.FogExp2(0x205655, LIGHTING.fogDensity);
+    scene.fog = new THREE.FogExp2(0x28665e, LIGHTING.fogDensity);
     scene.add(new THREE.HemisphereLight(0xb6e8eb, 0x26392b, LIGHTING.sky));
     const moonlight = new THREE.DirectionalLight(0xb2e9e6, LIGHTING.moon);
     moonlight.position.set(-12, 42, -65);

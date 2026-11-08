@@ -12,6 +12,6 @@
 
 The 0.8 suites additionally check stamina reaching an actual 0px fill, airborne sprint pose/fire gating, water views at the bridge, integer labels and screen separation, gold fragment pixels, crimson finishing feedback, hip/ADS muzzle depth and a non-stacking level-up time envelope that recovers on unscaled time.
 
-`combat-vfx-check.mjs` starts a procedural-effects fixture on port 5191. It checks seventeen event profiles at 720p/1080p, actual framebuffer colors, primary feedback through actors, static wall rejection, reduced density, bounded saturation, complete cleanup and absence of particle image requests. Run `npm run test:combat-vfx`. There is no atlas mode or importer.
+`combat-vfx-check.mjs` starts a procedural-effects fixture on port 5191. It checks twenty-one event profiles at 720p/1080p, isolated white/burgundy body phases, magic-only cyan death spray, actual framebuffer colors, primary feedback through actors, static wall rejection, reduced density, bounded saturation, complete cleanup and absence of particle image requests. Run `npm run test:combat-vfx`. There is no atlas mode or importer.
 
 `actual-combat-check.mjs` runs against a production preview on port 4181 (`GAME_URL` can override it). Actual pointer input rings the bell, crosses the bridge and shoots moving enemies. It captures procedural ordinary, critical and lethal damage, checks framebuffer colors and above-terrain labels, then exercises incoming damage and both abilities. Screenshots and event reports go to ignored `artifacts/`.

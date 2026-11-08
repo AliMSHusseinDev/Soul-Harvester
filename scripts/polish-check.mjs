@@ -194,6 +194,7 @@ try {
       w.fire();
       w.update(0.01, 0, 0, false, true);
     };
+    f.advanceDeath = () => v.step(0.14, 0);
     f.kill = () => {
       v.reset();
       b.damageEnemy(0, 10000, player, 0);
@@ -412,6 +413,21 @@ try {
   await page.evaluate(() => window.__polish.kill());
   await frame();
   await page.screenshot({ path: "artifacts/polish-death-red.png" });
+  const whiteRemnant = await page.evaluate(
+    () => window.__polish.v.diagnostics().remnants,
+  );
+  assert.ok(whiteRemnant.active > 0);
+  await page.screenshot({ path: "artifacts/polish-death-white.png" });
+  await page.evaluate(() => window.__polish.advanceDeath());
+  await frame();
+  const burgundy = await page.evaluate(
+    () => window.__polish.v.diagnostics().remnants,
+  );
+  assert.ok(
+    burgundy.phases.every(
+      (p) => p.white === 0 && p.height < 1 && p.opacity < 1,
+    ),
+  );
   assert.ok(
     await page.evaluate(() => window.__polish.redPixels > 20),
     "finishing corpse must visibly flash crimson while preserving alpha",

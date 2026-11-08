@@ -451,6 +451,7 @@ async function boot() {
           !!event.critical,
           event.incomingX,
           event.incomingZ,
+          !!event.magic,
         );
         audio.death();
       } else if (event.kind === "playerHit") {
@@ -713,7 +714,7 @@ async function boot() {
   Object.defineProperty(window, "__soulHarvester", {
     value: () => ({
       ready: true,
-      version: "0.12.0",
+      version: "0.13.0",
       timeScale: cinematic.scale,
       cinematicActive: cinematic.active,
       stamina: player.stamina,
