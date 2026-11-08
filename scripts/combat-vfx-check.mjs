@@ -92,6 +92,7 @@ try {
       renderer.clear();
       renderer.render(scene, camera);
       renderer.render(fx.impactScene, camera);
+      renderer.render(fx.screenScene, camera);
     };
     window.fixture = {
       fx,

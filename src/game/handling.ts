@@ -1,3 +1,4 @@
+import { ACCURACY_TUNING, VIEW } from "./tuning";
 import { damp } from "./math";
 export type MovementState =
   | "Idle"
@@ -82,44 +83,7 @@ export interface AccuracyConfig {
   sprintOut: number;
   tracerEvery: number;
 }
-export const ACCURACY = {
-  rifle: {
-    crouch: 0.85,
-    base: 0.0135,
-    movement: 0.0016,
-    airborne: 0.027,
-    shot: 0.004,
-    maxShot: 0.02,
-    recover: 9,
-    sprintBloom: 0.028,
-    sprintOut: 0.225,
-    tracerEvery: 2,
-  },
-  pistol: {
-    crouch: 0.85,
-    base: 0.0105,
-    movement: 0.0019,
-    airborne: 0.024,
-    shot: 0.006,
-    maxShot: 0.023,
-    recover: 8,
-    sprintBloom: 0.025,
-    sprintOut: 0.2,
-    tracerEvery: 1,
-  },
-  blade: {
-    crouch: 0.85,
-    base: 0.01,
-    movement: 0.001,
-    airborne: 0.02,
-    shot: 0,
-    maxShot: 0,
-    recover: 10,
-    sprintBloom: 0.02,
-    sprintOut: 0.18,
-    tracerEvery: 0,
-  },
-} satisfies Record<string, AccuracyConfig>;
+export const ACCURACY = ACCURACY_TUNING;
 /** One angular cone drives both sampled bullets and the projected HUD gap. */
 export class HipAccuracy {
   angle = ACCURACY.rifle.base;
@@ -140,7 +104,7 @@ export class HipAccuracy {
       this.shotBloom;
     this.angle = sprintOut
       ? Math.max(this.angle, target + config.sprintBloom)
-      : damp(this.angle, target, 18, dt);
+      : damp(this.angle, target, VIEW.accuracyResponse, dt);
   }
   fired(config: AccuracyConfig) {
     this.shotBloom = Math.min(config.maxShot, this.shotBloom + config.shot);

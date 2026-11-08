@@ -47,6 +47,7 @@ export class Loot {
   })[] = [];
   private random = seededRandom(481);
   private magnetBudget = 0;
+  private previousPlayer: Point | null = null;
   constructor(private navigation: Navigation) {}
   release(x: number, z: number, reward: Reward) {
     const startAngle = this.random() * Math.PI * 2;
@@ -86,6 +87,30 @@ export class Loot {
     );
     const targetY =
       (player.y ?? groundHeight(player.x, player.z)) + F.targetHeight;
+    const pvx =
+        this.previousPlayer && dt > 0
+          ? Math.max(
+              -F.followSpeedLimit,
+              Math.min(
+                F.followSpeedLimit,
+                (player.x - this.previousPlayer.x) / dt,
+              ),
+            )
+          : 0,
+      pvz =
+        this.previousPlayer && dt > 0
+          ? Math.max(
+              -F.followSpeedLimit,
+              Math.min(
+                F.followSpeedLimit,
+                (player.z - this.previousPlayer.z) / dt,
+              ),
+            )
+          : 0;
+    if (!this.previousPlayer)
+      this.previousPlayer = { x: player.x, z: player.z };
+    this.previousPlayer.x = player.x;
+    this.previousPlayer.z = player.z;
     for (const d of this.drops) {
       if (!d.active) continue;
       d.age += dt;
@@ -108,7 +133,7 @@ export class Loot {
         d.vx -= (dz / len) * curve;
         d.vz += (dx / len) * curve;
       }
-      if (distance > 13 || !clear) {
+      if (distance > F.releaseRadius || !clear) {
         d.magnet = false;
         d.magnetAge = 0;
       }
@@ -117,18 +142,19 @@ export class Loot {
         const t = Math.min(1, d.magnetAge / F.accelerationTime),
           omega =
             F.springStart + (F.springEnd - F.springStart) * t * t * (3 - 2 * t),
-          x = springStep(d.x, d.vx, player.x, omega, dt),
+          // Solve in the moving player's frame so sprinting cannot create a permanent lag.
+          x = springStep(d.x, d.vx - pvx, player.x, omega, dt),
           y = springStep(d.y, d.vy, targetY, omega, dt),
-          z = springStep(d.z, d.vz, player.z, omega, dt),
-          step = Math.hypot(
-            x.position - d.x,
-            y.position - d.y,
-            z.position - d.z,
-          ),
-          scale = step > F.maxSpeed * dt ? (F.maxSpeed * dt) / step : 1;
+          z = springStep(d.z, d.vz - pvz, player.z, omega, dt),
+          speedLimit =
+            F.startSpeed + (F.maxSpeed - F.startSpeed) * t * t * (3 - 2 * t),
+          dx = x.position + pvx * dt - d.x,
+          dz = z.position + pvz * dt - d.z,
+          step = Math.hypot(dx, y.position - d.y, dz),
+          scale = step > speedLimit * dt ? (speedLimit * dt) / step : 1;
         const next = {
-          x: d.x + (x.position - d.x) * scale,
-          z: d.z + (z.position - d.z) * scale,
+          x: d.x + dx * scale,
+          z: d.z + dz * scale,
         };
         if (!this.navigation.lineClear(d, next)) {
           d.magnet = false;
@@ -139,9 +165,9 @@ export class Loot {
         d.z = next.z;
         d.y += (y.position - d.y) * scale;
         d.y = Math.max(d.y, groundHeight(d.x, d.z) + F.floorOffset);
-        d.vx = x.velocity * scale;
+        d.vx = (x.velocity + pvx) * scale;
         d.vy = y.velocity * scale;
-        d.vz = z.velocity * scale;
+        d.vz = (z.velocity + pvz) * scale;
         if (
           Math.hypot(d.x - player.x, d.y - targetY, d.z - player.z) <
           F.collectRadius
@@ -191,6 +217,7 @@ export class Loot {
   reset() {
     this.random = seededRandom(481);
     this.magnetBudget = 0;
+    this.previousPlayer = null;
     this.collected.length = 0;
     for (const d of this.drops) d.active = false;
   }

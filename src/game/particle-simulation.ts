@@ -1,3 +1,4 @@
+import { VFX as F } from "./tuning";
 /** Bounded, deterministic particles. No textures, timers, or scene objects per emission. */
 export type ParticleEvent =
   | "hit"
@@ -13,9 +14,10 @@ export type ParticleEvent =
   | "hurt"
   | "heal"
   | "orb"
-  | "soul";
-export const PARTICLE_SIZE_GAIN = 1.15;
-export const PARTICLE_CAPACITY = 1536;
+  | "soul"
+  | "surface";
+export const PARTICLE_SIZE_GAIN = F.sizeGain;
+export const PARTICLE_CAPACITY = F.capacity;
 export const SHAPE = {
   chip: 0,
   streak: 1,
@@ -136,6 +138,7 @@ export class ParticleSimulation {
     heal: 0,
     orb: 0,
     soul: 0,
+    surface: 0,
   };
   private random() {
     this.randomState =
@@ -153,6 +156,7 @@ export class ParticleSimulation {
     nx = 0,
     nz = 0,
     finishing = false,
+    ny = 0,
   ) {
     this.events[event]++;
     const serial = ++this.serial;
@@ -169,32 +173,34 @@ export class ParticleSimulation {
         event === "orb",
       priority = large || death ? 2 : small ? 0 : 1,
       total =
-        event === "trail"
-          ? 1
-          : event === "soul"
-            ? 48
-            : event === "pickup"
-              ? 7
-              : event === "spawn"
-                ? 10
-                : event === "orb"
-                  ? 8
-                  : event === "cast"
-                    ? 14
-                    : event === "hurt"
-                      ? 12
-                      : large
-                        ? event === "level"
-                          ? 128
-                          : 98
-                        : death
-                          ? finishing
-                            ? 60
-                            : 52
-                          : critical
-                            ? 42
-                            : 25,
-      count = Math.max(1, Math.ceil(total * (reduced ? 0.48 : 1))),
+        event === "surface"
+          ? F.surfaceCount
+          : event === "trail"
+            ? 1
+            : event === "soul"
+              ? F.soulCount
+              : event === "pickup"
+                ? 7
+                : event === "spawn"
+                  ? 10
+                  : event === "orb"
+                    ? 8
+                    : event === "cast"
+                      ? 14
+                      : event === "hurt"
+                        ? 12
+                        : large
+                          ? event === "level"
+                            ? F.levelCount
+                            : F.abilityCount
+                          : death
+                            ? finishing
+                              ? F.finisherCount
+                              : F.deathCount
+                            : critical
+                              ? F.criticalCount
+                              : F.hitCount,
+      count = Math.max(1, Math.ceil(total * (reduced ? F.reducedDensity : 1))),
       palette = color
         ? [color]
         : death || event === "hurt"
@@ -210,7 +216,7 @@ export class ParticleSimulation {
     for (let i = 0; i < count; i++) {
       let p: Particle | undefined;
       // Circular scan, bounded by the fixed pool; reserve capacity for finishing/ability feedback.
-      if (priority > 0 || active < PARTICLE_CAPACITY - 256)
+      if (priority > 0 || active < PARTICLE_CAPACITY - F.reservedSlots)
         for (let n = 0; n < this.items.length; n++) {
           const candidate = this.items[this.cursor];
           this.cursor = (this.cursor + 1) % this.items.length;
@@ -231,7 +237,7 @@ export class ParticleSimulation {
           : large
             ? 3 + this.random() * 7
             : death
-              ? 1.5 + this.random() * 4
+              ? F.deathSpeedMin + this.random() * F.deathSpeedRange
               : 1.8 + this.random() * 4,
         life = small
           ? 0.25 + this.random() * 0.25
@@ -332,7 +338,14 @@ export class ParticleSimulation {
         p.gravity = -0.5;
       }
       // A fast core + slower broken ring. Only these two planes bypass actors/viewmodel.
-      if (!small && event !== "hurt" && event !== "soul" && !death && i < 2) {
+      if (
+        !small &&
+        event !== "hurt" &&
+        event !== "soul" &&
+        event !== "surface" &&
+        !death &&
+        i < 2
+      ) {
         p.shape = i === 0 ? SHAPE.star : SHAPE.ring;
         p.overlay = !large;
         p.ground = large && i === 1;
@@ -386,9 +399,9 @@ export class ParticleSimulation {
             ? 0.05 + this.random() * 0.04
             : 0.025 + this.random() * 0.035) * scale;
         p.stretch = p.shape === SHAPE.ribbon ? 3.4 + this.random() * 2.4 : 1;
-        p.life = p.max = 0.24 + this.random() * 0.2;
-        p.gravity = 4;
-        p.drag = 2.8;
+        p.life = p.max = F.deathLifeMin + this.random() * F.deathLifeRange;
+        p.gravity = F.deathGravity;
+        p.drag = F.deathDrag;
         p.vy = (this.random() - 0.15) * 5 * scale;
         if (p.shape === SHAPE.ribbon && i % 2 === 0) p.trail = 1;
         if (i >= count - 8) {
@@ -434,20 +447,68 @@ export class ParticleSimulation {
         p.color = 0xc4677d;
         p.vy = 0.8;
       }
-      if (event === "critical" && i === 0) p.size = 0.18 * scale;
+      if (event === "hit" || event === "critical") {
+        if (!p.overlay && p.shape !== SHAPE.smoke) {
+          p.vx *= F.hitSpread;
+          p.vz *= F.hitSpread;
+        }
+      }
+      if (event === "critical" && !p.overlay && p.shape !== SHAPE.smoke) {
+        p.size *= F.criticalFragmentSize;
+        p.stretch = Math.min(p.stretch, F.criticalStretch);
+        p.vx *= F.criticalFragmentSpeed;
+        p.vy *= F.criticalFragmentSpeed;
+        p.vz *= F.criticalFragmentSpeed;
+      }
+      if (event === "critical" && i < 2) {
+        p.shape = i === 0 ? SHAPE.star : SHAPE.chip;
+        p.size = (i === 0 ? F.criticalCoreSize : F.criticalAccentSize) * scale;
+        p.color = i === 0 ? 0xfff4ce : 0xffb83d;
+        p.life = p.max = i === 0 ? 0.075 : 0.14;
+        p.angle = Math.PI / 4;
+      }
       if (
         ((critical && !death && (i === 2 || i === 3)) ||
           (death && finishing && (i === 6 || i === 7))) &&
         !reduced
       ) {
-        p.shape = i % 2 === 0 ? SHAPE.ring : SHAPE.star;
+        p.shape = SHAPE.streak;
         p.overlay = true;
-        p.size = (i % 2 === 0 ? 0.83 : 0.28) * scale;
+        p.size = 0.035 * scale;
+        p.stretch = 2.8;
         p.trail = 0;
-        p.age = -0.07;
-        p.life = p.max = i % 2 === 0 ? 0.3 : 0.12;
+        p.age = -F.criticalEchoDelay;
+        p.life = p.max = 0.16;
         p.color = i % 2 === 0 ? 0xffc449 : 0xfff9d8;
-        p.vx = p.vy = p.vz = p.gravity = p.drag = 0;
+        p.vx = i % 2 ? -1.5 : 1.5;
+        p.vy = 1.2;
+        p.vz = p.gravity = 0;
+        p.drag = 2;
+      }
+      if (event === "surface") {
+        const len = Math.hypot(nx, ny, nz) || 1,
+          ux = nx / len,
+          uy = ny / len,
+          uz = nz / len;
+        const tangentLen = Math.hypot(ux, uz),
+          tx = tangentLen > 0.001 ? -uz / tangentLen : 1,
+          tz = tangentLen > 0.001 ? ux / tangentLen : 0;
+        const bx = uy * tz,
+          by = uz * tx - ux * tz,
+          bz = -uy * tx;
+        const outward = 1.5 + this.random() * 2.5,
+          spread = this.random() * 2;
+        p.vx = ux * outward + (tx * Math.cos(a) + bx * Math.sin(a)) * spread;
+        p.vy = uy * outward + by * Math.sin(a) * spread;
+        p.vz = uz * outward + (tz * Math.cos(a) + bz * Math.sin(a)) * spread;
+        p.shape = i < 2 ? SHAPE.smoke : i % 3 ? SHAPE.chip : SHAPE.streak;
+        p.size = i < 2 ? 0.12 : 0.025 + this.random() * 0.035;
+        p.life = p.max = 0.22 + this.random() * 0.2;
+        p.gravity = 6;
+        p.drag = 3;
+        p.stretch = p.shape === SHAPE.streak ? 2.4 : 1;
+        p.overlay = false;
+        p.trail = 0;
       }
       if (large && i >= 2 && i <= 5 && !reduced) {
         p.shape = i % 2 === 0 ? SHAPE.arc : SHAPE.ring;
@@ -540,7 +601,7 @@ export class ParticleSimulation {
       let i = 0,
         limit = Math.min(
           trails,
-          Math.max(0, PARTICLE_CAPACITY - 256 - this.active),
+          Math.max(0, PARTICLE_CAPACITY - F.reservedSlots - this.active),
         );
       i < limit;
       i++

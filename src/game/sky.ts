@@ -1,3 +1,4 @@
+import { ENVIRONMENT } from "./tuning";
 import * as THREE from "three";
 import { glowTexture } from "./textures";
 
@@ -25,7 +26,7 @@ void main(){
   vec3 moonDir=normalize(vec3(0.,66.,-220.));
   float lunar=pow(max(0.,dot(n,moonDir)),18.);
   vec3 c=mix(vec3(.014,.046,.060),vec3(.0015,.007,.014),smoothstep(0.,.85,h));
-  vec3 q=n*vec3(2.8,22.,2.8)+vec3(time*.004,0.,time*.001);
+  vec3 q=n*vec3(2.8,22.,2.8)+vec3(time*${ENVIRONMENT.cloudSpeed.toFixed(4)},0.,time*${(ENVIRONMENT.cloudSpeed * 0.25).toFixed(4)});
   q.y+=n.x*5.+n.z*2.;
   float warp=cloudNoise(q*.63);
   float clouds=cloudNoise(q+vec3(warp*1.7,warp*.8,warp));
@@ -37,7 +38,7 @@ void main(){
   c+=vec3(.15,.19,.19)*star;
   vec3 lunarUp=normalize(cross(vec3(1.,0.,0.),moonDir));
   float a=atan(dot(n,lunarUp),n.x);
-  float shafts=pow(.5+.5*sin(a*17.+sin(a*3.)*.7),12.)*lunar*(1.-pow(max(0.,dot(n,moonDir)),70.));
+  float shafts=pow(.5+.5*sin(a*17.+sin(a*3.+time*.04)*.7+time*.025),12.)*lunar*(1.-pow(max(0.,dot(n,moonDir)),70.));
   c+=vec3(.008,.025,.02)*shafts*horizon*(1.-band*.8);
   gl_FragColor=vec4(c,1.);
   #include <tonemapping_fragment>
@@ -45,6 +46,7 @@ void main(){
 }`;
 export class Sky {
   private group = new THREE.Group();
+  private halo!: THREE.Sprite;
   private material = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
@@ -74,19 +76,25 @@ export class Sky {
       new THREE.SpriteMaterial({
         map: glowTexture(),
         color: 0x8de5c6,
-        opacity: 0.18,
+        opacity: ENVIRONMENT.moonGlow,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
         fog: false,
       }),
     );
+    this.halo = halo;
     halo.position.set(0, 66, -221);
     halo.scale.set(170, 170, 1);
     this.group.add(dome, moon, halo);
     scene.add(this.group);
   }
-  update(time: number, eye: THREE.Vector3) {
-    this.material.uniforms.time.value = time;
+  update(time: number, eye: THREE.Vector3, reducedMotion = false) {
+    const t = reducedMotion ? 0 : time;
+    this.material.uniforms.time.value = t;
+    const pulse = Math.sin(t * ENVIRONMENT.moonPulseSpeed);
+    (this.halo.material as THREE.SpriteMaterial).opacity =
+      ENVIRONMENT.moonGlow + pulse * ENVIRONMENT.moonGlowPulse;
+    this.halo.scale.setScalar(170 * (1 + pulse * 0.018));
     this.group.position.copy(eye);
   }
 }

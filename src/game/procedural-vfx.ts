@@ -1,3 +1,4 @@
+import { VFX } from "./tuning";
 import * as THREE from "three";
 import {
   ParticleSimulation,
@@ -31,7 +32,8 @@ export function particleMaterial(cube = false, overlay = false) {
       float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
       float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
       void main(){
-        vec2 q=(floor(vUv*24.)+.5)/24.*2.-1.;
+        float cells=vData.x>3.5 && vData.x<4.5 ? ${VFX.smokeCells.toFixed(1)} : ${VFX.maskCells.toFixed(1)};
+        vec2 q=(floor(vUv*cells)+.5)/cells*2.-1.;
         float shape=vData.x, t=vData.z, seed=vData.w;
         float alpha=1., highlight=.0;
         if(shape<.5){
@@ -57,7 +59,7 @@ export function particleMaterial(cube = false, overlay = false) {
           // Overlapping, evolving lobes keep a soft stepped silhouette.
           vec2 curl=q+vec2(.14*sin(q.y*4.+t*3.+seed*8.),.1*cos(q.x*5.-t*2.));
           float density=1.-dot(curl,curl)+.7*(n-.5);
-          alpha=smoothstep(.08,.6,density)*(.48+.35*n);
+          alpha=floor(smoothstep(.08,.6,density)*(.48+.35*n)*5.+.5)/5.;
           highlight=n*.025;
         }else if(shape>5.5 && shape<6.5){
           vec2 a=abs(q); alpha=step(max(min(a.x,a.y)*4.5,max(a.x,a.y)),.86);highlight=.08;
@@ -160,6 +162,7 @@ export class ProceduralVFX {
     nx = 0,
     nz = 0,
     finishing = false,
+    ny = 0,
   ) {
     this.simulation.emit(
       event,
@@ -172,6 +175,7 @@ export class ProceduralVFX {
       nx,
       nz,
       finishing,
+      ny,
     );
   }
   step(dt: number) {
@@ -252,10 +256,19 @@ export class ProceduralVFX {
       else size *= 0.8 + 0.2 * (1 - t);
       // Cap overlay footprint and distant detail. Near-plane objects are never screen-filling.
       const cap =
-        p.shape === SHAPE.cube ? 0.035 : p.shape === SHAPE.smoke ? 0.08 : 0.16;
+        p.shape === SHAPE.cube
+          ? 0.035
+          : p.shape === SHAPE.smoke
+            ? VFX.smokeHeightCap
+            : p.overlay
+              ? VFX.impactHeightCap
+              : 0.12;
       if (!p.ground) size = Math.min(size, (depth * height * cap) / focal);
       if (p.shape === SHAPE.ribbon)
-        size = Math.min(size, (depth * height * 0.1) / (focal * p.stretch));
+        size = Math.min(
+          size,
+          (depth * height * VFX.flakeLengthCap) / (focal * p.stretch),
+        );
       if (p.shape !== SHAPE.smoke)
         size = Math.max(size, Math.min(p.size * 1.4, (depth * 2) / focal));
       let alpha =

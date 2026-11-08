@@ -43,12 +43,17 @@ GAME_URL=http://127.0.0.1:4173 npm run test:visual
 GAME_URL=http://127.0.0.1:4173 npm run test:handling
 npm run test:polish
 npm run test:combat-vfx
+npm run test:world-polish
 npm run bench:ai
 ```
 
 The browser suite uses `/usr/bin/chromium` by default; set `CHROMIUM_PATH` to another Chromium executable. It exercises actual pointer capture, character upgrades, movement, jump/landing, aiming, finite-ammo reloads, weapon switching, magic, bell collision/interaction, forest-wide spawning, white hit flashes, confirmed white hit markers and red kill markers, probabilistic loot collection, all ten stacked waves, shooting moving enemies, pause/resume, sound controls, and narrow-screen menu layout. Screenshots go to ignored `artifacts/`. Software WebGL is used for automation; those frame rates are not representative of GPU-equipped clients.
 
-`test:visual` and `test:handling` use the same `GAME_URL`/preview as the browser suite. Handling checks real sprint-to-fire timing, ADS transitions, crouch/air accuracy, crosshair layout at 720p/1080p and smoke cleanup. `test:polish` starts its own isolated local fixture on port 5190. It renders the production enemy, weapon, effects and HUD classes in a controlled scene to inspect alpha-preserving flashes, damage numbers, casting, smoke, loot streams and real level-up rewards. The fixture never ships with the game. `bench:ai` measures the simulation independently of rendering with 8, 80 and 260 enemies. Run browser suites sequentially on a software renderer. See [the 0.13.0 report](docs/release-0.13.0.md) for the latest changes and validation. Play the [published game](https://alimshusseindev.github.io/Soul-Harvester/?v=0.13.0).
+`test:visual` and `test:handling` use the same `GAME_URL`/preview as the browser suite. Handling checks real sprint-to-fire timing, ADS transitions, crouch/air accuracy, crosshair layout at 720p/1080p and smoke cleanup. `test:polish` starts its own isolated local fixture on port 5190. It renders the production enemy, weapon, effects and HUD classes in a controlled scene to inspect alpha-preserving flashes, damage numbers, casting, smoke, loot streams and real level-up rewards. The fixture never ships with the game. `bench:ai` measures the simulation independently of rendering with 8, 80 and 260 enemies. Run browser suites sequentially on a software renderer. See [the 0.14.0 report](docs/release-0.14.0.md) for the latest changes and validation. Play the [published game](https://alimshusseindev.github.io/Soul-Harvester/?v=0.14.0).
+
+## Master tuning
+
+Edit [src/game/tuning.ts](src/game/tuning.ts) for weapons, critical chance, enemies/waves, movement, loot/magnet, rewards, abilities, effects and weather. See [the tuning guide](docs/master-tuning.md) for groups, defaults and examples. Rebuild/reload after changing values.
 
 ## Architecture
 
@@ -65,6 +70,8 @@ Combat particles are generated from geometry and shaders. No particle PNGs, spri
 - `src/game/enemy-remnants.ts`: pooled foot-anchored white-to-burgundy death silhouettes, collapse and pixel erosion.
 - `src/game/waves.ts`: deterministic escalating count/type quotas and ten concurrent wave jobs; each enemy retains its source wave.
 - `src/game/loot.ts`: persistent gold/XP drops, ballistic pop/bounce, collision-safe movement and delayed spring attraction.
+- `src/game/world-raycast.ts`, `surface-impacts.ts`: shared geometry/instance BVHs, alpha-aware world bullet hits and pooled normal-aligned pixel scars.
+- `src/game/wind.ts`, `loot-geometry.ts`: rooted foliage/shadow deformation and shared stepped coin/crystal models.
 - `src/game/surfaces.ts`: cached original pixel tiles and shared world-space texel mapping.
 - `src/game/sky.ts`: camera-centred cloud/sky shader with no UV wrap seam, luminous lunar disk and halo.
 - `src/game/island.ts`, `water.ts`, `atmosphere.ts`: continuous island/coasts and shared heights, shader water/depth shading and bounded GPU motes.

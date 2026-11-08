@@ -1,16 +1,18 @@
+import { WorldRaycast } from "./world-raycast";
+import { Wind } from "./wind";
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { seededRandom, type Solid } from "./math";
 import { glowTexture, npcTexture } from "./textures";
 import { MAP, landHeight, terrainSlope } from "./terrain";
 import { FOREST_TREES, forestSolids } from "./forest";
-import { LIGHTING } from "./tuning";
+import { LIGHTING, ENVIRONMENT } from "./tuning";
 import { surface, surfaceUV } from "./surfaces";
 import { Sky } from "./sky";
 import { Water } from "./water";
 import { Atmosphere } from "./atmosphere";
-import { islandGeometry } from "./island";
-import { coniferGeometry, tuftGeometry, backdropHeight } from "./scenery";
+import { islandGeometry, islandSurfaceHeight } from "./island";
+import { coniferGeometry, tuftGeometry } from "./scenery";
 interface Flame {
   position: THREE.Vector3;
   light: THREE.PointLight;
@@ -19,6 +21,10 @@ interface Flame {
 }
 export class World {
   readonly solids: Solid[] = [];
+  readonly ballistics: WorldRaycast;
+  private wind = new Wind();
+  reducedMotion = false;
+  private treeRoots: { x: number; y: number; z: number }[] = [];
   readonly flames: Flame[] = [];
   readonly bell = new THREE.Group();
   readonly bellPosition = new THREE.Vector3(0, 3.65, MAP.bell.z);
@@ -70,6 +76,10 @@ export class World {
       ambientBudget: this.atmosphere.budget,
       waterTime: this.water.mesh.material.uniforms.uTime.value,
       waterLevel: this.water.mesh.position.y,
+      windTime: this.wind.time.value,
+      windStrength: this.wind.strength.value,
+      treeRoots: this.treeRoots.slice(0, 6),
+      ballistics: this.ballistics.diagnostics(),
     };
   }
   constructor(readonly scene: THREE.Scene) {
@@ -100,6 +110,7 @@ export class World {
     this.forest();
     this.elevateTerrain();
     this.batchStaticMeshes();
+    this.ballistics = new WorldRaycast(scene);
     this.atmosphere = new Atmosphere(scene);
   }
   private ground() {
@@ -222,6 +233,8 @@ export class World {
       n++;
     }
     grass.count = n;
+    grass.name = "rooted-wind-grass";
+    this.wind.apply(grass.material as THREE.Material, ENVIRONMENT.grassSway);
     this.scene.add(grass);
   }
   private bridge() {
@@ -406,6 +419,7 @@ export class World {
       this.dummy.updateMatrix();
       bushes.setMatrixAt(i, this.dummy.matrix);
     }
+    this.wind.apply(bushes.material as THREE.Material, ENVIRONMENT.bushSway);
     this.scene.add(bushes);
     for (const [x, z] of [
       [-11, -24],
@@ -449,7 +463,17 @@ export class World {
       side: THREE.DoubleSide,
     });
     FOREST_TREES.forEach((t, i) => {
-      this.dummy.position.set(t.x, backdropHeight(t.x, t.z), t.z);
+      const radius = t.height * 0.022,
+        rootY =
+          Math.min(
+            islandSurfaceHeight(t.x, t.z),
+            islandSurfaceHeight(t.x - radius, t.z),
+            islandSurfaceHeight(t.x + radius, t.z),
+            islandSurfaceHeight(t.x, t.z - radius),
+            islandSurfaceHeight(t.x, t.z + radius),
+          ) - ENVIRONMENT.treeRootEmbed;
+      this.treeRoots.push({ x: t.x, y: rootY, z: t.z });
+      this.dummy.position.set(t.x, rootY, t.z);
       this.dummy.rotation.set(0, this.rng() * 6, 0);
       this.dummy.scale.set(t.width, t.height, t.width);
       this.dummy.updateMatrix();
@@ -460,13 +484,19 @@ export class World {
       this.dummy.updateMatrix();
       trunks.setMatrixAt(i, this.dummy.matrix);
     });
+    trees.name = "rooted-wind-pines";
+    trunks.name = "grounded-tree-trunks";
+    trees.userData.terrainExempt = trunks.userData.terrainExempt = true;
+    this.wind.apply(trees.material as THREE.Material, ENVIRONMENT.treeSway);
+    this.wind.apply(trees.customDepthMaterial!, ENVIRONMENT.treeSway);
     trees.castShadow = trees.receiveShadow = true;
     this.scene.add(trees, trunks);
     this.solids.push(...forestSolids());
   }
 
   update(time: number, eye: THREE.Vector3) {
-    this.sky.update(time, eye);
+    this.sky.update(time, eye, this.reducedMotion);
+    this.wind.update(time, this.reducedMotion);
     for (const f of this.flames) {
       const flicker = 1 + Math.sin(time * 9 + f.phase) * 0.07;
       f.light.intensity = LIGHTING.torch * flicker;

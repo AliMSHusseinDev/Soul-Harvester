@@ -1,3 +1,4 @@
+import { PLAYER_BALANCE as P } from "./tuning";
 import * as THREE from "three";
 import { damp, resolveCircle, type Solid } from "./math";
 import type { Input } from "./input";
@@ -5,7 +6,11 @@ import { MAP, groundHeight } from "./terrain";
 import { Handling } from "./handling";
 import { Stamina } from "./stamina";
 export class Player {
-  readonly position = new THREE.Vector3(0, groundHeight(0, 14), 14);
+  readonly position = new THREE.Vector3(
+    MAP.player.x,
+    groundHeight(MAP.player.x, MAP.player.z),
+    MAP.player.z,
+  );
   readonly previous = this.position.clone();
   readonly endurance = new Stamina();
   private vx = 0;
@@ -24,7 +29,7 @@ export class Player {
   readonly handling = new Handling();
   crouching = false;
   busy = false;
-  private eyeHeight = 1.72;
+  private eyeHeight = P.eyeHeight;
   readonly velocity = new THREE.Vector3();
   constructor(
     private input: Input,
@@ -69,8 +74,13 @@ export class Player {
     });
     const sprint = this.handling.sprintPose;
     const speed =
-      (sprint ? 7.2 : this.crouching ? 2.3 : this.input.aiming ? 3 : 4.2) *
-      this.moveMultiplier;
+      (sprint
+        ? P.sprintSpeed
+        : this.crouching
+          ? P.crouchSpeed
+          : this.input.aiming
+            ? P.aimSpeed
+            : P.walkSpeed) * this.moveMultiplier;
     this.endurance.update(dt, sprint);
     if (sprint && !this.endurance.available)
       this.handling.update(0, {
@@ -84,21 +94,21 @@ export class Player {
       });
     const c = Math.cos(this.input.yaw),
       s = Math.sin(this.input.yaw);
-    this.vx = damp(this.vx, (x * c + z * s) * speed, 13, dt);
-    this.vz = damp(this.vz, (z * c - x * s) * speed, 13, dt);
+    this.vx = damp(this.vx, (x * c + z * s) * speed, P.acceleration, dt);
+    this.vz = damp(this.vz, (z * c - x * s) * speed, P.acceleration, dt);
     this.input.jumpQueued = false;
     if (
       requested &&
       (this.grounded || (this.athletics >= 3 && this.jumpCount < 2))
     ) {
-      this.vy = this.athletics >= 2 ? 7.5 : 6.3;
+      this.vy = this.athletics >= 2 ? P.highJumpSpeed : P.jumpSpeed;
       this.jumpCount++;
       this.grounded = false;
     }
     this.jumpHeld = jump;
     const oldY = this.position.y;
     this.grounded = false;
-    this.vy -= 18 * dt;
+    this.vy -= P.gravity * dt;
     this.position.y += this.vy * dt;
     // Land on prop tops when crossing them from above, rather than being pushed sideways.
     if (this.vy <= 0)
@@ -131,7 +141,7 @@ export class Player {
       const p = resolveCircle(
         this.position.x + (this.vx * dt) / slices,
         this.position.z + (this.vz * dt) / slices,
-        0.36,
+        P.radius,
         this.position.y,
         this.solids,
       );
@@ -169,7 +179,12 @@ export class Player {
     );
     this.speed = Math.hypot(this.velocity.x, this.velocity.z);
     this.distance += this.speed * dt;
-    this.eyeHeight = damp(this.eyeHeight, this.crouching ? 1.18 : 1.72, 16, dt);
+    this.eyeHeight = damp(
+      this.eyeHeight,
+      this.crouching ? P.crouchEyeHeight : P.eyeHeight,
+      16,
+      dt,
+    );
   }
   render(
     camera: THREE.PerspectiveCamera,
@@ -187,7 +202,11 @@ export class Player {
     camera.rotation.set(this.input.pitch, this.input.yaw, 0, "YXZ");
   }
   reset() {
-    this.position.set(0, groundHeight(0, 14), 14);
+    this.position.set(
+      MAP.player.x,
+      groundHeight(MAP.player.x, MAP.player.z),
+      MAP.player.z,
+    );
     this.previous.copy(this.position);
     this.vx = 0;
     this.vz = 0;
@@ -199,7 +218,7 @@ export class Player {
     this.grounded = true;
     this.distance = 0;
     this.speed = 0;
-    this.eyeHeight = 1.72;
+    this.eyeHeight = P.eyeHeight;
     this.crouching = this.busy = false;
     this.handling.reset();
   }

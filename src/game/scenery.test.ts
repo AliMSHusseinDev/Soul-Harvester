@@ -1,7 +1,12 @@
 import { it, expect } from "vitest";
 import * as THREE from "three";
 import { backdropGeometry, backdropHeight, coniferGeometry } from "./scenery";
-import { islandHeight, ISLAND_BOUNDS, OCEAN_Y } from "./island";
+import {
+  islandHeight,
+  islandSurfaceHeight,
+  ISLAND_BOUNDS,
+  OCEAN_Y,
+} from "./island";
 import { landHeight } from "./terrain";
 import { surfaceUV } from "./surfaces";
 import { spriteGeometry } from "./sprite-geometry";
@@ -82,4 +87,29 @@ it("extrudes only opaque pixel boundaries with a small, consistent depth", () =>
   expect(g.attributes.uv.count).toBe(p.count);
   expect(g.attributes.color.count).toBe(p.count);
   g.dispose();
+});
+
+it("anchors trees to the rendered mountain triangles between coarse grid vertices", () => {
+  const geometry = backdropGeometry(),
+    mesh = new THREE.Mesh(
+      geometry,
+      new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
+    );
+  mesh.updateMatrixWorld();
+  for (const [x, z] of [
+    [49.3, -54.7],
+    [83.1, -116.3],
+    [-67.2, 14.3],
+    [18.1, 18.3],
+  ]) {
+    const ray = new THREE.Raycaster(
+      new THREE.Vector3(x, 100, z),
+      new THREE.Vector3(0, -1, 0),
+    );
+    expect(islandSurfaceHeight(x, z)).toBeCloseTo(
+      ray.intersectObject(mesh)[0].point.y,
+      4,
+    );
+  }
+  geometry.dispose();
 });

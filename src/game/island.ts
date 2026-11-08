@@ -34,16 +34,46 @@ export function islandHeight(x: number, z: number) {
   y = y * (1 - depth) + -10.5 * depth;
   return y;
 }
-export function islandGeometry() {
-  const axis = (min: number, max: number, fineMin: number, fineMax: number) => {
-    const a: number[] = [];
-    for (let n = min; n <= max; n += 2)
-      if ((n >= fineMin && n <= fineMax) || (n - min) % 6 === 0 || n === max)
-        a.push(n);
-    return a;
+const axis = (min: number, max: number, fineMin: number, fineMax: number) => {
+  const a: number[] = [];
+  for (let n = min; n <= max; n += 2)
+    if ((n >= fineMin && n <= fineMax) || (n - min) % 6 === 0 || n === max)
+      a.push(n);
+  return a;
+};
+const ISLAND_XS = axis(-230, 230, -40, 40),
+  ISLAND_ZS = axis(-300, 200, -80, 30);
+/** Barycentric height of the actual rendered triangles, including distant coarse cells. */
+export function islandSurfaceHeight(x: number, z: number) {
+  const cell = (values: number[], n: number) => {
+    let lo = 0,
+      hi = values.length - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >>> 1;
+      if (values[mid] <= n) lo = mid;
+      else hi = mid;
+    }
+    return lo;
   };
-  const xs = axis(-230, 230, -40, 40),
-    zs = axis(-300, 200, -80, 30),
+  const i = cell(ISLAND_XS, x),
+    j = cell(ISLAND_ZS, z),
+    x0 = ISLAND_XS[i],
+    x1 = ISLAND_XS[i + 1],
+    z0 = ISLAND_ZS[j],
+    z1 = ISLAND_ZS[j + 1],
+    u = (x - x0) / (x1 - x0),
+    v = (z - z0) / (z1 - z0),
+    a = islandHeight(x0, z0),
+    b = islandHeight(x1, z0),
+    c = islandHeight(x0, z1),
+    d = islandHeight(x1, z1);
+  return u + v <= 1
+    ? a * (1 - u - v) + b * u + c * v
+    : b * (1 - v) + c * (1 - u) + d * (u + v - 1);
+}
+export function islandGeometry() {
+  const xs = ISLAND_XS,
+    zs = ISLAND_ZS,
     positions: number[] = [],
     uvs: number[] = [],
     colors: number[] = [],

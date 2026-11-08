@@ -3,13 +3,15 @@ import { guardTexture } from "./textures";
 import { spriteGeometry } from "./sprite-geometry";
 import { groundHeight } from "./terrain";
 import { ENEMY_TYPES } from "./waves";
-const DURATION = 0.38;
+import { VFX } from "./tuning";
+const DURATION = VFX.remnantDuration;
 const smooth = (t: number) => {
   t = Math.max(0, Math.min(1, t));
   return t * t * (3 - 2 * t);
 };
 /** Foot-anchored collapse: white silhouette, burgundy remnant, then pixel erosion. */
 export function remnantPose(age: number) {
+  age *= 0.38 / DURATION;
   return {
     height: 1 - 0.62 * smooth((age - 0.045) / 0.27),
     width: 1 - 0.18 * smooth((age - 0.08) / 0.24),

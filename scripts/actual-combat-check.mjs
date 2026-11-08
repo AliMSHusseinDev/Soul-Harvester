@@ -126,6 +126,20 @@ try {
     };
     requestAnimationFrame(sample);
   });
+  const groundBefore = await state();
+  await aim(3, 4, 14);
+  await page.mouse.down();
+  await page.waitForFunction(
+    (ammo) => window.__soulHarvester().ammo < ammo,
+    groundBefore.ammo,
+  );
+  await page.mouse.up();
+  await wait(() => window.__soulHarvester().lastWorldHit?.surface === "earth");
+  assert.ok((await state()).lootRender.surfaces.active > 0);
+  await page.screenshot({ path: "artifacts/actual-ground-impact.png" });
+  console.log(
+    "Real ground hit created surface debris and a pooled bullet scar",
+  );
   await page.keyboard.press("KeyE");
   await page.keyboard.press("Digit3");
   await wait(() => window.__soulHarvester().enemies.length >= 5);

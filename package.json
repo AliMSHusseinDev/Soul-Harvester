@@ -1,6 +1,6 @@
 {
   "name": "soul-harvester",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,6 +14,7 @@
     "test:visual": "node scripts/visual-check.mjs",
     "test:polish": "node scripts/polish-check.mjs",
     "test:combat-vfx": "node scripts/combat-vfx-check.mjs",
+    "test:world-polish": "node scripts/world-polish-check.mjs",
     "test:handling": "node scripts/handling-check.mjs",
     "bench:ai": "node scripts/ai-benchmark.mjs"
   },

@@ -66,7 +66,7 @@ it("keeps bridge-edge drops out of railings and the ravine", () => {
   }
 });
 
-it("shows a ballistic pop and bounce before magnet attraction can collect anything", () => {
+it("shows an outward ballistic arc before magnet attraction can collect anything", () => {
   const loot = new Loot(new Navigation([]));
   loot.release(0, -35, { gold: 3, xp: 12 });
   const initial = loot.drops[0].y;
@@ -77,11 +77,42 @@ it("shows a ballistic pop and bounce before magnet attraction can collect anythi
     expect(loot.drops[0].magnet).toBe(false);
   }
   expect(highest - initial).toBeGreaterThan(0.1);
-  expect(loot.drops[0].bounces).toBeGreaterThan(0);
+  expect(Math.hypot(loot.drops[0].x, loot.drops[0].z + 35)).toBeGreaterThan(
+    1.5,
+  );
   const collected = [];
   for (let i = 0; i < 180; i++)
     collected.push(...loot.update(1 / 60, { x: 0, z: -35, y: 0 }, 0));
   expect(collected).toHaveLength(2);
+});
+
+it("accelerates into a sprinting moving target and grants scattered rewards exactly once", () => {
+  for (const hz of [30, 60, 120]) {
+    const loot = new Loot(new Navigation([]));
+    loot.release(0, -48, { gold: 4, xp: 12 });
+    const received = [];
+    let peakSpeed = 0,
+      startSpeed = Infinity;
+    for (let i = 0; i < hz * 3; i++) {
+      const t = i / hz;
+      received.push(
+        ...loot.update(
+          1 / hz,
+          { x: 0, z: -48 + 7.2 * t, y: groundHeight(0, -48 + 7.2 * t) },
+          0,
+        ),
+      );
+      for (const d of loot.drops)
+        if (d.active && d.magnet) {
+          const speed = Math.hypot(d.vx, d.vz);
+          peakSpeed = Math.max(peakSpeed, speed);
+          startSpeed = Math.min(startSpeed, speed);
+        }
+    }
+    expect(received.map((d) => d.kind).sort()).toEqual(["gold", "xp"]);
+    expect(peakSpeed).toBeGreaterThan(startSpeed + 3);
+    expect(loot.drops.some((d) => d.active)).toBe(false);
+  }
 });
 it("only releases the rewards that were actually rolled", () => {
   const loot = new Loot(new Navigation([]));

@@ -314,9 +314,10 @@ try {
       ui.update(dt, false);
       renderer.clear();
       renderer.render(scene, camera);
+      renderer.render(v.impactScene, camera);
       renderer.clearDepth();
       renderer.render(view, camera);
-      renderer.render(v.impactScene, camera);
+      renderer.render(v.screenScene, camera);
       const pixels = new Uint8Array(80 * 100 * 4);
       renderer
         .getContext()

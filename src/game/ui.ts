@@ -1,3 +1,4 @@
+import { ECONOMY as E, COMBAT, PLAYER_BALANCE } from "./tuning";
 import { Battle, STATS, SKILLS, type Stat, type Skill } from "./battle";
 import type { Weapon } from "./weapon";
 import { WAVE_LIMIT } from "./waves";
@@ -88,7 +89,7 @@ export class UI {
     this.banner("LEVEL UP");
     const el = $("combat-banner");
     el.classList.add("level-up");
-    el.dataset.detail = `LEVEL ${level} · +2`;
+    el.dataset.detail = `LEVEL ${level} · +${E.pointsPerLevel}`;
     if (!this.reducedMotion)
       this.bannerAnimation = el.animate(
         [
@@ -145,7 +146,7 @@ export class UI {
         el.style.opacity = "0";
       }, 650);
       $("xp-fill").style.width =
-        `${(this.battle.xp / (this.battle.level * 40)) * 100}%`;
+        `${(this.battle.xp / (this.battle.level * E.xpPerLevel)) * 100}%`;
     }
   }
   private syncHealth() {
@@ -188,26 +189,29 @@ export class UI {
     $("stat-options").innerHTML = (Object.keys(STATS) as Stat[])
       .map(
         (key) =>
-          `<button class="upgrade-option" data-stat="${key}" data-description="${STATS[key]} · 1 point" aria-label="Upgrade ${key}, rank ${b.stats[key]} of 8" ${b.points < 1 || b.stats[key] >= 8 ? "disabled" : ""}><strong>${key}</strong><span class="stat-pips">${Array.from({ length: 8 }, (_, i) => `<i class="${i < b.stats[key] ? "filled" : ""}"></i>`).join("")}</span></button>`,
+          `<button class="upgrade-option" data-stat="${key}" data-description="${STATS[key]} · 1 point" aria-label="Upgrade ${key}, rank ${b.stats[key]} of ${E.statCap}" ${b.points < 1 || b.stats[key] >= E.statCap ? "disabled" : ""}><strong>${key}</strong><span class="stat-pips">${Array.from({ length: E.statCap }, (_, i) => `<i class="${i < b.stats[key] ? "filled" : ""}"></i>`).join("")}</span></button>`,
       )
       .join("");
     $("skill-options").innerHTML = (Object.keys(SKILLS) as Skill[])
       .map(
         (key) =>
-          `<button class="upgrade-option" data-skill="${key}" data-description="${SKILLS[key]} · 1 point" aria-label="Upgrade ${key}" ${b.points < 1 || b.skills[key] >= 3 ? "disabled" : ""}><strong>${key}</strong><b>${["NOVICE", "APPRENTICE", "ADEPT", "MASTER"][b.skills[key]]}</b></button>`,
+          `<button class="upgrade-option" data-skill="${key}" data-description="${SKILLS[key]} · 1 point" aria-label="Upgrade ${key}" ${b.points < 1 || b.skills[key] >= E.skillCap ? "disabled" : ""}><strong>${key}</strong><b>${["NOVICE", "APPRENTICE", "ADEPT", "MASTER"][b.skills[key]]}</b></button>`,
       )
       .join("");
   }
   renderShop() {
     const b = this.battle,
-      cost = 30 + b.weaponRank * 25;
+      cost = E.upgradeBase + b.weaponRank * E.upgradePerRank;
     $("shop-summary").textContent =
-      `${b.coins} gold · Rank ${b.weaponRank}/5 · +${Math.round(b.weaponRank * 18)}% damage`;
+      `${b.coins} gold · Rank ${b.weaponRank}/${E.weaponRankCap} · +${Math.round(b.weaponRank * COMBAT.weaponRankDamage * 100)}% damage`;
     $("upgrade-weapon").textContent =
-      b.weaponRank === 5 ? "MAXIMUM RANK" : `UPGRADE · ${cost} GOLD`;
+      b.weaponRank >= E.weaponRankCap
+        ? "MAXIMUM RANK"
+        : `UPGRADE · ${cost} GOLD`;
     $<HTMLButtonElement>("upgrade-weapon").disabled =
-      b.coins < cost || b.weaponRank === 5;
-    $<HTMLButtonElement>("buy-ammo").disabled = b.coins < 10;
+      b.coins < cost || b.weaponRank >= E.weaponRankCap;
+    $("buy-ammo").textContent = `AMMUNITION · ${E.ammoCost} GOLD`;
+    $<HTMLButtonElement>("buy-ammo").disabled = b.coins < E.ammoCost;
   }
   lost() {
     const b = this.battle;
@@ -222,13 +226,16 @@ export class UI {
       w = this.weapon;
     $("health-value").textContent = `${Math.ceil(b.health)}/${b.maxHealth}`;
     $("health-fill").style.width = `${(b.health / b.maxHealth) * 100}%`;
-    $("base-value").textContent = `${Math.ceil(b.baseHealth)}/500`;
-    $("base-fill").style.width = `${b.baseHealth / 5}%`;
-    $("base-hud").style.display = b.baseHealth < 500 ? "flex" : "none";
+    $("base-value").textContent =
+      `${Math.ceil(b.baseHealth)}/${PLAYER_BALANCE.bellHealth}`;
+    $("base-fill").style.width =
+      `${(b.baseHealth / PLAYER_BALANCE.bellHealth) * 100}%`;
+    $("base-hud").style.display =
+      b.baseHealth < PLAYER_BALANCE.bellHealth ? "flex" : "none";
     $("coins-value").textContent = String(b.coins);
     $("points-value").textContent = String(b.points);
     $("level-value").textContent = `LEVEL ${b.level}`;
-    $("xp-fill").style.width = `${(b.xp / (b.level * 40)) * 100}%`;
+    $("xp-fill").style.width = `${(b.xp / (b.level * E.xpPerLevel)) * 100}%`;
     $("wave-status").textContent =
       b.phase === "peace"
         ? ""

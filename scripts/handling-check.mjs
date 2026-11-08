@@ -120,7 +120,8 @@ try {
   await wait(() => window.__soulHarvester().sprinting);
   await wait(
     () =>
-      getComputedStyle(document.querySelector("#crosshair")).opacity === "0",
+      Number(getComputedStyle(document.querySelector("#crosshair")).opacity) >=
+        0.8 && window.__soulHarvester().crosshairGap >= 22,
   );
   const ammo = (await state()).ammo;
   await page.keyboard.down("Space");
@@ -144,7 +145,7 @@ try {
   await wait(() => window.__soulHarvester().fireReady);
   assert.equal((await state()).ammo, ammo - 1);
   console.log(
-    "PASS: sprint hides crosshair; one buffered tap fires once after the full .225s sprint-out",
+    "PASS: sprint keeps a visible expanded crosshair; one buffered tap fires once after the full .225s sprint-out",
   );
   await page.keyboard.down("KeyW");
   await page.keyboard.down("ShiftLeft");

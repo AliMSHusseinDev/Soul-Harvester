@@ -1,46 +1,24 @@
+import { WEAPON_TUNING } from "./tuning";
 import * as THREE from "three";
 import { damp, aimPose, springStep } from "./math";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { surface, surfaceUV } from "./surfaces";
 import { Muzzle, muzzleOpening } from "./muzzle";
 export type WeaponId = "rifle" | "pistol" | "blade";
-export const WEAPONS = {
-  rifle: {
-    name: "GRAVECALLER",
-    type: "ASSAULT RIFLE",
-    capacity: 30,
-    reserve: 120,
-    damage: 19,
-    interval: 0.105,
-    reload: 1.8,
-    kick: 0.035,
-  },
-  pistol: {
-    name: "THE RECLAIMER",
-    type: "SOULLOCK PISTOL",
-    capacity: 12,
-    reserve: 72,
-    damage: 34,
-    interval: 0.27,
-    reload: 1.25,
-    kick: 0.065,
-  },
-  blade: {
-    name: "REAPING EDGE",
-    type: "MELEE · CLOSE QUARTERS",
-    capacity: 0,
-    reserve: 0,
-    damage: 42,
-    interval: 0.6,
-    reload: 0,
-    kick: 0,
-  },
-} as const;
+export const WEAPONS = WEAPON_TUNING;
 export class Weapon {
   readonly group = new THREE.Group();
   id: WeaponId = "rifle";
-  readonly magazines = { rifle: 30, pistol: 12, blade: 0 };
-  readonly reserves = { rifle: 120, pistol: 72, blade: 0 };
+  readonly magazines: Record<WeaponId, number> = {
+    rifle: WEAPONS.rifle.capacity,
+    pistol: WEAPONS.pistol.capacity,
+    blade: 0,
+  };
+  readonly reserves: Record<WeaponId, number> = {
+    rifle: WEAPONS.rifle.reserve,
+    pistol: WEAPONS.pistol.reserve,
+    blade: 0,
+  };
   reloading = false;
   reloadMultiplier = 1;
   private models: Record<WeaponId, THREE.Group>;
@@ -437,18 +415,21 @@ export class Weapon {
     this.reloading = false;
   }
   addAmmo(amount: number) {
-    this.reserves.rifle = Math.min(240, this.reserves.rifle + amount);
+    this.reserves.rifle = Math.min(
+      WEAPONS.rifle.maxReserve,
+      this.reserves.rifle + amount,
+    );
     this.reserves.pistol = Math.min(
-      120,
+      WEAPONS.pistol.maxReserve,
       this.reserves.pistol + Math.ceil(amount / 2),
     );
   }
   reset() {
     this.id = "rifle";
-    this.magazines.rifle = 30;
-    this.magazines.pistol = 12;
-    this.reserves.rifle = 120;
-    this.reserves.pistol = 72;
+    this.magazines.rifle = WEAPONS.rifle.capacity;
+    this.magazines.pistol = WEAPONS.pistol.capacity;
+    this.reserves.rifle = WEAPONS.rifle.reserve;
+    this.reserves.pistol = WEAPONS.pistol.reserve;
     this.reloading = false;
     this.recoil = 0;
     this.velocity = 0;

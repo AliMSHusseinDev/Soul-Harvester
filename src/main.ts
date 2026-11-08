@@ -1,3 +1,4 @@
+import { criticalChance, isHeadshot } from "./game/combat-balance";
 import "@fontsource/pixelify-sans/latin-400.css";
 import "@fontsource/pixelify-sans/latin-600.css";
 import "@fontsource/cormorant-garamond/latin-400.css";
@@ -20,7 +21,14 @@ import { Battle } from "./game/battle";
 import { Effects } from "./game/effects";
 import { UI, $ } from "./game/ui";
 import { MAP, groundHeight } from "./game/terrain";
-import { LIGHTING, COMBAT_FEEL } from "./game/tuning";
+import {
+  LIGHTING,
+  COMBAT_FEEL,
+  COMBAT,
+  VIEW,
+  PLAYER_BALANCE,
+  ECONOMY,
+} from "./game/tuning";
 import { HitFeedback, shotTarget } from "./game/feedback";
 import { WAVE_LIMIT } from "./game/waves";
 import { surfaceSummary } from "./game/surfaces";
@@ -139,22 +147,21 @@ async function boot() {
     time: number;
     critical: boolean;
   } | null = null;
+  let lastWorldHit: {
+    surface: string;
+    point: number[];
+    normal: number[];
+    time: number;
+  } | null = null;
   let confirmedHits = 0,
     confirmedKills = 0;
   const rng = seededRandom(92);
   const direction = new THREE.Vector3(),
     center = new THREE.Vector2(),
     raycaster = new THREE.Raycaster();
-  const occluders = world.solids.map(
-    (b) =>
-      new THREE.Box3(
-        new THREE.Vector3(b.minX, b.base ?? 0, b.minZ),
-        new THREE.Vector3(b.maxX, b.height, b.maxZ),
-      ),
-  );
-  const intersection = new THREE.Vector3();
-  const solidPoint = new THREE.Vector3(),
-    bellPoint = new THREE.Vector3(),
+  effects.visibility.surfaceQuery = (ray, range) =>
+    world.ballistics.occluded(ray, range);
+  const bellPoint = new THREE.Vector3(),
     bellSphere = new THREE.Sphere(world.bellPosition, 0.8);
   function setActive(value: boolean) {
     active = value && !ui.dialogOpen && battle.phase !== "lost";
@@ -192,6 +199,7 @@ async function boot() {
     hurtVelocity = 0;
     shotSerial = 0;
     lastBulletHit = null;
+    lastWorldHit = null;
     confirmedHits = 0;
     confirmedKills = 0;
     accuracy.reset(ACCURACY.rifle);
@@ -256,7 +264,10 @@ async function boot() {
     else if (
       Math.hypot(player.position.x, player.position.z - MAP.bell.z) < 6
     ) {
-      if (battle.baseHealth < 500 && battle.phase === "battle")
+      if (
+        battle.baseHealth < PLAYER_BALANCE.bellHealth &&
+        battle.phase === "battle"
+      )
         ui.toast(
           battle.repair()
             ? "Bell repaired: +100 integrity."
@@ -323,16 +334,8 @@ async function boot() {
     accuracy.fired(ACCURACY[weapon.id]);
     direction.copy(raycaster.ray.direction);
     const hit = enemies.raycast(raycaster.ray, time, input.yaw)[0];
-    let solidDistance = Infinity;
-    for (const box of occluders) {
-      if (raycaster.ray.intersectBox(box, intersection)) {
-        const d = intersection.distanceTo(camera.position);
-        if (d < solidDistance) {
-          solidDistance = d;
-          solidPoint.copy(intersection);
-        }
-      }
-    }
+    const surfaceHit = world.ballistics.hit(raycaster.ray, COMBAT.bulletRange),
+      solidDistance = surfaceHit?.distance ?? Infinity;
     const bellDistance = raycaster.ray.intersectSphere(bellSphere, bellPoint)
       ? camera.position.distanceTo(bellPoint)
       : Infinity;
@@ -342,15 +345,18 @@ async function boot() {
       solidDistance,
     );
     if (target === "enemy" && hit) {
-      const headshot = (hit.uv?.y ?? 0) > 0.73;
-      const critical = headshot || rng() < 0.05 + battle.stats.instinct * 0.03;
+      const headshot = isHeadshot(hit.uv.x, hit.uv.y);
+      const critical =
+        headshot || rng() < criticalChance(battle.stats.instinct);
       const damage =
-        weapon.config.damage * battle.damageMultiplier * (critical ? 1.5 : 1);
+        weapon.config.damage *
+        battle.damageMultiplier *
+        (critical ? COMBAT.criticalMultiplier : 1);
       const killed = battle.damageEnemy(
         hit.enemyId,
         damage,
         player.position,
-        weapon.id === "rifle" ? 2 : 4,
+        weapon.id === "rifle" ? COMBAT.rifleKnockback : COMBAT.pistolKnockback,
         {
           x: hit.point.x,
           y: hit.point.y,
@@ -378,7 +384,15 @@ async function boot() {
         critical,
       };
     } else if (target === "bell") ringBell();
-    else if (target === "solid") effects.burst(solidPoint, 0xbbad85, 5, 1.5);
+    else if (target === "solid" && surfaceHit) {
+      effects.surfaceImpact(surfaceHit);
+      lastWorldHit = {
+        surface: surfaceHit.surface,
+        point: surfaceHit.point.toArray(),
+        normal: surfaceHit.normal.toArray(),
+        time,
+      };
+    }
     shotSerial++;
     {
       const endpoint =
@@ -387,7 +401,7 @@ async function boot() {
           : target === "bell"
             ? bellPoint
             : target === "solid"
-              ? solidPoint
+              ? surfaceHit!.point
               : camera.position.clone().addScaledVector(direction, 70);
       const v = player.velocity;
       movementVelocity.set(v.x, 0, v.z);
@@ -532,8 +546,10 @@ async function boot() {
         time += step;
         feedback.update(step);
         player.athletics = battle.skills.athletics;
-        player.moveMultiplier = 1 + battle.stats.agility * 0.04;
-        weapon.reloadMultiplier = 1 / (1 + battle.skills.marksmanship * 0.15);
+        player.moveMultiplier =
+          1 + battle.stats.agility * PLAYER_BALANCE.agilityPerPoint;
+        weapon.reloadMultiplier =
+          1 / (1 + battle.skills.marksmanship * COMBAT.reloadPerMarksmanship);
         player.busy =
           weapon.reloading || weapon.casting || weapon.attacking || meleeQueued;
         player.handling.sprintOutTime = ACCURACY[weapon.id].sprintOut;
@@ -628,11 +644,11 @@ async function boot() {
       enemies.update(time, input.yaw, alpha);
       const fov =
         effectiveAim && weapon.id !== "blade"
-          ? 55
+          ? VIEW.aimFov
           : player.handling.sprintPose
-            ? 76
-            : 72;
-      camera.fov = damp(camera.fov, fov, 10, dt);
+            ? VIEW.sprintFov
+            : VIEW.hipFov;
+      camera.fov = damp(camera.fov, fov, VIEW.fovResponse, dt);
       camera.updateProjectionMatrix();
       $("stamina").style.width = `${player.stamina * 100}%`;
       let label = "";
@@ -644,8 +660,9 @@ async function boot() {
         Math.hypot(player.position.x, player.position.z - MAP.bell.z) < 6
       )
         label =
-          battle.baseHealth < 500 && battle.phase === "battle"
-            ? "REPAIR BELL · 15 GOLD"
+          battle.baseHealth < PLAYER_BALANCE.bellHealth &&
+          battle.phase === "battle"
+            ? `REPAIR BELL · ${ECONOMY.repairCost} GOLD`
             : battle.wave < WAVE_LIMIT
               ? "CALL NEXT WAVE"
               : "";
@@ -671,7 +688,14 @@ async function boot() {
     $("hitmarker").classList.toggle("kill", feedback.kill);
     crosshair.classList.toggle("sprinting", player.handling.sprintPose);
     crosshair.classList.toggle("aiming", effectiveAim && weapon.id !== "blade");
-    const gap = accuracy.gap(innerHeight, camera.fov);
+    const gap = Math.min(
+      VIEW.crosshairMaxGap,
+      Math.max(
+        VIEW.crosshairMinGap,
+        accuracy.gap(innerHeight, camera.fov),
+        player.handling.sprintPose ? VIEW.sprintMinGap : 0,
+      ),
+    );
     if (gap !== lastGap) {
       crosshair.style.setProperty("--gap", `${gap}px`);
       lastGap = gap;
@@ -679,6 +703,7 @@ async function boot() {
     $("hitmarker").style.opacity = String(Math.max(0, feedback.fraction));
     $("hitmarker").style.transform =
       `translate(-50%,-50%) scale(${(feedback.kill ? 1.22 : 1) * (1 + Math.sin(feedback.fraction * Math.PI) * 0.18)})`;
+    world.reducedMotion = reducedMotion;
     world.update(ambientTime, camera.position);
     if (bellTimer > 0) {
       bellTimer = Math.max(0, bellTimer - dt);
@@ -700,11 +725,13 @@ async function boot() {
     renderer.info.reset();
     renderer.clear();
     renderer.render(scene, camera);
+    // Actor feedback belongs behind the viewmodel, including the ADS iron sights.
+    renderer.render(effects.impactScene, camera);
     if (weapon.group.visible) {
       renderer.clearDepth();
       renderer.render(viewScene, camera);
     }
-    renderer.render(effects.impactScene, camera);
+    renderer.render(effects.screenScene, camera);
   }
   renderer.compile(scene, camera);
   renderer.compile(effects.impactScene, camera);
@@ -714,7 +741,7 @@ async function boot() {
   Object.defineProperty(window, "__soulHarvester", {
     value: () => ({
       ready: true,
-      version: "0.13.0",
+      version: "0.14.0",
       timeScale: cinematic.scale,
       cinematicActive: cinematic.active,
       stamina: player.stamina,
@@ -744,7 +771,9 @@ async function boot() {
       fireReady: player.handling.ready,
       crouching: player.crouching,
       spreadAngle: accuracy.angle,
-      crosshairGap: accuracy.gap(innerHeight, camera.fov),
+      crosshairGap: lastGap,
+      lastWorldHit,
+      criticalChance: criticalChance(battle.stats.instinct),
       casting: weapon.casting,
       meleeActive: weapon.attacking,
       pendingAbilities: abilityPresentation.count,

@@ -8,6 +8,7 @@ interface Node {
 }
 /** Static AABB BVH shared by hit sprites and text. Queries allocate no objects. */
 export class WorldVisibility {
+  surfaceQuery?: (ray: THREE.Ray, range: number) => boolean;
   private nodes: Node[] = [];
   private boxes: readonly THREE.Box3[] = [];
   private order: number[] = [];
@@ -67,6 +68,7 @@ export class WorldVisibility {
     if (distance < 0.15) return false;
     const limit = (distance - 0.08) ** 2;
     this.ray.set(from, this.direction.multiplyScalar(1 / distance));
+    if (this.surfaceQuery) return this.surfaceQuery(this.ray, distance - 0.08);
     let used = 0;
     if (this.nodes.length) this.stack[used++] = 0;
     while (used) {

@@ -580,9 +580,11 @@ h1 em {
   top: -1px;
   left: var(--gap);
 }
-.crosshair.aiming,
-.crosshair.sprinting {
+.crosshair.aiming {
   opacity: 0;
+}
+.crosshair.sprinting {
+  opacity: 0.85;
 }
 .damage-numbers {
   position: fixed;

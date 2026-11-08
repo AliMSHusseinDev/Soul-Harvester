@@ -1,3 +1,10 @@
+import {
+  COMBAT,
+  ECONOMY as E,
+  PLAYER_BALANCE as P,
+  ABILITIES as A,
+  WEAPON_TUNING,
+} from "./tuning";
 import { resolveCircle, damp, type Solid } from "./math";
 import { Navigation, SpatialGrid, type Point } from "./navigation";
 import { MAP, inMap, isRiver, groundHeight } from "./terrain";
@@ -22,10 +29,10 @@ export type Skill =
   | "scavenging"
   | "cunning";
 export const STATS: Record<Stat, string> = {
-  constitution: "+20 maximum vitality",
+  constitution: `+${P.healthPerConstitution} maximum vitality`,
   instinct: "More critical hits",
-  lethality: "+10% weapon damage",
-  agility: "+4% movement speed",
+  lethality: `+${Math.round(COMBAT.lethalityPerPoint * 100)}% weapon damage`,
+  agility: `+${Math.round(P.agilityPerPoint * 100)}% movement speed`,
   magnetism: "Wider pickup attraction",
   greed: "More gold per coin",
 };
@@ -183,13 +190,13 @@ export class Battle {
   private regenDelay = 0;
   private invulnerable = 0;
   private meleeCooldown = 0;
-  health = 100;
-  baseHealth = 500;
-  coins = 40;
+  health = P.health;
+  baseHealth = P.bellHealth;
+  coins = E.startingGold;
   souls = 0;
   level = 1;
   xp = 0;
-  points = 4;
+  points = E.startingPoints;
   wave = 0;
   phase: "peace" | "battle" | "intermission" | "lost" = "peace";
   burstCooldown = 0;
@@ -221,10 +228,14 @@ export class Battle {
     this.playerField = this.bellField;
   }
   get maxHealth() {
-    return 100 + this.stats.constitution * 20;
+    return P.health + this.stats.constitution * P.healthPerConstitution;
   }
   get damageMultiplier() {
-    return 1 + this.stats.lethality * 0.1 + this.weaponRank * 0.18;
+    return (
+      1 +
+      this.stats.lethality * COMBAT.lethalityPerPoint +
+      this.weaponRank * COMBAT.weaponRankDamage
+    );
   }
   get alive() {
     return this.enemies.filter((e) => e.active);
@@ -332,7 +343,7 @@ export class Battle {
     if (this.regenDelay === 0 && this.skills.survival)
       this.health = Math.min(
         this.maxHealth,
-        this.health + dt * this.skills.survival * 0.8,
+        this.health + dt * this.skills.survival * P.regenPerSurvival,
       );
     for (const job of this.waveJobs)
       if (job.index < job.plan.length) job.clock -= dt;
@@ -559,18 +570,19 @@ export class Battle {
     for (const pickup of this.loot.update(dt, player, this.stats.magnetism)) {
       const granted =
         pickup.kind === "gold"
-          ? Math.ceil(pickup.value * (1 + this.stats.greed * 0.15))
+          ? Math.ceil(pickup.value * (1 + this.stats.greed * E.greedPerPoint))
           : pickup.value;
       this.emit(pickup.kind, pickup.x, pickup.z, granted, pickup.y);
       if (pickup.kind === "gold") this.coins += granted;
       else {
         this.xp += pickup.value;
-        this.ammoReward += 3 + this.skills.scavenging * 2;
-        while (this.xp >= this.level * 40) {
-          this.xp -= this.level * 40;
+        this.ammoReward +=
+          E.ammoPerXp + this.skills.scavenging * E.ammoPerScavenging;
+        while (this.xp >= this.level * E.xpPerLevel) {
+          this.xp -= this.level * E.xpPerLevel;
           this.level++;
-          this.points += 2;
-          this.health = Math.min(this.maxHealth, this.health + 15);
+          this.points += E.pointsPerLevel;
+          this.health = Math.min(this.maxHealth, this.health + E.healPerLevel);
           this.emit("level", player.x, player.z, this.level);
         }
       }
@@ -582,7 +594,7 @@ export class Battle {
       this.enemies.every((e) => !e.active)
     ) {
       this.phase = "intermission";
-      this.coins += 15;
+      this.coins += E.waveGold;
       if (this.wave === WAVE_LIMIT && !this.completeEmitted) {
         this.completeEmitted = true;
         this.emit("complete");
@@ -688,8 +700,8 @@ export class Battle {
   hurtPlayer(damage: number) {
     if (this.phase === "lost" || this.invulnerable > 0) return false;
     this.health = Math.max(0, this.health - damage);
-    this.invulnerable = 0.5;
-    this.regenDelay = 5;
+    this.invulnerable = P.invulnerability;
+    this.regenDelay = P.regenDelay;
     this.emit("playerHit", 0, 0, damage);
     if (this.health <= 0) this.lose();
     return true;
@@ -768,21 +780,21 @@ export class Battle {
   }
   melee(player: Point, forward: Point) {
     if (this.meleeCooldown > 0 || this.phase === "lost") return false;
-    this.meleeCooldown = 0.6;
+    this.meleeCooldown = WEAPON_TUNING.blade.interval;
     for (const e of this.alive) {
       const dx = e.x - player.x,
         dz = e.z - player.z,
         d = Math.hypot(dx, dz);
       if (
-        d < 2.8 &&
-        (dx * forward.x + dz * forward.z) / Math.max(d, 0.01) > 0.35 &&
+        d < A.meleeRange &&
+        (dx * forward.x + dz * forward.z) / Math.max(d, 0.01) > A.meleeArcDot &&
         this.nav.lineClear(player, e)
       )
         this.damageEnemy(
           e.id,
-          42 * this.damageMultiplier,
+          WEAPON_TUNING.blade.damage * this.damageMultiplier,
           player,
-          7 + this.skills.cunning * 2,
+          A.meleeKnockback + this.skills.cunning * A.cunningKnockback,
         );
     }
     return true;
@@ -793,7 +805,8 @@ export class Battle {
   }
   requestBurst() {
     if (this.burstCooldown > 0 || this.phase === "lost") return false;
-    this.burstCooldown = 12 - this.skills.sorcery;
+    this.burstCooldown =
+      A.novaCooldown - this.skills.sorcery * A.novaCooldownPerPoint;
     this.burstPrimed = true;
     return true;
   }
@@ -802,14 +815,14 @@ export class Battle {
     this.burstPrimed = false;
     for (const e of this.alive)
       if (
-        Math.hypot(e.x - player.x, e.z - player.z) < 7 &&
+        Math.hypot(e.x - player.x, e.z - player.z) < A.novaRadius &&
         this.nav.lineClear(player, e)
       )
         this.damageEnemy(
           e.id,
-          60 * (1 + this.skills.sorcery * 0.2),
+          A.novaDamage * (1 + this.skills.sorcery * A.sorceryPerPoint),
           player,
-          10,
+          A.novaKnockback,
           {
             x: e.x,
             z: e.z,
@@ -822,18 +835,21 @@ export class Battle {
   }
   canOrb() {
     if (this.orbCooldown > 0 || this.phase === "lost") return false;
-    this.orbCooldown = 5.5 - this.skills.sorcery * 0.5;
+    this.orbCooldown =
+      A.orbCooldown - this.skills.sorcery * A.orbCooldownPerPoint;
     return true;
   }
   explode(point: Point) {
     for (const e of this.alive) {
       const d = Math.hypot(e.x - point.x, e.z - point.z);
-      if (d < 4.5 && this.nav.lineClear(point, e))
+      if (d < A.orbRadius && this.nav.lineClear(point, e))
         this.damageEnemy(
           e.id,
-          80 * (1 + this.skills.sorcery * 0.2) * (1 - d / 6),
+          A.orbDamage *
+            (1 + this.skills.sorcery * A.sorceryPerPoint) *
+            (1 - d / A.orbFalloffRadius),
           point,
-          8,
+          A.orbKnockback,
           {
             x: e.x,
             z: e.z,
@@ -845,46 +861,50 @@ export class Battle {
     this.emit("cast", point.x, point.z, 2);
   }
   upgradeStat(stat: Stat) {
-    if (this.points < 1 || this.stats[stat] >= 8) return false;
+    if (this.points < 1 || this.stats[stat] >= E.statCap) return false;
     this.points--;
     this.stats[stat]++;
-    if (stat === "constitution") this.health += 20;
+    if (stat === "constitution") this.health += P.healthPerConstitution;
     return true;
   }
   upgradeSkill(skill: Skill) {
-    if (this.points < 1 || this.skills[skill] >= 3) return false;
+    if (this.points < 1 || this.skills[skill] >= E.skillCap) return false;
     this.points--;
     this.skills[skill]++;
     return true;
   }
   buyWeaponUpgrade() {
-    const cost = 30 + this.weaponRank * 25;
-    if (this.coins < cost || this.weaponRank >= 5) return false;
+    const cost = E.upgradeBase + this.weaponRank * E.upgradePerRank;
+    if (this.coins < cost || this.weaponRank >= E.weaponRankCap) return false;
     this.coins -= cost;
     this.weaponRank++;
     return true;
   }
   buyAmmo() {
-    if (this.coins < 10) return false;
-    this.coins -= 10;
-    this.ammoReward += 60;
+    if (this.coins < E.ammoCost) return false;
+    this.coins -= E.ammoCost;
+    this.ammoReward += E.ammoPack;
     return true;
   }
   repair() {
-    if (this.coins < 15 || this.baseHealth >= 500 || this.phase === "lost")
+    if (
+      this.coins < E.repairCost ||
+      this.baseHealth >= P.bellHealth ||
+      this.phase === "lost"
+    )
       return false;
-    this.coins -= 15;
-    this.baseHealth = Math.min(500, this.baseHealth + 100);
+    this.coins -= E.repairCost;
+    this.baseHealth = Math.min(P.bellHealth, this.baseHealth + E.repairHealth);
     return true;
   }
   reset() {
-    this.health = 100;
-    this.baseHealth = 500;
-    this.coins = 40;
+    this.health = P.health;
+    this.baseHealth = P.bellHealth;
+    this.coins = E.startingGold;
     this.souls = 0;
     this.level = 1;
     this.xp = 0;
-    this.points = 4;
+    this.points = E.startingPoints;
     this.wave = 0;
     this.phase = "peace";
     this.burstCooldown = 0;

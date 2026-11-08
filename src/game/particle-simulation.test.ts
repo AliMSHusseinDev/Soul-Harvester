@@ -24,7 +24,7 @@ it("reproduces seeded events with independent particles and distinct event profi
   expect(
     new Set(a.items.filter((p) => p.life > 0).map((p) => p.shape)).size,
   ).toBe(8);
-  expect(a.items.some((p) => p.overlay && p.shape === SHAPE.ring)).toBe(true);
+  expect(a.items.some((p) => p.overlay && p.shape === SHAPE.star)).toBe(true);
   expect(
     a.items.some((p) => p.shape === SHAPE.ribbon && p.priority === 2),
   ).toBe(true);
@@ -80,7 +80,10 @@ it("schedules critical echoes once and preserves their birth position until acti
   p.step(0.04, () => 0);
   expect(delayed.every((p) => p.age < 0 && p.x === 1 && p.y === 4)).toBe(true);
   p.step(0.04, () => 0);
-  expect(delayed.every((p) => p.age >= 0 && p.x === 1 && p.y === 4)).toBe(true);
+  expect(delayed.every((p) => p.age >= 0 && p.y > 4)).toBe(true);
+  expect(delayed.some((p) => p.x < 1) && delayed.some((p) => p.x > 1)).toBe(
+    true,
+  );
   p.reset();
   expect(p.active).toBe(0);
 });
@@ -112,4 +115,26 @@ it("keeps magical soul particles separate from ordinary bullet-death fragments",
   expect(
     p.items.filter((p) => p.life > 0).every((p) => p.color !== 0xf18a9c),
   ).toBe(true);
+});
+
+it("keeps critical accents compact and scatters death flakes across a broad arc", () => {
+  const hit = new ParticleSimulation();
+  hit.emit("critical", 0, 2, 0);
+  expect(
+    hit.items.some((p) => p.life > 0 && p.overlay && p.shape === SHAPE.ring),
+  ).toBe(false);
+  expect(
+    hit.items
+      .filter((p) => p.life > 0 && p.overlay)
+      .every((p) => p.size < 0.16),
+  ).toBe(true);
+  const death = new ParticleSimulation();
+  death.emit("death", 0, 3, 0);
+  for (let i = 0; i < 24; i++) death.step(1 / 60, () => 0);
+  const flakes = death.items.filter(
+    (p) => p.life > 0 && p.shape === SHAPE.ribbon,
+  );
+  expect(
+    flakes.filter((p) => Math.hypot(p.x, p.z) > 1.8).length,
+  ).toBeGreaterThan(8);
 });

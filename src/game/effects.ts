@@ -1,3 +1,6 @@
+import { coinGeometry, crystalGeometry } from "./loot-geometry";
+import { SurfaceImpacts } from "./surface-impacts";
+import type { SurfaceHit } from "./world-raycast";
 import * as THREE from "three";
 import { orbMaterial } from "./orb-material";
 import { CombatScreen } from "./combat-screen";
@@ -9,10 +12,10 @@ import { groundHeight } from "./terrain";
 import { ENEMY_TYPES } from "./waves";
 import type { Battle } from "./battle";
 import { LOOT_FEEL } from "./tuning";
-import { surface } from "./surfaces";
 export class Effects {
   private dummy = new THREE.Object3D();
   private coinMesh: THREE.InstancedMesh;
+  private lootTint = new THREE.Color();
   private crystalMesh: THREE.InstancedMesh;
   private missileMesh: THREE.InstancedMesh;
   private numbers: DamageNumbers;
@@ -22,6 +25,7 @@ export class Effects {
     this.viewportHeight = height;
   }
   private remnants: EnemyRemnants;
+  private scars: SurfaceImpacts;
   private orbClock = { value: 0 };
   private orbs: {
     mesh: THREE.Mesh;
@@ -41,6 +45,7 @@ export class Effects {
   private healCooldown = 0;
   private procedural: ProceduralVFX;
   private screen: CombatScreen;
+  readonly screenScene = new THREE.Scene();
   readonly visibility: WorldVisibility;
   get impactScene() {
     return this.procedural.scene;
@@ -53,6 +58,7 @@ export class Effects {
     private camera: THREE.PerspectiveCamera,
   ) {
     this.remnants = new EnemyRemnants(scene, camera);
+    this.scars = new SurfaceImpacts(scene);
     this.lastHealth = battle.health;
     this.trailClocks = new Float32Array(battle.drops.length);
     this.occluders = battle.solids.map(
@@ -64,35 +70,15 @@ export class Effects {
     );
     this.visibility = new WorldVisibility(this.occluders, groundHeight);
     this.procedural = new ProceduralVFX(scene, camera, this.visibility);
-    this.screen = new CombatScreen(this.procedural.scene);
+    this.screen = new CombatScreen(this.screenScene);
     this.coinMesh = new THREE.InstancedMesh(
-      new THREE.CylinderGeometry(
-        LOOT_FEEL.goldRadius,
-        LOOT_FEEL.goldRadius,
-        0.035,
-        12,
-      ),
-      new THREE.MeshStandardMaterial({
-        map: surface("coin"),
-        color: 0xffedc6,
-        metalness: 0.4,
-        roughness: 0.42,
-        emissive: 0xa85c0c,
-        emissiveIntensity: 0.28,
-      }),
+      coinGeometry(),
+      new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }),
       battle.drops.length,
     );
     this.crystalMesh = new THREE.InstancedMesh(
-      new THREE.OctahedronGeometry(LOOT_FEEL.xpRadius),
-      new THREE.MeshStandardMaterial({
-        map: surface("crystal"),
-        color: 0x72d9f5,
-        roughness: 0.35,
-        metalness: 0.15,
-        emissive: 0x1878b0,
-        emissiveIntensity: 0.48,
-        flatShading: true,
-      }),
+      crystalGeometry(),
+      new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }),
       battle.drops.length,
     );
     this.missileMesh = new THREE.InstancedMesh(
@@ -203,6 +189,30 @@ export class Effects {
       undefined,
       normal?.x ?? 0,
       normal?.z ?? 0,
+    );
+  }
+  surfaceImpact(hit: SurfaceHit) {
+    this.scars.emit(hit);
+    const color =
+      hit.surface === "wood"
+        ? 0xc29559
+        : hit.surface === "earth"
+          ? 0x9f9969
+          : hit.surface === "foliage"
+            ? 0x5f9c64
+            : 0xc3c5ac;
+    this.procedural.emit(
+      "surface",
+      hit.point.x,
+      hit.point.y,
+      hit.point.z,
+      1,
+      this.reduced,
+      color,
+      hit.normal.x,
+      hit.normal.z,
+      false,
+      hit.normal.y,
     );
   }
   cast(point: THREE.Vector3, orb: boolean) {
@@ -371,6 +381,7 @@ export class Effects {
     this.screen.step(dt, this.reduced);
     this.numbers.step(dt);
     this.remnants.step(dt);
+    this.scars.step(dt);
     for (const o of this.orbs)
       if (o.life > 0) {
         o.life -= dt;
@@ -435,13 +446,16 @@ export class Effects {
       if (!d.active) continue;
       this.dummy.position.set(
         d.x,
-        d.y + (d.magnet || d.age < 0.8 ? 0 : Math.sin(time * 3 + d.id) * 0.02),
+        d.y +
+          (d.magnet || d.age < 0.8
+            ? 0
+            : Math.sin(time * LOOT_FEEL.bobSpeed + d.id) * LOOT_FEEL.bobHeight),
         d.z,
       );
       this.dummy.rotation.set(
-        d.kind === "gold" ? Math.PI / 2 : 0,
-        time * 2 + d.id,
-        0,
+        Math.sin(time * 1.7 + d.id) * 0.07,
+        time * 1.8 + d.id,
+        Math.sin(time * 1.3 + d.id) * 0.08,
         "YXZ",
       );
       // Shrink as it reaches the player, avoiding a screen-filling pickup in the near plane.
@@ -454,16 +468,25 @@ export class Effects {
             ),
           )
         : 1;
-      this.dummy.scale.set(scale, (d.kind === "xp" ? 1.55 : 1) * scale, scale);
+      this.dummy.scale.setScalar(scale);
       this.dummy.updateMatrix();
-      if (d.kind === "gold")
-        this.coinMesh.setMatrixAt(gold++, this.dummy.matrix);
-      else this.crystalMesh.setMatrixAt(xp++, this.dummy.matrix);
+      this.lootTint.setScalar(0.96 + Math.sin(time * 2.2 + d.id) * 0.04);
+      if (d.kind === "gold") {
+        this.coinMesh.setMatrixAt(gold, this.dummy.matrix);
+        this.coinMesh.setColorAt(gold++, this.lootTint);
+      } else {
+        this.crystalMesh.setMatrixAt(xp, this.dummy.matrix);
+        this.crystalMesh.setColorAt(xp++, this.lootTint);
+      }
     }
     this.coinMesh.count = gold;
     this.crystalMesh.count = xp;
     this.coinMesh.instanceMatrix.needsUpdate = true;
     this.crystalMesh.instanceMatrix.needsUpdate = true;
+    if (this.coinMesh.instanceColor)
+      this.coinMesh.instanceColor.needsUpdate = true;
+    if (this.crystalMesh.instanceColor)
+      this.crystalMesh.instanceColor.needsUpdate = true;
     let missileCount = 0;
     for (const m of this.battle.missiles) {
       if (!m.active) continue;
@@ -477,6 +500,7 @@ export class Effects {
     this.camera.updateMatrixWorld();
     this.numbers.render(this.viewportHeight, this.reduced);
     this.remnants.render();
+    this.scars.render();
     this.procedural.render(this.viewportHeight);
     const radius = 1 + (1 - this.ringLife / 0.85) * 6;
     for (let i = 0; i <= 64; i++)
@@ -507,6 +531,7 @@ export class Effects {
       procedural: this.procedural.diagnostics(),
       screen: this.screen.diagnostics(),
       remnants: this.remnants.diagnostics(),
+      surfaces: this.scars.diagnostics(),
       numbers: this.numbers.diagnostics(),
       totals: { ...this.stats },
     };
@@ -517,6 +542,7 @@ export class Effects {
     this.orbClock.value = 0;
     this.numbers.reset();
     this.remnants.reset();
+    this.scars.reset();
     for (const o of this.orbs) {
       o.life = 0;
       o.mesh.visible = false;

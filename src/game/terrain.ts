@@ -1,15 +1,5 @@
-export const MAP = {
-  minX: -27,
-  maxX: 27,
-  minZ: -67,
-  maxZ: 26,
-  riverNorth: -14,
-  riverSouth: 2,
-  bridgeHalfWidth: 3.3,
-  spawn: { x: 0, z: -53 },
-  bell: { x: 0, z: 19 },
-  player: { x: 0, z: 14 },
-} as const;
+import { MAP_TUNING } from "./tuning";
+export const MAP = MAP_TUNING;
 export function isRiver(x: number, z: number) {
   return (
     z > MAP.riverNorth &&
