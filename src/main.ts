@@ -130,6 +130,7 @@ async function boot() {
     uiTimer = 0;
   let hurtKick = 0,
     hurtVelocity = 0,
+    hurtSide = 1,
     shotSerial = 0;
   let lastBulletHit: {
     enemyId: number;
@@ -447,9 +448,11 @@ async function boot() {
         audio.death();
       } else if (event.kind === "playerHit") {
         ui.hit();
+        effects.playerHurt();
         audio.hurt();
         if (!reducedMotion) {
-          hurtVelocity = Math.min(0.18, hurtVelocity + 0.09);
+          hurtVelocity = Math.min(0.44, hurtVelocity + 0.24);
+          hurtSide = Math.sin(time * 11) > 0 ? 1 : -1;
           weapon.hurt();
         }
       } else if (event.kind === "baseHit") {
@@ -556,6 +559,7 @@ async function boot() {
         hurtKick = hurt.position;
         hurtVelocity = hurt.velocity;
         camera.rotation.x += kick + hurtKick;
+        camera.rotation.z += hurtKick * hurtSide * 0.8;
         camera.updateMatrixWorld();
         weapon.update(
           step,
@@ -612,6 +616,7 @@ async function boot() {
       player.render(camera, alpha, reducedMotion);
       viewAlpha = alpha;
       camera.rotation.x += kick + hurtKick;
+      camera.rotation.z += hurtKick * hurtSide * 0.8;
       enemies.update(time, input.yaw, alpha);
       const fov =
         effectiveAim && weapon.id !== "blade"
@@ -701,7 +706,7 @@ async function boot() {
   Object.defineProperty(window, "__soulHarvester", {
     value: () => ({
       ready: true,
-      version: "0.10.0",
+      version: "0.11.0",
       timeScale: cinematic.scale,
       cinematicActive: cinematic.active,
       stamina: player.stamina,

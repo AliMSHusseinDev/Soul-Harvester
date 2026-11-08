@@ -1,48 +1,15 @@
 import * as THREE from "three";
-import { fadingMaterial } from "./vfx-material";
+import { CombatScreen } from "./combat-screen";
+import { ProceduralVFX } from "./procedural-vfx";
 import { DamageNumbers } from "./damage-numbers";
 import { WorldVisibility } from "./world-visibility";
-import { CombatSpriteRenderer } from "./combat-sprite-renderer";
-import type { CombatSheet } from "./combat-sprites";
-import { glowTexture, guardTexture } from "./textures";
+import { guardTexture } from "./textures";
 import { groundHeight } from "./terrain";
 import { ENEMY_TYPES } from "./waves";
 import type { Battle } from "./battle";
-import { COMBAT_FEEL, LOOT_FEEL } from "./tuning";
+import { LOOT_FEEL } from "./tuning";
 import { surface } from "./surfaces";
-import { PRESENTATION as P } from "./tuning";
-import { impactSplashGeometry } from "./combat-vfx";
-interface Particle {
-  life: number;
-  max: number;
-  x: number;
-  y: number;
-  z: number;
-  vx: number;
-  vy: number;
-  vz: number;
-  r: number;
-  g: number;
-  b: number;
-}
 export class Effects {
-  private particles: Particle[] = Array.from({ length: 600 }, () => ({
-    life: 0,
-    max: 1,
-    x: 0,
-    y: 0,
-    z: 0,
-    vx: 0,
-    vy: 0,
-    vz: 0,
-    r: 1,
-    g: 1,
-    b: 1,
-  }));
-  private cursor = 0;
-  private positions = new Float32Array(1800);
-  private colors = new Float32Array(1800);
-  private geometry = new THREE.BufferGeometry();
   private dummy = new THREE.Object3D();
   private coinMesh: THREE.InstancedMesh;
   private crystalMesh: THREE.InstancedMesh;
@@ -56,7 +23,6 @@ export class Effects {
   private corpses: {
     sprite: THREE.Sprite;
     life: number;
-    vy: number;
     tint: { value: number };
   }[] = [];
   private corpseMaps = [0, 1, 2, 3].map(guardTexture);
@@ -69,35 +35,23 @@ export class Effects {
   private occluders: THREE.Box3[];
   private ray = new THREE.Ray();
   private point = new THREE.Vector3();
-  private combatSprites: CombatSpriteRenderer;
+  private lastHealth = 100;
+  private healing = 0;
+  private healCooldown = 0;
+  private procedural: ProceduralVFX;
+  private screen: CombatScreen;
   readonly visibility: WorldVisibility;
   get impactScene() {
-    return this.combatSprites.scene;
+    return this.procedural.scene;
   }
-  private tintColor = new THREE.Color();
-  private flashMesh: THREE.InstancedMesh;
-  private flashAlpha: THREE.InstancedBufferAttribute;
-  private flashes = Array.from({ length: P.flashCapacity }, () => ({
-    life: 0,
-    max: 0.08,
-    x: 0,
-    y: 0,
-    z: 0,
-    scale: 1,
-    seen: true,
-    color: 0xffffff,
-    rotation: 0,
-    priority: false,
-  }));
   private stats = { impacts: 0, criticalNumbers: 0, deaths: 0, casts: 0 };
   private trailClocks: Float32Array;
-  private spawnWisps: { sprite: THREE.Sprite; life: number }[] = [];
   constructor(
     private scene: THREE.Scene,
     private battle: Battle,
     private camera: THREE.PerspectiveCamera,
-    combatSheets?: readonly CombatSheet[],
   ) {
+    this.lastHealth = battle.health;
     this.trailClocks = new Float32Array(battle.drops.length);
     this.occluders = battle.solids.map(
       (b) =>
@@ -107,50 +61,8 @@ export class Effects {
         ),
     );
     this.visibility = new WorldVisibility(this.occluders, groundHeight);
-    this.combatSprites = new CombatSpriteRenderer(
-      camera,
-      combatSheets,
-      this.visibility,
-    );
-    const flashGeometry = impactSplashGeometry();
-    this.flashAlpha = new THREE.InstancedBufferAttribute(
-      new Float32Array(P.flashCapacity),
-      1,
-    );
-    this.flashAlpha.setUsage(THREE.DynamicDrawUsage);
-    flashGeometry.setAttribute("vfxOpacity", this.flashAlpha);
-    this.flashMesh = new THREE.InstancedMesh(
-      flashGeometry,
-      fadingMaterial(false),
-      P.flashCapacity,
-    );
-    this.flashMesh.setColorAt(0, new THREE.Color(0xffffff));
-    this.flashMesh.count = 0;
-    this.flashMesh.frustumCulled = false;
-    this.flashMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    scene.add(this.flashMesh);
-    this.geometry.setAttribute(
-      "position",
-      new THREE.BufferAttribute(this.positions, 3),
-    );
-    this.geometry.setAttribute(
-      "color",
-      new THREE.BufferAttribute(this.colors, 3),
-    );
-    const points = new THREE.Points(
-      this.geometry,
-      new THREE.PointsMaterial({
-        map: surface("spark"),
-        size: COMBAT_FEEL.particleSize,
-        vertexColors: true,
-        transparent: true,
-        depthTest: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      }),
-    );
-    points.frustumCulled = false;
-    scene.add(points);
+    this.procedural = new ProceduralVFX(scene, camera, this.visibility);
+    this.screen = new CombatScreen(this.procedural.scene);
     this.coinMesh = new THREE.InstancedMesh(
       new THREE.CylinderGeometry(
         LOOT_FEEL.goldRadius,
@@ -193,21 +105,6 @@ export class Effects {
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       scene.add(mesh);
     }
-    const wispMap = glowTexture();
-    for (let i = 0; i < 16; i++) {
-      const sprite = new THREE.Sprite(
-        new THREE.SpriteMaterial({
-          map: wispMap,
-          color: 0x477b7a,
-          transparent: true,
-          opacity: 0,
-          depthWrite: false,
-        }),
-      );
-      sprite.visible = false;
-      scene.add(sprite);
-      this.spawnWisps.push({ sprite, life: 0 });
-    }
     for (let i = 0; i < 20; i++) {
       const sprite = new THREE.Sprite(
         new THREE.SpriteMaterial({
@@ -233,7 +130,7 @@ export class Effects {
             "#include <map_fragment>\ndiffuseColor.rgb=mix(diffuseColor.rgb,vec3(.807,.044,.06),uDeathTint);",
           );
       };
-      this.corpses.push({ sprite, life: 0, vy: 0, tint });
+      this.corpses.push({ sprite, life: 0, tint });
     }
     for (let i = 0; i < 6; i++) {
       const mesh = new THREE.Mesh(
@@ -270,35 +167,18 @@ export class Effects {
     this.numbers = new DamageNumbers(camera, this.visibility);
   }
   get ready() {
-    return this.combatSprites.ready;
+    return Promise.resolve();
   }
   burst(point: THREE.Vector3, color = 0xaaf5d2, count = 18, speed = 3) {
-    const c = new THREE.Color(color);
-    for (let i = 0; i < count; i++) {
-      let p: Particle | undefined;
-      for (let n = 0; n < this.particles.length; n++) {
-        this.cursor = (this.cursor + 1) % this.particles.length;
-        if (this.particles[this.cursor].life <= 0) {
-          p = this.particles[this.cursor];
-          break;
-        }
-      }
-      if (!p) break;
-      const life = 0.18 + Math.random() * 0.25;
-      Object.assign(p, {
-        life,
-        max: life,
-        x: point.x,
-        y: Math.max(point.y, groundHeight(point.x, point.z) + 0.1),
-        z: point.z,
-        vx: (Math.random() - 0.5) * speed,
-        vy: Math.random() * speed,
-        vz: (Math.random() - 0.5) * speed,
-        r: c.r,
-        g: c.g,
-        b: c.b,
-      });
-    }
+    this.procedural.emit(
+      "cast",
+      point.x,
+      point.y,
+      point.z,
+      Math.max(0.3, speed / 3),
+      this.reduced,
+      color,
+    );
   }
   number(
     x: number,
@@ -322,66 +202,55 @@ export class Effects {
     normal?: { x: number; y: number; z: number },
   ) {
     this.stats.impacts++;
-    this.combatSprites.spawn(
-      critical ? "critical" : "normal",
+    this.procedural.emit(
+      critical ? "critical" : "hit",
       x,
       y,
       z,
-      1.25 * scale,
-      1,
+      scale,
+      this.reduced,
       undefined,
-      normal,
+      normal?.x ?? 0,
+      normal?.z ?? 0,
     );
-  }
-  private whiteFlash(
-    x: number,
-    y: number,
-    z: number,
-    scale = 1,
-    color = 0xffffff,
-    priority = false,
-  ) {
-    if (
-      !priority &&
-      this.flashes.filter((f) => f.life > 0).length >= P.flashCapacity - 8
-    )
-      return;
-    const f =
-      this.flashes.find((f) => f.life <= 0 && f.seen) ??
-      (priority ? this.flashes.find((f) => !f.priority) : undefined);
-    if (!f) return;
-    Object.assign(f, {
-      x,
-      y,
-      z,
-      scale: scale * (this.reduced ? 0.8 : 1),
-      color,
-      priority,
-      rotation: (this.stats.impacts + this.stats.deaths) * 2.39996,
-      max: 0.12,
-      life: 0.12,
-      seen: false,
-    });
   }
   cast(point: THREE.Vector3, orb: boolean) {
     this.stats.casts++;
-    this.burst(point, orb ? 0xffb953 : 0x78efd3, 14, 2.2);
-    this.whiteFlash(point.x, point.y, point.z, 0.22);
+    this.procedural.emit(
+      "cast",
+      point.x,
+      point.y,
+      point.z,
+      0.7,
+      this.reduced,
+      orb ? 0xffbd48 : 0x79ffe0,
+    );
   }
   levelUp(x: number, z: number) {
-    this.pulse(x, z);
-    const y = groundHeight(x, z) + 0.65;
-    this.burst(
-      new THREE.Vector3(x, groundHeight(x, z) + 0.5, z),
-      0x75dfff,
-      32,
-      3,
+    this.screen.level();
+    this.pulse(x, z, false);
+    this.procedural.emit(
+      "level",
+      x,
+      groundHeight(x, z) + 0.65,
+      z,
+      1,
+      this.reduced,
     );
-    this.burst(
-      new THREE.Vector3(x, groundHeight(x, z) + 0.6, z),
-      0xffefab,
-      10,
-      2,
+  }
+  playerHurt() {
+    this.screen.hit();
+    this.point
+      .set(-0.65, -0.35, -1.4)
+      .applyQuaternion(this.camera.quaternion)
+      .add(this.camera.position);
+    this.procedural.emit(
+      "hurt",
+      this.point.x,
+      this.point.y,
+      this.point.z,
+      0.3,
+      this.reduced,
     );
   }
   death(x: number, z: number, kind = 0) {
@@ -396,18 +265,39 @@ export class Effects {
     c.life = 0.14;
     c.tint.value = 1;
     this.stats.deaths++;
-    this.combatSprites.spawn("death", x, c.sprite.position.y, z, 1.25 * scale);
+    this.procedural.emit(
+      "death",
+      x,
+      c.sprite.position.y,
+      z,
+      scale,
+      this.reduced,
+    );
   }
   spawn(x: number, z: number) {
-    const w = this.spawnWisps.find((w) => w.life <= 0);
-    if (!w) return;
-    w.sprite.position.set(x, groundHeight(x, z) + 0.45, z);
-    w.life = 0.65;
-    w.sprite.visible = true;
+    this.procedural.emit(
+      "spawn",
+      x,
+      groundHeight(x, z) + 0.45,
+      z,
+      1,
+      this.reduced,
+      0x63d5ae,
+    );
   }
-  pulse(x: number, z: number) {
+  pulse(x: number, z: number, ability = true) {
     this.ringOrigin.set(x, z);
-    this.ringLife = 0.6;
+    this.ringLife = 0.85;
+    if (ability) this.screen.nova();
+    if (ability)
+      this.procedural.emit(
+        "nova",
+        x,
+        groundHeight(x, z) + 0.65,
+        z,
+        1,
+        this.reduced,
+      );
   }
   orb(position: THREE.Vector3, direction: THREE.Vector3) {
     const o = this.orbs.find((o) => o.life <= 0);
@@ -423,29 +313,35 @@ export class Effects {
     z: number,
     y = groundHeight(x, z) + 1,
   ) {
-    this.burst(
-      new THREE.Vector3(x, y, z),
-      kind === "gold" ? 0xffd06c : 0x7cddff,
-      4,
-      0.7,
+    this.procedural.emit(
+      "pickup",
+      x,
+      y,
+      z,
+      1,
+      this.reduced,
+      kind === "gold" ? 0xffda67 : 0x81e7ff,
     );
   }
   step(dt: number, time: number) {
-    for (const p of this.particles) {
-      if (p.life > 0) {
-        p.life -= dt;
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-        p.z += p.vz * dt;
-        p.vy -= 5 * dt;
-        const floor = groundHeight(p.x, p.z) + 0.05;
-        if (p.y < floor) {
-          p.y = floor;
-          p.vy = Math.abs(p.vy) * 0.15;
-          p.vx *= 0.7;
-          p.vz *= 0.7;
-        }
-      }
+    this.healing += Math.max(0, this.battle.health - this.lastHealth);
+    this.lastHealth = this.battle.health;
+    this.healCooldown = Math.max(0, this.healCooldown - dt);
+    if (this.healing >= 0.5 && this.healCooldown === 0) {
+      this.point
+        .set(0.85, -0.5, -1.8)
+        .applyQuaternion(this.camera.quaternion)
+        .add(this.camera.position);
+      this.procedural.emit(
+        "heal",
+        this.point.x,
+        this.point.y,
+        this.point.z,
+        1,
+        this.reduced,
+      );
+      this.healing = 0;
+      this.healCooldown = 0.35;
     }
     let trails = 0;
     for (const d of this.battle.drops)
@@ -454,24 +350,19 @@ export class Effects {
         if (d.magnet && trails < 6 && this.trailClocks[d.id] >= 0.055) {
           this.trailClocks[d.id] = 0;
           trails++;
-          this.burst(
-            new THREE.Vector3(d.x, d.y, d.z),
-            d.kind === "gold" ? 0xf7c95e : 0x66ceff,
+          this.procedural.emit(
+            "trail",
+            d.x,
+            d.y,
+            d.z,
             1,
-            0.25,
+            this.reduced,
+            d.kind === "gold" ? 0xffdb79 : 0x74dcff,
           );
         }
       }
-    this.combatSprites.step(dt);
-    for (const f of this.flashes) if (f.life > 0) f.life -= dt;
-    for (const w of this.spawnWisps)
-      if (w.life > 0) {
-        w.life = Math.max(0, w.life - dt);
-        w.sprite.visible = w.life > 0;
-        w.sprite.position.y += dt * 0.28;
-        w.sprite.scale.set(0.8 + (0.65 - w.life) * 1.5, 0.7, 1);
-        w.sprite.material.opacity = Math.sin((w.life / 0.65) * Math.PI) * 0.22;
-      }
+    this.procedural.step(dt);
+    this.screen.step(dt, this.reduced);
     this.numbers.step(dt);
     for (const c of this.corpses)
       if (c.life > 0) {
@@ -486,6 +377,15 @@ export class Effects {
           delta = o.velocity.clone().multiplyScalar(dt);
         o.mesh.position.add(delta);
         const end = o.mesh.position;
+        this.procedural.emit(
+          "trail",
+          end.x,
+          end.y,
+          end.z,
+          2,
+          this.reduced,
+          0xffa63b,
+        );
         this.ray.set(start, delta.clone().normalize());
         let hit =
           end.y < groundHeight(end.x, end.z) + 0.1 ||
@@ -514,6 +414,14 @@ export class Effects {
         }
         if (hit || o.life <= 0) {
           this.battle.explode(end);
+          this.procedural.emit(
+            "explosion",
+            end.x,
+            end.y,
+            end.z,
+            1,
+            this.reduced,
+          );
           o.life = 0;
           o.mesh.visible = false;
         }
@@ -567,60 +475,14 @@ export class Effects {
     }
     this.missileMesh.count = missileCount;
     this.missileMesh.instanceMatrix.needsUpdate = true;
-    for (let i = 0; i < this.particles.length; i++) {
-      const p = this.particles[i];
-      const at = i * 3;
-      this.positions[at] = p.life > 0 ? p.x : 0;
-      this.positions[at + 1] = p.life > 0 ? p.y : -100;
-      this.positions[at + 2] = p.life > 0 ? p.z : 0;
-      const fade = Math.max(0, p.life / p.max);
-      this.colors[at] = p.r * fade;
-      this.colors[at + 1] = p.g * fade;
-      this.colors[at + 2] = p.b * fade;
-    }
-    this.geometry.attributes.position.needsUpdate = true;
-    this.geometry.attributes.color.needsUpdate = true;
-
     this.camera.updateMatrixWorld();
     this.numbers.render(this.viewportHeight, this.reduced);
-    this.combatSprites.render(this.viewportHeight, this.reduced);
-    let flashes = 0;
-    for (const f of this.flashes)
-      if (f.life > 0 || !f.seen) {
-        const age = f.seen ? f.max - f.life : Math.min(0.025, f.max - f.life),
-          t = Math.min(1, age / f.max),
-          scale = (0.2 + 0.26 * (1 - Math.exp(-age * 45))) * f.scale;
-        this.point
-          .set(
-            this.camera.position.x - f.x,
-            this.camera.position.y - f.y,
-            this.camera.position.z - f.z,
-          )
-          .normalize()
-          .multiplyScalar(0.02);
-        this.dummy.position.set(
-          f.x + this.point.x,
-          f.y + this.point.y,
-          f.z + this.point.z,
-        );
-        this.dummy.quaternion.copy(this.camera.quaternion);
-        this.dummy.rotateZ(f.rotation);
-        this.dummy.scale.setScalar(scale);
-        this.dummy.updateMatrix();
-        this.flashMesh.setMatrixAt(flashes, this.dummy.matrix);
-        this.flashMesh.setColorAt(flashes, this.tintColor.set(f.color));
-        this.flashAlpha.setX(flashes++, 1 - t);
-        f.seen = true;
-      }
-    this.flashMesh.count = flashes;
-    this.flashMesh.instanceMatrix.needsUpdate = true;
-    this.flashMesh.instanceColor!.needsUpdate = true;
-    this.flashAlpha.needsUpdate = true;
-    const radius = 1 + (1 - this.ringLife / 0.6) * 6;
+    this.procedural.render(this.viewportHeight);
+    const radius = 1 + (1 - this.ringLife / 0.85) * 6;
     for (let i = 0; i <= 64; i++)
       for (let side = 0; side < 2; side++) {
         const angle = (i / 64) * Math.PI * 2,
-          r = radius + side * 0.055,
+          r = radius + side * 0.16,
           x = this.ringOrigin.x + Math.cos(angle) * r,
           z = this.ringOrigin.y + Math.sin(angle) * r;
         this.ringPositions.set(
@@ -630,7 +492,7 @@ export class Effects {
       }
     this.ring.geometry.attributes.position.needsUpdate = true;
     (this.ring.material as THREE.MeshBasicMaterial).opacity =
-      this.ringLife / 0.6;
+      this.ringLife / 0.85;
   }
   diagnostics() {
     return {
@@ -638,17 +500,19 @@ export class Effects {
       xp: this.crystalMesh.count,
       cullingDisabled:
         !this.coinMesh.frustumCulled && !this.crystalMesh.frustumCulled,
-      particles: this.particles.filter((p) => p.life > 0).length,
+      particles: this.procedural.simulation.active,
       numberTextures: 0,
-      shards: 0,
-      flashes: this.flashMesh.count,
-      combatSprites: this.combatSprites.diagnostics(),
+      shards: this.procedural.diagnostics().shapes.cubes,
+      flashes: 0,
+      procedural: this.procedural.diagnostics(),
+      screen: this.screen.diagnostics(),
       numbers: this.numbers.diagnostics(),
       totals: { ...this.stats },
     };
   }
   reset() {
-    this.particles.forEach((p) => (p.life = 0));
+    this.lastHealth = this.battle.health;
+    this.healing = this.healCooldown = 0;
     this.numbers.reset();
     for (const c of this.corpses) {
       c.life = 0;
@@ -660,16 +524,9 @@ export class Effects {
     }
     this.ringLife = 0;
     this.trailClocks.fill(0);
-    this.combatSprites.reset();
-    for (const f of this.flashes) {
-      f.life = 0;
-      f.seen = true;
-    }
+    this.procedural.reset();
+    this.screen.reset();
     this.stats = { impacts: 0, criticalNumbers: 0, deaths: 0, casts: 0 };
-    for (const w of this.spawnWisps) {
-      w.life = 0;
-      w.sprite.visible = false;
-    }
   }
   private playerX = 0;
   private playerZ = 0;

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { BarrelSmoke, type Vec3 } from "./ballistics";
+import { particleMaterial } from "./procedural-vfx";
 import { fadingMaterial } from "./vfx-material";
 export class GunVFX {
   readonly smoke = new BarrelSmoke();
@@ -7,8 +8,8 @@ export class GunVFX {
   private core: THREE.InstancedMesh;
   private halo: THREE.InstancedMesh;
   private smokeAlpha = new THREE.InstancedBufferAttribute(
-    new Float32Array(96),
-    1,
+    new Float32Array(96 * 4),
+    4,
   );
   private tracerAlpha = new THREE.InstancedBufferAttribute(
     new Float32Array(32),
@@ -33,27 +34,16 @@ export class GunVFX {
     scene: THREE.Scene,
     private camera: THREE.PerspectiveCamera,
   ) {
-    const cloud = document.createElement("canvas");
-    cloud.width = cloud.height = 64;
-    const g = cloud.getContext("2d")!,
-      pixels = g.createImageData(64, 64);
-    for (let y = 0; y < 64; y++)
-      for (let x = 0; x < 64; x++) {
-        const dx = (x - 31.5) / 31.5,
-          dy = (y - 31.5) / 31.5,
-          r = Math.hypot(dx, dy),
-          at = (y * 64 + x) * 4;
-        const density =
-          Math.pow(Math.max(0, 1 - r * r), 2.5) *
-          (0.8 + 0.2 * Math.sin(x * 0.35 + Math.sin(y * 0.22) * 2));
-        pixels.data.set([159, 184, 181, Math.round(255 * density)], at);
-      }
-    g.putImageData(pixels, 0, 0);
-    const texture = new THREE.CanvasTexture(cloud);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    const sg = new THREE.PlaneGeometry(1, 1);
-    sg.setAttribute("vfxOpacity", this.smokeAlpha);
-    this.puffs = new THREE.InstancedMesh(sg, fadingMaterial(true, texture), 96);
+    const sg = new THREE.PlaneGeometry(1, 1),
+      smokeColor = new THREE.InstancedBufferAttribute(
+        new Float32Array(96 * 3),
+        3,
+      ),
+      tint = new THREE.Color(0xa6bbb6);
+    for (let i = 0; i < 96; i++) smokeColor.setXYZ(i, tint.r, tint.g, tint.b);
+    sg.setAttribute("effectData", this.smokeAlpha);
+    sg.setAttribute("effectColor", smokeColor);
+    this.puffs = new THREE.InstancedMesh(sg, particleMaterial(), 96);
     const white = new THREE.Color(0xffffff);
     for (let i = 0; i < 96; i++) this.puffs.setColorAt(i, white);
     const tg = new THREE.PlaneGeometry(1, 1);
@@ -122,7 +112,7 @@ export class GunVFX {
         this.dummy.scale.setScalar(p.size * (1 + age * 4));
         this.dummy.updateMatrix();
         this.puffs.setMatrixAt(count, this.dummy.matrix);
-        this.smokeAlpha.setX(count++, alpha);
+        this.smokeAlpha.setXYZW(count++, 4, alpha * 1.4, age, p.phase);
       }
     this.puffs.count = count;
     this.puffs.instanceMatrix.needsUpdate = true;

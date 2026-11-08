@@ -157,7 +157,7 @@ export class UI {
   hit() {
     this.damage = 1;
     this.syncHealth();
-    $("damage-overlay").style.opacity = ".5";
+    $("damage-overlay").style.opacity = "0";
   }
   reset() {
     this.highlightAnimation?.cancel();
@@ -253,6 +253,6 @@ export class UI {
           : `${w.magazines[id]}/${w.reserves[id]}`;
     }
     this.damage = Math.max(0, this.damage - dt * 2);
-    $("damage-overlay").style.opacity = String(this.damage * 0.5);
+    $("damage-overlay").style.opacity = "0";
   }
 }

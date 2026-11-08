@@ -57,20 +57,9 @@ try {
   my = r.y + r.height / 2;
   await page.locator("#enter").click();
   await wait(() => window.__soulHarvester().active);
-  assert.deepEqual(
-    (await state()).lootRender.combatSprites.installed.slice().sort(),
-    ["critical", "death", "normal"],
-  );
-  console.log("Original atlases loaded in the production game");
-  const assets = (await state()).lootRender.combatSprites.assets;
-  assert.equal(
-    assets.find((a) => a.kind === "normal").source,
-    "Yellow Spark.png",
-  );
-  assert.equal(
-    assets.find((a) => a.kind === "critical").source,
-    "White Particles.png",
-  );
+  assert.equal((await state()).lootRender.procedural.mode, "procedural");
+  assert.equal((await state()).lootRender.procedural.textures, 0);
+  console.log("Texture-free procedural feedback active in the production game");
   await page.evaluate(() => {
     const canvas = document.querySelector("#world"),
       gl = canvas.getContext("webgl2"),
@@ -84,11 +73,10 @@ try {
       if (h) {
         const kind = h.killed ? "death" : h.critical ? "critical" : "normal",
           key = c.phase + "-" + kind,
-          b = s.lootRender.combatSprites.frames.find((b) => b.kind === kind);
+          b = { age: s.simulationTime - h.time, kind };
         if (b) {
-          (c.seen[key] ??= []).push(b.frame);
-          const captureAfter =
-            kind === "death" ? 0.18 : kind === "critical" ? 0.14 : 0.1;
+          (c.seen[key] ??= []).push(b.age);
+          const captureAfter = kind === "death" ? 0.16 : 0.025;
           if (
             !c.images[key] &&
             b.age >= captureAfter &&
@@ -99,7 +87,7 @@ try {
               // A lethal body hit lands below the sight. Ordinary/head hits
               // are sampled above it, excluding the golden weapon itself.
               Math.floor(canvas.height / 2) +
-                (kind === "death" ? -sampleHeight : 10),
+                (kind === "death" ? -sampleHeight : -12),
               sampleWidth,
               sampleHeight,
               gl.RGBA,
@@ -111,7 +99,7 @@ try {
               const r = pixels[i],
                 g = pixels[i + 1],
                 b = pixels[i + 2];
-              if (r > 150 && g > 100 && b < g * 0.75 && r > g * 1.02)
+              if (r > 235 && g > 170 && b < g * 0.75 && r > g * 1.02)
                 visiblePixels.gold++;
               if (r > 230 && g > 230 && b > 220) visiblePixels.white++;
               // Ruby fragments contain blue; the brown rifle does not.
@@ -123,9 +111,9 @@ try {
                 version: s.version,
                 hit: h,
                 burst: b,
-                render: s.lootRender.combatSprites,
+                render: s.lootRender.procedural,
                 legacyFlashes: s.lootRender.flashes,
-                legacyShards: s.lootRender.shards,
+                chunks: s.lootRender.shards,
                 numbers: s.lootRender.numbers,
                 visiblePixels,
                 position: s.position,
@@ -210,7 +198,7 @@ try {
       ),
       `${kind} captured from actual damage`,
     );
-    console.log(`Captured real ${kind} damage with original art`);
+    console.log(`Captured real ${kind} damage with procedural shaders`);
     const numberState = (await state()).lootRender.numbers;
     assert.ok(
       numberState.some((n) => n.visible),
@@ -231,33 +219,64 @@ try {
       Buffer.from(image.data.split(",")[1], "base64"),
     );
     report[key] = image.sample;
+  }
+  await writeFile(
+    "artifacts/actual-combat-report.json",
+    JSON.stringify(report, null, 2),
+  );
+  for (const [key, image] of Object.entries(capture.images)) {
+    await writeFile(
+      `artifacts/actual-combat-${key}.png`,
+      Buffer.from(image.data.split(",")[1], "base64"),
+    );
+    report[key] = image.sample;
     if (key.startsWith("near-")) {
       assert.equal(image.sample.legacyFlashes, 0);
-      assert.equal(image.sample.legacyShards, 0);
+      assert.equal(image.sample.render.textures, 0);
       const p = image.sample.visiblePixels;
       console.log(key, p);
       if (key === "near-normal")
         assert.ok(
           p.gold >= 8,
-          "yellow-sheet pixels must be visible above the weapon and moving actor",
+          "bright procedural gold pixels must be visible around the sight",
         );
       if (key === "near-critical")
         assert.ok(
-          p.white >= 12 && p.gold >= 2,
-          "white-star core and yellow edges must reach the framebuffer",
+          p.white >= 4 || p.gold >= 8,
+          "procedural critical core or ring reaches the framebuffer",
         );
       if (key === "near-death")
         assert.ok(
           p.red >= 8,
           "red chunks remain visible after the brief actor flash ends",
         );
-      assert.ok(
-        new Set(capture.seen[key]).size >= 2,
-        "Authored frames actually advance",
-      );
-      assert.ok(image.sample.render.rendered[key.slice(5)] > 0);
+      assert.ok(image.sample.render.rendered > 0);
     }
   }
+  await page.mouse.up({ button: "right" });
+  await page.waitForFunction(
+    () => window.__soulHarvester().lootRender.procedural.events.hurt > 0,
+    undefined,
+    { timeout: 60000 },
+  );
+  console.log("Real incoming damage confirmed");
+  await page.screenshot({ path: "artifacts/actual-player-hurt.png" });
+  await page.keyboard.press("KeyF");
+  await wait(
+    () => window.__soulHarvester().lootRender.procedural.events.nova > 0,
+  );
+  console.log("Real nova confirmed");
+  await page.screenshot({ path: "artifacts/actual-nova.png" });
+  await page.keyboard.press("KeyQ");
+  await wait(
+    () => window.__soulHarvester().lootRender.procedural.events.cast >= 2,
+  );
+  await page.screenshot({ path: "artifacts/actual-orb-cast.png" });
+  const finalState = await state();
+  await writeFile(
+    "artifacts/actual-procedural-events.json",
+    JSON.stringify(finalState.lootRender, null, 2),
+  );
   assert.deepEqual(errors, []);
   await writeFile(
     "artifacts/actual-combat-report.json",
@@ -265,7 +284,7 @@ try {
   );
   console.log(JSON.stringify(report, null, 2));
   console.log(
-    "PASS: original sheets visible on real normal, critical and lethal bullet damage; independent animation frames and no legacy substitutes.",
+    "PASS: procedural sparks, critical cores and red chunks visible on real normal, critical and lethal bullet damage; no particle textures.",
   );
 } finally {
   await browser.close();

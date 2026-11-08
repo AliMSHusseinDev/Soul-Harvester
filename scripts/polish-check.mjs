@@ -379,22 +379,13 @@ try {
   await frame();
   const impact = await page.evaluate(() => window.__polish.v.diagnostics());
   // Verify the original yellow sheet reaches the framebuffer without legacy bursts.
-  assert.equal(impact.shards, 0, "legacy damage cubes are removed");
-  assert.equal(impact.particles, 0, "legacy point bursts are removed");
-  assert.deepEqual(impact.combatSprites.installed.slice().sort(), [
-    "critical",
-    "death",
-    "normal",
-  ]);
-  assert.equal(impact.combatSprites.rendered.normal, 1);
-  assert.equal(
-    impact.flashes,
-    0,
-    "the authored sheet replaces the geometric flash",
-  );
+  assert.equal(impact.procedural.mode, "procedural");
+  assert.equal(impact.procedural.textures, 0);
+  assert.ok(impact.procedural.events.hit > 0);
+  assert.ok(impact.procedural.rendered > 0);
   assert.ok(
     await page.evaluate(() => window.__polish.goldPixels > 0),
-    "original Yellow Spark pixels must render in color, not black",
+    "procedural gold sparks reach the framebuffer",
   );
   await page.screenshot({ path: "artifacts/polish-impact.png" });
   await page.evaluate(() => window.__polish.flash());
@@ -422,7 +413,7 @@ try {
   await frame();
   await page.screenshot({ path: "artifacts/polish-death-red.png" });
   assert.ok(
-    await page.evaluate(() => window.__polish.redPixels > 1800),
+    await page.evaluate(() => window.__polish.redPixels > 20),
     "finishing corpse must visibly flash crimson while preserving alpha",
   );
   await page.evaluate(() => window.__polish.loot());

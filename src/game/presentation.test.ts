@@ -1,7 +1,6 @@
 import { it, expect } from "vitest";
 import {
   AbilityPresentation,
-  PixelShards,
   damageNumberPose,
   damageLabel,
 } from "./presentation";
@@ -37,15 +36,6 @@ it("releases each queued ability once after anticipation and clears on reset", (
   p.begin("orb");
   p.reset();
   expect(p.update(1)).toHaveLength(0);
-});
-it("bounds colorful shard bursts and releases every slot without touching game entities", () => {
-  const p = new PixelShards();
-  expect(p.spawn(0, 1, 0, 10000, true)).toBe(P.shardCapacity);
-  expect(p.spawn(0, 1, 0, 2)).toBe(0);
-  expect(new Set(p.items.map((p) => p.color)).size).toBeGreaterThan(3);
-  for (let i = 0; i < 90; i++) p.update(1 / 60, () => 0);
-  expect(p.items.every((p) => p.life === 0 && p.y >= 0.04)).toBe(true);
-  expect(p.spawn(0, 1, 0, 8)).toBe(8);
 });
 it("keeps number motion finite, strictly rising and continuous through the pop peak", () => {
   for (const critical of [false, true]) {

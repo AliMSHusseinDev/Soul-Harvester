@@ -1,23 +1,21 @@
-// Test-only diagnostic atlases exercise UVs/alpha/animation. They are not the supplied art.
 import { createServer } from "vite";
 import { chromium } from "playwright";
 import { mkdir, writeFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 await mkdir("artifacts", { recursive: true });
-const useOriginals = process.env.VFX_ORIGINALS === "1";
 const server = await createServer({
   configFile: false,
   root: process.cwd(),
   server: { host: "127.0.0.1", port: 5191, strictPort: true },
   plugins: [
     {
-      name: "combat-vfx-fixture",
+      name: "procedural-fixture",
       configureServer(s) {
         s.middlewares.use((req, res, next) => {
-          if (req.url !== "/combat-fixture.html") return next();
+          if (req.url !== "/fixture") return next();
           res.setHeader("Content-Type", "text/html");
           res.end(
-            '<!doctype html><html><head><link rel="icon" href="data:,"></head><body style="margin:0"><canvas id="world"></canvas></body></html>',
+            '<html><head><link rel="icon" href="data:,"></head><body style="margin:0"><canvas id="world"></canvas></body></html>',
           );
         });
       },
@@ -26,7 +24,6 @@ const server = await createServer({
 });
 await server.listen();
 let browser;
-const reports = [];
 try {
   browser = await chromium.launch({
     executablePath: process.env.CHROMIUM_PATH || "/usr/bin/chromium",
@@ -38,370 +35,221 @@ try {
       "--disable-dev-shm-usage",
     ],
   });
+  const page = await browser.newPage({
+      viewport: { width: 1280, height: 720 },
+    }),
+    errors = [],
+    requests = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push(m.text());
+  });
+  page.on("request", (r) => requests.push(r.url()));
+  await page.goto("http://127.0.0.1:5191/fixture");
+  await page.evaluate(async () => {
+    const T = await import("/node_modules/three/build/three.module.js"),
+      { Effects } = await import("/src/game/effects.ts"),
+      { Battle } = await import("/src/game/battle.ts");
+    const renderer = new T.WebGLRenderer({
+      canvas: document.querySelector("canvas"),
+      antialias: false,
+      preserveDrawingBuffer: true,
+    });
+    renderer.autoClear = false;
+    renderer.info.autoReset = false;
+    const scene = new T.Scene(),
+      camera = new T.PerspectiveCamera(62, 16 / 9, 0.06, 180);
+    scene.background = new T.Color(0x102e2c);
+    camera.position.set(0, 2, -27);
+    camera.lookAt(0, 1, -35);
+    camera.updateMatrixWorld();
+    scene.add(new T.HemisphereLight(0xc8efdf, 0x27341e, 2));
+    const floor = new T.Mesh(
+      new T.PlaneGeometry(80, 80).rotateX(-Math.PI / 2),
+      new T.MeshBasicMaterial({ color: 0x163c2d }),
+    );
+    floor.position.z = -45;
+    scene.add(floor);
+    const actor = new T.Mesh(
+      new T.BoxGeometry(1.25, 1.7, 0.2),
+      new T.MeshBasicMaterial({ color: 0x287466 }),
+    );
+    actor.position.set(0, 0.85, -35);
+    scene.add(actor);
+    const fx = new Effects(scene, new Battle([]), camera);
+    await fx.ready;
+    const wall = new T.Mesh(
+      new T.BoxGeometry(8, 6, 0.4),
+      new T.MeshBasicMaterial({ color: 0x334444 }),
+    );
+    wall.position.set(0, 2, -32);
+    wall.visible = false;
+    scene.add(wall);
+    const draw = () => {
+      camera.updateMatrixWorld();
+      fx.render(0);
+      renderer.info.reset();
+      renderer.clear();
+      renderer.render(scene, camera);
+      renderer.render(fx.impactScene, camera);
+    };
+    window.fixture = {
+      fx,
+      renderer,
+      camera,
+      scene,
+      draw,
+      show(event, age, width, height, reduced = false) {
+        fx.reset();
+        fx.reduced = reduced;
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
+        wall.visible = false;
+        fx.visibility.rebuild([]);
+        if (event === "hit" || event === "critical")
+          fx.impact(0, 1.1, -34.86, event === "critical");
+        else if (event === "death") fx.death(0, -35);
+        else if (event === "nova") fx.pulse(0, -35);
+        else if (event === "level") fx.levelUp(0, -35);
+        else if (event === "hurt") fx.playerHurt();
+        else if (event === "near")
+          fx["procedural"].emit("death", 0, 1.8, -27.9);
+        else if (event === "heal") fx["procedural"].emit("heal", 0, 1.1, -34.8);
+        else if (event === "cast") fx.cast(new T.Vector3(0, 1, -35), true);
+        else if (event === "explosion")
+          fx["procedural"].emit("explosion", 0, 1, -35);
+        else fx.pickup(event === "gold" ? "gold" : "xp", 0, -35, 1);
+        for (let i = 0; i < Math.ceil(age * 120); i++)
+          fx.step(1 / 120, i / 120);
+        draw();
+        const pixels = new Uint8Array(width * height * 4);
+        renderer
+          .getContext()
+          .readPixels(0, 0, width, height, 6408, 5121, pixels);
+        let gold = 0,
+          white = 0,
+          red = 0,
+          cyan = 0;
+        for (let i = 0; i < pixels.length; i += 4) {
+          const r = pixels[i],
+            g = pixels[i + 1],
+            b = pixels[i + 2];
+          if (r > 150 && g > 100 && b < g * 0.75) gold++;
+          if (r > 230 && g > 230 && b > 220) white++;
+          if (r > 90 && r > g * 1.6 && b > g) red++;
+          if (g > 150 && b > 140 && r < g * 0.9) cyan++;
+        }
+        return {
+          ...fx.diagnostics(),
+          pixels: { gold, white, red, cyan },
+          memory: { ...renderer.info.memory },
+        };
+      },
+      occlude() {
+        fx.reset();
+        wall.visible = true;
+        fx.visibility.rebuild([new T.Box3().setFromObject(wall)]);
+        fx.impact(0, 1, -35, true);
+        fx.step(0.02, 0);
+        draw();
+        return fx.diagnostics();
+      },
+      stress() {
+        wall.visible = false;
+        fx.visibility.rebuild([]);
+        fx.reset();
+        for (let i = 0; i < 150; i++) {
+          fx.impact(
+            ((i % 7) - 3) * 0.6,
+            1,
+            -34 - Math.floor(i / 7),
+            i % 3 === 0,
+          );
+          if (i % 4 === 0)
+            fx.death(((i % 7) - 3) * 0.6, -36 - Math.floor(i / 7));
+        }
+        draw();
+        const peak = fx.diagnostics();
+        for (let i = 0; i < 360; i++) fx.step(1 / 60, 0);
+        draw();
+        return {
+          peak,
+          end: fx.diagnostics(),
+          memory: { ...renderer.info.memory },
+        };
+      },
+    };
+  });
+  const report = [];
   for (const [width, height] of [
     [1280, 720],
     [1920, 1080],
   ]) {
-    const page = await browser.newPage({
-        viewport: { width, height },
-        deviceScaleFactor: 1,
-      }),
-      errors = [];
-    page.on("pageerror", (e) => errors.push(e.message));
-    page.on("console", (m) => {
-      if (m.type() === "error") errors.push(m.text());
-    });
-    await page.goto("http://127.0.0.1:5191/combat-fixture.html");
-    const report = await page.evaluate(
-      async ({ width, height, useOriginals }) => {
-        const [T, { Effects }, { Battle }, { Enemies }] = await Promise.all([
-          import("/node_modules/three/build/three.module.js"),
-          import("/src/game/effects.ts"),
-          import("/src/game/battle.ts"),
-          import("/src/game/enemies.ts"),
-        ]);
-        const check = (value, reason) => {
-          if (!value) throw new Error(reason);
-        };
-        let sheets = ["normal", "critical", "death"].map((kind, category) => {
-          const canvas = document.createElement("canvas"),
-            columns = [4, 3, 5][category],
-            rows = 2;
-          canvas.width = columns * 32;
-          canvas.height = rows * 32;
-          const g = canvas.getContext("2d"),
-            frames = [];
-          for (let i = 0; i < columns * rows; i++) {
-            const x = (i % columns) * 32 + 2,
-              y = Math.floor(i / columns) * 32 + 2;
-            // Different diagnostic shapes per frame, with genuine alpha and dark outlines.
-            g.fillStyle = "#090d13";
-            g.fillRect(x + 8, y + 8, 12, 12);
-            g.fillStyle = ["#ffd963", "#fff4cd", "#e83949"][category];
-            g.fillRect(x + 9, y + 9, 10, 10);
-            g.fillRect(x + i, y + 13, 28 - i, 2);
-            frames.push({ x, y, width: 28, height: 28, coverage: 0.24 });
-          }
-          return {
-            kind,
-            url: canvas.toDataURL(),
-            width: canvas.width,
-            height: canvas.height,
-            frames,
-            anchor: [0.5, 0.5],
-          };
-        });
-        if (useOriginals)
-          sheets = (await import("/src/game/combat-assets.ts")).COMBAT_ASSETS;
-        const renderer = new T.WebGLRenderer({
-          canvas: document.querySelector("canvas"),
-          antialias: false,
-          preserveDrawingBuffer: true,
-        });
-        renderer.setSize(width, height);
-        renderer.setPixelRatio(1);
-        renderer.autoClear = false;
-        renderer.info.autoReset = false;
-        renderer.outputColorSpace = T.SRGBColorSpace;
-        const scene = new T.Scene();
-        scene.background = new T.Color(0x173b3b);
-        scene.add(new T.HemisphereLight(0xaad6d8, 0x253522, 2));
-        const camera = new T.PerspectiveCamera(60, width / height, 0.06, 90);
-        camera.position.set(0, 1.3, -33);
-        camera.lookAt(0, 1.3, -39);
-        camera.updateMatrixWorld();
-        const battle = new Battle([]),
-          effects = new Effects(scene, battle, camera, sheets),
-          enemies = new Enemies(scene, battle);
-        effects.resize(height);
-        await effects.ready;
-        const draw = () => {
-          enemies.update(0, camera.rotation.y);
-          effects.render(0);
-          renderer.info.reset();
-          renderer.render(scene, camera);
-          renderer.render(effects.impactScene, camera);
-        };
-        const drain = () => {
-          for (const e of battle.events) {
-            if (e.kind === "hit" && !e.killed)
-              effects.impact(e.x, e.y, e.z, e.critical, true);
-            if (e.kind === "kill") effects.death(e.x, e.z, e.value);
-          }
-          battle.events.length = 0;
-        };
-        Object.assign(battle.enemies[0], {
-          active: true,
-          x: 0,
-          z: -39,
-          previousX: 0,
-          previousZ: -39,
-          hp: 200,
-          maxHp: 200,
-          spawnAge: 1,
-          speedFactor: 0,
-        });
-        const hit = (critical, value = 19) => {
-          battle.damageEnemy(0, value, { x: 0, z: -33 }, 0, {
-            x: 0,
-            y: 1.1,
-            z: -38.96,
-            bullet: true,
-            critical,
-          });
-          drain();
-          draw();
-        };
-        draw();
-        hit(false);
-        check(
-          effects.diagnostics().combatSprites.active === 1,
-          "One normal sheet per confirmed non-lethal hit",
-        );
-        check(
-          effects.diagnostics().flashes === 0,
-          "Authored art replaces the old geometric flash",
-        );
-        check(
-          enemies.diagnostics().flashing === 1,
-          "Enemy surface flashes independently",
-        );
-        const normal = effects.impactScene.getObjectByName(
-          "authored-combat-normal",
-        );
-        check(normal.count === 1, "Normal category draw");
-        const origin = normal.instanceMatrix.array.slice(12, 15),
-          normalUV = Array.from(
-            normal.geometry.attributes.combatRect.array.slice(0, 4),
-          );
-        effects.step(0.08, 0);
-        hit(false);
-        const uv = normal.geometry.attributes.combatRect.array;
-        check(
-          uv[0] !== uv[4] || uv[1] !== uv[5],
-          "Overlapping animations keep independent frames",
-        );
-        // Depth sorting may change upload order; the advancing burst need not
-        // remain in slot zero after another burst is spawned.
-        let advanced = false;
-        for (let instance = 0; instance < normal.count; instance++)
-          for (let component = 0; component < 4; component++)
-            advanced ||=
-              Math.abs(normalUV[component] - uv[instance * 4 + component]) >
-              1e-6;
-        check(advanced, "Elapsed time advances authored UVs");
-        camera.position.set(3.6, 1.3, -34.2);
-        camera.lookAt(0, 1.1, -39);
-        draw();
-        check(
-          effects.diagnostics().shards === 0 &&
-            effects.diagnostics().particles === 0,
-          "Damage uses original sheets without legacy cubes or points",
-        );
-        check(
-          origin.every(
-            (v, i) => Math.abs(v - normal.instanceMatrix.array[12 + i]) < 1e-5,
-          ),
-          "Impact origin remains in world space",
-        );
-        const billboard = new T.Vector3()
-            .setFromMatrixColumn(
-              new T.Matrix4().fromArray(normal.instanceMatrix.array),
-              2,
-            )
-            .normalize(),
-          cameraForward = new T.Vector3(0, 0, 1).applyQuaternion(
-            camera.quaternion,
-          );
-        check(
-          billboard.dot(cameraForward) > 0.9999,
-          "Only the authored layer faces the active camera",
-        );
-        camera.position.set(0, 1.3, -33);
-        camera.lookAt(0, 1.3, -39);
-        draw();
-        effects.reset();
-        hit(true);
-        const flashes = enemies.flashes[0];
-        check(
-          flashes.getX(0) > 1,
-          "Critical metadata strengthens the same white surface flash",
-        );
-        check(
-          effects.impactScene.getObjectByName("authored-combat-critical")
-            .count === 1 && normal.count === 0,
-          "Critical replaces normal artwork",
-        );
-        effects.reset();
-        hit(true, 1000);
-        battle.damageEnemy(0, 1000, { x: 0, z: -33 });
-        drain();
-        draw();
-        check(
-          effects.diagnostics().totals.deaths === 1,
-          "Exactly one lethal effect after repeated damage to a dead enemy",
-        );
-        check(
-          effects.impactScene.getObjectByName("authored-combat-death").count ===
-            1 &&
-            effects.impactScene.getObjectByName("authored-combat-critical")
-              .count === 0,
-          "Critical lethal prioritizes red, independently of the removed enemy",
-        );
-        check(
-          effects.corpses.some((c) => c.life > 0 && c.tint.value === 1),
-          "Death overrides the body flash with red tint",
-        );
-        effects.step(0.7, 0);
-        draw();
-        const death = effects.impactScene.getObjectByName(
-            "authored-combat-death",
-          ),
-          last = sheets[2].frames.at(-1);
-        check(
-          Math.abs(
-            death.geometry.attributes.combatRect.getX(0) -
-              (last.x + 0.5) / sheets[2].width,
-          ) < 1e-6,
-          "Final authored frame survives catch-up",
-        );
-        effects.step(1 / 60, 0);
-        draw();
-        check(
-          effects.diagnostics().combatSprites.active === 0 && death.count === 0,
-          "Finished effects release their slots",
-        );
-        effects.reset();
-        effects.impact(0, 1.3, -39, false, true);
-        effects.step(0.12, 0);
-        draw();
-        // GPU pixel checks detect black quads and prove the sampled art reaches the framebuffer.
-        const pixels = new Uint8Array(width * height * 4),
-          gl = renderer.getContext();
-        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-        let gold = 0;
-        for (let i = 0; i < pixels.length; i += 4)
-          if (
-            pixels[i] > 150 &&
-            pixels[i + 1] > 110 &&
-            pixels[i + 2] < pixels[i + 1] * 0.75
-          )
-            gold++;
-        check(gold > 30, "Crisp authored atlas texels render in color");
-        const backgroundAt =
-          ((Math.floor(height / 2) - 18) * width + Math.floor(width / 2) - 18) *
-          4;
-        check(
-          pixels[backgroundAt + 1] > 30,
-          "Transparent frame padding has no opaque black rectangle",
-        );
-        const wall = new T.Mesh(
-          new T.BoxGeometry(4, 4, 0.1),
-          new T.MeshBasicMaterial({ color: 0x235f78 }),
-        );
-        wall.position.set(0, 1.3, -37);
-        scene.add(wall);
-        effects.visibility.rebuild([new T.Box3().setFromObject(wall)]);
-        draw();
-        const center = new Uint8Array(4);
-        gl.readPixels(
-          width / 2,
-          height / 2,
-          1,
-          1,
-          gl.RGBA,
-          gl.UNSIGNED_BYTE,
-          center,
-        );
-        check(
-          center[2] > center[0] && center[0] < 80,
-          "Opaque world geometry correctly occludes the effects",
-        );
-        scene.remove(wall);
-        effects.visibility.rebuild([]);
-        wall.geometry.dispose();
-        wall.material.dispose();
-        for (const kind of ["normal", "critical", "death"]) {
-          const mesh = effects.impactScene.getObjectByName(
-              `authored-combat-${kind}`,
-            ),
-            texture = mesh.material.map;
-          check(
-            texture.magFilter === T.NearestFilter &&
-              texture.minFilter === T.NearestFilter &&
-              !texture.generateMipmaps,
-            "Nearest filtering, no atlas mip bleed",
-          );
-          check(
-            !mesh.material.depthTest &&
-              !mesh.material.depthWrite &&
-              !mesh.material.toneMapped,
-            "Correct depth and unlit sprite color",
-          );
-        }
-        effects.reset();
-        const timings = [];
-        let baseline;
-        for (let frame = 0; frame < 120; frame++) {
-          const start = performance.now();
-          for (let i = 0; i < 8; i++)
-            effects.impact(
-              ((i % 4) - 1.5) * 0.3,
-              1.3,
-              -39 - Math.floor(i / 4),
-              i % 3 === 0,
-              true,
-            );
-          if (frame % 12 === 0) effects.death(0.5, -39, frame % 4);
-          effects.step(1 / 60, frame / 60);
-          effects.render(frame / 60);
-          timings.push(performance.now() - start);
-          renderer.info.reset();
-          renderer.render(scene, camera);
-          renderer.render(effects.impactScene, camera);
-          if (frame === 60) baseline = { ...renderer.info.memory };
-        }
-        check(
-          effects.diagnostics().combatSprites.active <= 48 &&
-            effects.diagnostics().shards === 0,
-          "Bounded sprite and fragment pools",
-        );
-        check(
-          renderer.info.memory.geometries === baseline.geometries &&
-            renderer.info.memory.textures === baseline.textures,
-          "Automatic fire does not allocate GPU geometry/textures after warmup",
-        );
-        timings.sort((a, b) => a - b);
-        const diagnostic = effects.diagnostics();
-        window.__combatFixture = { renderer, scene, camera, effects, draw };
-        return {
-          width,
-          height,
-          diagnostic,
-          drawCalls: renderer.info.render.calls,
-          cpuUpdateMeanMs: timings.reduce((a, b) => a + b, 0) / timings.length,
-          cpuUpdateP95Ms: timings[Math.floor(timings.length * 0.95)],
-          memory: { ...renderer.info.memory },
-          testArtwork: useOriginals
-            ? "original user PNGs from Damage Particles.zip"
-            : "synthetic diagnostic atlas",
-        };
-      },
-      { width, height, useOriginals },
+    await page.setViewportSize({ width, height });
+    for (const [event, age] of [
+      ["hit", 0.07],
+      ["critical", 0.07],
+      ["death", 0.2],
+      ["nova", 0.2],
+      ["explosion", 0.2],
+      ["cast", 0.08],
+      ["gold", 0.08],
+      ["xp", 0.08],
+      ["hurt", 0.08],
+      ["heal", 0.08],
+      ["near", 0.18],
+      ["level", 0.2],
+    ]) {
+      const result = await page.evaluate(
+        ({ event, age, width, height }) =>
+          window.fixture.show(event, age, width, height),
+        { event, age, width, height },
+      );
+      assert.equal(result.procedural.textures, 0);
+      assert.ok(result.procedural.rendered > 0, `${event} draws particles`);
+      if (event === "hit" || event === "critical" || event === "explosion")
+        assert.ok(result.pixels.gold > 15, `${event} gold pixels`);
+      if (event === "death" || event === "hurt")
+        assert.ok(result.pixels.red > 15, `${event} ruby pixels`);
+      if (event === "level" || event === "nova" || event === "xp")
+        assert.ok(result.pixels.cyan > 15, `${event} cyan pixels`);
+      await page.screenshot({
+        path: `artifacts/procedural-${height}-${event}.png`,
+      });
+      report.push({ width, height, event, ...result });
+    }
+    assert.equal(
+      (await page.evaluate(() => window.fixture.occlude())).procedural.shapes
+        .overlay,
+      0,
+      "static wall rejects impact overlays",
     );
-    assert.deepEqual(errors, [], "Browser/shader errors");
-    assert.deepEqual(report.diagnostic.combatSprites.errors, []);
-    await page.screenshot({ path: `artifacts/combat-fixture-${height}p.png` });
-    reports.push(report);
-    await page.close();
   }
-  await writeFile(
-    "artifacts/combat-vfx-report.json",
-    JSON.stringify(reports, null, 2),
+  const full = await page.evaluate(() =>
+      window.fixture.show("critical", 0.02, 1280, 720),
+    ),
+    low = await page.evaluate(() =>
+      window.fixture.show("critical", 0.02, 1280, 720, true),
+    );
+  assert.ok(low.procedural.active < full.procedural.active);
+  assert.equal(low.procedural.shapes.overlay, 2);
+  const stress = await page.evaluate(() => window.fixture.stress());
+  assert.ok(stress.peak.procedural.active <= 1536);
+  assert.ok(stress.peak.procedural.draws <= 3);
+  assert.equal(stress.end.procedural.active, 0);
+  assert.equal(
+    requests.filter((u) => /vfx\/combat|\.png(?:\?|$)/.test(u)).length,
+    0,
+    "no image/atlas particle downloads",
   );
-  console.log(JSON.stringify(reports, null, 2));
+  assert.deepEqual(errors, []);
+  await writeFile(
+    "artifacts/procedural-report.json",
+    JSON.stringify({ report, stress }, null, 2),
+  );
   console.log(
-    `PASS: ${useOriginals ? "original user" : "diagnostic"} atlases, independent frames, no legacy damage bursts, billboard orbit, occlusion, event priority, cleanup and bounded stress at 720p/1080p.`,
+    "PASS: texture-free shaders, 12 event scenarios at 720p/1080p, GPU colors, world occlusion, reduced mode, capacity and cleanup.",
   );
 } finally {
   await browser?.close();

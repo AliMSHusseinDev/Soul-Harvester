@@ -1,6 +1,6 @@
 {
   "name": "soul-harvester",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,7 +13,7 @@
     "format:check": "prettier --check src scripts index.html package.json tsconfig.json README.md",
     "test:visual": "node scripts/visual-check.mjs",
     "test:polish": "node scripts/polish-check.mjs",
-    "test:combat-vfx": "python scripts/combat-asset-test.py && node scripts/combat-vfx-check.mjs",
+    "test:combat-vfx": "node scripts/combat-vfx-check.mjs",
     "test:handling": "node scripts/handling-check.mjs",
     "bench:ai": "node scripts/ai-benchmark.mjs"
   },

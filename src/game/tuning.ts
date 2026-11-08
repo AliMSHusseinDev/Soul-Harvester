@@ -76,14 +76,9 @@ export const PRESENTATION = {
   orbWindup: 0.16,
   numberLife: 0.82,
   criticalNumberLife: 1.0,
-  shardCapacity: 640,
   flashCapacity: 40,
   labelCapacity: 32,
-  numberTextureLimit: 64,
-  priorityReserve: 96,
   ambientMotes: 224,
-  levelFragments: 42,
-  levelStreaks: 12,
 } as const;
 export const COMBAT_FEEL = {
   flashDuration: 0.12,
@@ -91,13 +86,6 @@ export const COMBAT_FEEL = {
   reactionDuration: 0.18,
   hitMarkerDuration: 0.2,
   killMarkerDuration: 0.25,
-  particleSize: 0.052,
-  impactCount: 18,
-  criticalImpactCount: 24,
-  impactStreaks: 6,
-  deathCount: 32,
-  bruteDeathCount: 40,
-  deathStreaks: 8,
 } as const;
 export const LIGHTING = {
   exposure: 1.16,

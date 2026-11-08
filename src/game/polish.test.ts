@@ -5,8 +5,6 @@ import { Stamina } from "./stamina";
 import { Handling } from "./handling";
 import { LabelLayout } from "./label-layout";
 import { Muzzle, muzzleOpening } from "./muzzle";
-import { PixelShards } from "./presentation";
-import { impactSplashGeometry, projectedFragmentSize } from "./combat-vfx";
 it("holds true zero stamina before regeneration and requires enough recharge to sprint again", () => {
   const s = new Stamina();
   for (let i = 0; i < 360; i++) s.update(1 / 60, true);
@@ -119,28 +117,6 @@ it("attaches flashes at the real barrel exit, uses depth testing and keeps all f
       .worldPoint()
       .distanceTo(m.socket.position.clone().applyMatrix4(parent.matrixWorld)),
   ).toBeLessThan(1e-6);
-});
-it("uses directional medium fragments, finishing colors and stable drag integration", () => {
-  const p = new PixelShards();
-  p.spawn(0, 2, 0, 18, false, 1, { nx: 0, nz: 1, dz: -1 });
-  expect(
-    p.items.filter((p) => p.life > 0).every((p) => p.vz > 0 && p.size >= 0.065),
-  ).toBe(true);
-  p.spawn(0, 2, 0, 32, true);
-  expect(
-    p.items.filter((p) => p.life > 0 && p.color >= 5 && p.color < 10).length,
-  ).toBe(32);
-  const run = (hz: number) => {
-    const a = new PixelShards();
-    a.spawn(0, 3, 0, 1);
-    for (let i = 0; i < hz * 0.1; i++) a.update(1 / hz, () => 0);
-    return a.items.find((p) => p.max !== 1)!;
-  };
-  expect(run(30).x).toBeCloseTo(run(120).x, 8);
-  expect(run(30).y).toBeCloseTo(run(120).y, 8);
-  const g = impactSplashGeometry();
-  expect(g.attributes.position.count).toBe(48);
-  expect(projectedFragmentSize(0.1, 1.25, 60, 700)).toBeLessThanOrEqual(0.15);
 });
 it("reserves upward-only label lanes and never pushes existing text downwards", () => {
   const layout = new LabelLayout(),
