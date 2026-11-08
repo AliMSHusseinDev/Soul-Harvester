@@ -23,7 +23,7 @@ it("reproduces seeded events with independent particles and distinct event profi
   expect(a.items).toEqual(b.items);
   expect(
     new Set(a.items.filter((p) => p.life > 0).map((p) => p.shape)).size,
-  ).toBe(6);
+  ).toBe(8);
   expect(a.items.some((p) => p.overlay && p.shape === SHAPE.ring)).toBe(true);
   expect(a.items.some((p) => p.shape === SHAPE.cube && p.priority === 2)).toBe(
     true,
@@ -70,4 +70,32 @@ it("reduces density without removing primary hit feedback, freezes on zero dt", 
   const before = JSON.stringify(reduced.items);
   reduced.step(0, () => 0);
   expect(JSON.stringify(reduced.items)).toBe(before);
+});
+
+it("schedules critical echoes once and preserves their birth position until activation", () => {
+  const p = new ParticleSimulation();
+  p.emit("critical", 1, 4, -8);
+  const delayed = p.items.filter((p) => p.life > 0 && p.age < 0);
+  expect(delayed).toHaveLength(2);
+  p.step(0.04, () => 0);
+  expect(delayed.every((p) => p.age < 0 && p.x === 1 && p.y === 4)).toBe(true);
+  p.step(0.04, () => 0);
+  expect(delayed.every((p) => p.age >= 0 && p.x === 1 && p.y === 4)).toBe(true);
+  p.reset();
+  expect(p.active).toBe(0);
+});
+it("adds rising smoke, soul wisps and short-lived trails to finishing bursts", () => {
+  const p = new ParticleSimulation();
+  p.emit("death", 0, 4, -8, 1, false, undefined, 0, 1, true);
+  expect(
+    p.items.filter((p) => p.life > 0 && p.shape === SHAPE.smoke),
+  ).toHaveLength(8);
+  expect(
+    p.items.some((p) => p.life > 0 && p.shape === SHAPE.wisp && p.vy > 0),
+  ).toBe(true);
+  const emitted = p.emitted;
+  p.step(0.05, () => 0);
+  expect(p.emitted).toBeGreaterThan(emitted);
+  for (let i = 0; i < 240; i++) p.step(1 / 60, () => 0);
+  expect(p.active).toBe(0);
 });

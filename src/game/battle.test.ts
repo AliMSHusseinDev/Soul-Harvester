@@ -195,3 +195,33 @@ it("reports the same greed-adjusted gold amount that is actually awarded", () =>
   expect(b.coins).toBe(46);
   expect(b.events.find((e) => e.kind === "gold")?.value).toBe(6);
 });
+it("preserves critical finishing direction in the kill event without duplicating rewards", () => {
+  const b = new Battle([]),
+    e = b.enemies[0];
+  Object.assign(e, {
+    active: true,
+    kind: 0,
+    wave: 1,
+    x: 2,
+    z: -30,
+    hp: 5,
+    maxHp: 5,
+  });
+  b.damageEnemy(e.id, 6, { x: 0, z: -29 }, 2, {
+    x: 2,
+    y: 1,
+    z: -30,
+    critical: true,
+    bullet: true,
+    incomingX: 0.8,
+    incomingZ: -0.6,
+  });
+  expect(b.events.filter((e) => e.kind === "kill")).toHaveLength(1);
+  expect(b.events.find((e) => e.kind === "kill")).toMatchObject({
+    critical: true,
+    incomingX: 0.8,
+    incomingZ: -0.6,
+  });
+  expect(b.souls).toBe(1);
+  expect(e.active).toBe(false);
+});

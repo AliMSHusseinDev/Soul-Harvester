@@ -11,7 +11,9 @@ export type ParticleEvent =
   | "level"
   | "spawn"
   | "hurt"
-  | "heal";
+  | "heal"
+  | "orb";
+export const PARTICLE_SIZE_GAIN = 1.15;
 export const PARTICLE_CAPACITY = 1536;
 export const SHAPE = {
   chip: 0,
@@ -21,8 +23,12 @@ export const SHAPE = {
   smoke: 4,
   cube: 5,
   plus: 6,
+  wisp: 7,
+  arc: 8,
 } as const;
 export interface Particle {
+  trail: number;
+  trailClock: number;
   life: number;
   max: number;
   age: number;
@@ -77,6 +83,8 @@ export class ParticleSimulation {
   readonly items: Particle[] = Array.from(
     { length: PARTICLE_CAPACITY },
     () => ({
+      trail: 0,
+      trailClock: 0,
       life: 0,
       max: 1,
       age: 0,
@@ -124,6 +132,7 @@ export class ParticleSimulation {
     spawn: 0,
     hurt: 0,
     heal: 0,
+    orb: 0,
   };
   private random() {
     this.randomState =
@@ -140,6 +149,7 @@ export class ParticleSimulation {
     color?: number,
     nx = 0,
     nz = 0,
+    finishing = false,
   ) {
     this.events[event]++;
     const serial = ++this.serial;
@@ -147,12 +157,13 @@ export class ParticleSimulation {
     const large =
         event === "nova" || event === "level" || event === "explosion",
       death = event === "death",
-      critical = event === "critical",
+      critical = event === "critical" || (death && finishing),
       small =
         event === "trail" ||
         event === "pickup" ||
         event === "spawn" ||
-        event === "heal",
+        event === "heal" ||
+        event === "orb",
       priority = large || death ? 2 : small ? 0 : 1,
       total =
         event === "trail"
@@ -161,19 +172,23 @@ export class ParticleSimulation {
             ? 7
             : event === "spawn"
               ? 10
-              : event === "cast"
-                ? 14
-                : event === "hurt"
-                  ? 12
-                  : large
-                    ? event === "level"
-                      ? 112
-                      : 90
-                    : death
-                      ? 48
-                      : critical
-                        ? 38
-                        : 25,
+              : event === "orb"
+                ? 8
+                : event === "cast"
+                  ? 14
+                  : event === "hurt"
+                    ? 12
+                    : large
+                      ? event === "level"
+                        ? 128
+                        : 98
+                      : death
+                        ? finishing
+                          ? 60
+                          : 52
+                        : critical
+                          ? 42
+                          : 25,
       count = Math.max(1, Math.ceil(total * (reduced ? 0.48 : 1))),
       palette = color
         ? [color]
@@ -220,6 +235,8 @@ export class ParticleSimulation {
               ? 0.38 + this.random() * 0.48
               : 0.18 + this.random() * 0.25;
       Object.assign(p, {
+        trail: 0,
+        trailClock: 0,
         life,
         max: life,
         age: 0,
@@ -336,6 +353,108 @@ export class ParticleSimulation {
         p.spin = 0.3;
         if (p.ground) p.y = y - 0.55;
       }
+      // Authored layers are scheduled in simulation time, including delayed echoes.
+      if (
+        (event === "hit" || event === "critical") &&
+        i >= count - (critical ? 4 : 2)
+      ) {
+        p.shape = SHAPE.smoke;
+        p.size = (critical ? 0.28 : 0.22) * scale;
+        p.color = [0xba737f, 0x96515f, 0xc9848d][i % 3];
+        p.life = p.max = 0.38 + this.random() * 0.22;
+        p.gravity = -0.6;
+        p.drag = 5;
+        p.vx *= 0.18;
+        p.vz *= 0.18;
+        p.vy = 0.22 + this.random() * 0.3;
+        p.spin = (this.random() - 0.5) * 0.5;
+      }
+      if (death && i >= 2) {
+        p.shape = i % 4 === 0 ? SHAPE.streak : SHAPE.cube;
+        if (i % 4 === 0) {
+          p.size = 0.045 * scale;
+          p.stretch = 3;
+          p.color = 0xffa66f;
+        }
+        if (i >= count - 8) {
+          p.shape = SHAPE.smoke;
+          p.size = (0.36 + this.random() * 0.2) * scale;
+          p.x += (this.random() - 0.5) * 0.2 * scale;
+          p.z += (this.random() - 0.5) * 0.2 * scale;
+          p.color = [0xd47b8d, 0x98485e, 0xc8798c, 0xae596e][i % 4];
+          p.life = p.max = 0.65 + this.random() * 0.35;
+          p.vx *= 0.2;
+          p.vz *= 0.2;
+          p.vy = 0.3 + this.random() * 0.45;
+          p.gravity = -0.5;
+          p.drag = 3;
+          p.spin = (this.random() - 0.5) * 0.5;
+        } else if (i >= 3 && i <= 5) {
+          p.shape = SHAPE.wisp;
+          p.color = TEAL[i % 4];
+          p.size = 0.12 * scale;
+          p.life = p.max = 0.85 + this.random() * 0.3;
+          p.vx *= 0.15;
+          p.vz *= 0.15;
+          p.vy = 1.3 + this.random() * 0.8;
+          p.gravity = -0.4;
+          p.spin = 1.6;
+          p.stretch = 3;
+        } else if (i === 2) {
+          p.shape = SHAPE.ring;
+          p.ground = true;
+          p.size = 2.1 * scale;
+          p.color = 0xe697a5;
+          p.life = p.max = 0.42;
+          p.age = -0.025;
+          p.vx = p.vy = p.vz = p.gravity = 0;
+        } else if (i % 5 === 0) p.trail = 1;
+      }
+      if (
+        ((critical && !death && (i === 2 || i === 3)) ||
+          (death && finishing && (i === 6 || i === 7))) &&
+        !reduced
+      ) {
+        p.shape = i % 2 === 0 ? SHAPE.ring : SHAPE.star;
+        p.overlay = true;
+        p.size = (i % 2 === 0 ? 0.83 : 0.28) * scale;
+        p.age = -0.07;
+        p.life = p.max = i % 2 === 0 ? 0.3 : 0.12;
+        p.color = i % 2 === 0 ? 0xffc449 : 0xfff9d8;
+        p.vx = p.vy = p.vz = p.gravity = p.drag = 0;
+      }
+      if (large && i >= 2 && i <= 5 && !reduced) {
+        p.shape = i % 2 === 0 ? SHAPE.arc : SHAPE.ring;
+        p.ground = true;
+        p.size = (i % 2 === 0 ? 4.5 : 5.4) * scale;
+        p.life = p.max = 0.85;
+        p.age = -0.09 * (i - 1);
+        p.color = event === "explosion" ? 0xffae47 : TEAL[i % 4];
+        p.vx = p.vy = p.vz = p.gravity = 0;
+        p.spin = i % 2 ? -0.7 : 0.7;
+      }
+      if (event === "level" && i >= 6 && i < 30) {
+        const orbit = i * 2.399963;
+        p.shape = i % 3 ? SHAPE.star : SHAPE.wisp;
+        p.x = x + Math.cos(orbit) * 2.5;
+        p.z = z + Math.sin(orbit) * 2.5;
+        p.vx = -Math.sin(orbit) * 1.6;
+        p.vz = Math.cos(orbit) * 1.6;
+        p.drag = 0.4;
+        p.vy = 0.7 + this.random();
+      }
+      if (event === "orb") {
+        p.shape = i < 2 ? SHAPE.wisp : SHAPE.chip;
+        p.color = i < 2 ? 0xffdf89 : 0xff9b31;
+        p.size = (i < 2 ? 0.17 : 0.035) * scale;
+        p.life = p.max = 0.22 + this.random() * 0.15;
+        p.vx = Math.cos(a) * 0.6;
+        p.vz = Math.sin(a) * 0.6;
+        p.vy = 0.3;
+        p.gravity = -0.3;
+      }
+      if (!small && p.shape === SHAPE.streak && i % 5 === 0) p.trail = 1;
+      p.size *= PARTICLE_SIZE_GAIN;
       this.emitted++;
     }
   }
@@ -346,24 +465,42 @@ export class ParticleSimulation {
   }
   step(dt: number, floor: (x: number, z: number) => number) {
     if (!(dt > 0) || !Number.isFinite(dt)) return;
+    let trails = 0;
+    const trailSources = this.trailSources;
     for (const p of this.items) {
       if (p.life <= 0) continue;
+      const previousAge = p.age;
       p.age += dt;
+      if (p.age < 0) continue;
+      const activeDt = previousAge < 0 ? Math.min(dt, p.age) : dt;
       p.life = Math.max(0, p.max - p.age);
       if (p.overlay && !p.presented && p.age < p.max + 0.18)
         p.life = Math.max(0.0001, p.life);
       if (p.life <= 0) continue;
       // Same closed-form motion in all axes, without allocating vectors or intermediate objects.
-      const e = Math.exp(-p.drag * dt),
-        k = p.drag > 1e-6 ? -Math.expm1(-p.drag * dt) / p.drag : dt,
-        fall = p.drag > 1e-6 ? (dt - k) / p.drag : dt * dt * 0.5;
+      const e = Math.exp(-p.drag * activeDt),
+        k = p.drag > 1e-6 ? -Math.expm1(-p.drag * activeDt) / p.drag : activeDt,
+        fall =
+          p.drag > 1e-6 ? (activeDt - k) / p.drag : activeDt * activeDt * 0.5;
       p.x += p.vx * k;
       p.z += p.vz * k;
       p.y += p.vy * k - p.gravity * fall;
       p.vx *= e;
       p.vz *= e;
       p.vy = p.vy * e - p.gravity * k;
-      p.angle += p.spin * dt;
+      p.angle += p.spin * activeDt;
+      if (p.trail && p.life > 0 && p.age < p.max * 0.75) {
+        p.trailClock += activeDt;
+        if (p.trailClock >= 0.045 && trails < trailSources.length) {
+          p.trailClock %= 0.045;
+          const t = trailSources[trails++];
+          t.x = p.x;
+          t.y = p.y;
+          t.z = p.z;
+          t.size = p.size * 0.48;
+          t.color = p.color;
+        }
+      }
       const ground = floor(p.x, p.z) + 0.035;
       if (p.y < ground) {
         p.y = ground;
@@ -372,7 +509,69 @@ export class ParticleSimulation {
         p.vz *= 0.65;
       }
     }
+    // Append trails after integration so their birth frame is independent of slot order.
+    for (
+      let i = 0,
+        limit = Math.min(
+          trails,
+          Math.max(0, PARTICLE_CAPACITY - 256 - this.active),
+        );
+      i < limit;
+      i++
+    ) {
+      const t = trailSources[i];
+      let child: Particle | undefined;
+      for (let n = 0; n < this.items.length; n++) {
+        const c = this.items[this.cursor];
+        this.cursor = (this.cursor + 1) % this.items.length;
+        if (c.life <= 0) {
+          child = c;
+          break;
+        }
+      }
+      if (!child) break;
+      Object.assign(child, {
+        angle: 0,
+        spin: 0,
+        stretch: 1,
+        seed: i / 12,
+        serial: this.serial,
+        visible: true,
+        x: t.x,
+        y: t.y,
+        z: t.z,
+        anchorX: t.x,
+        anchorY: t.y,
+        anchorZ: t.z,
+        life: 0.18,
+        max: 0.18,
+        age: 0,
+        size: t.size,
+        color: t.color,
+        shape: SHAPE.chip,
+        overlay: false,
+        ground: false,
+        vx: 0,
+        vy: 0.1,
+        vz: 0,
+        gravity: 0,
+        drag: 1,
+        trail: 0,
+        trailClock: 0,
+        priority: 0,
+        presented: false,
+      });
+      this.emitted++;
+    }
   }
+
+  private trailSources = Array.from({ length: 12 }, () => ({
+    x: 0,
+    y: 0,
+    z: 0,
+    size: 0,
+    color: 0,
+  }));
   reset() {
     for (const p of this.items) p.life = 0;
     for (const key of Object.keys(this.events) as ParticleEvent[])

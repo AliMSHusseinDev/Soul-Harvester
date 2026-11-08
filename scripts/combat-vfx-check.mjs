@@ -101,15 +101,31 @@ try {
       draw,
       show(event, age, width, height, reduced = false) {
         fx.reset();
+        actor.visible = !["death", "death-smoke", "finisher", "near"].includes(
+          event,
+        );
         fx.reduced = reduced;
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
         renderer.setSize(width, height);
         wall.visible = false;
         fx.visibility.rebuild([]);
-        if (event === "hit" || event === "critical")
-          fx.impact(0, 1.1, -34.86, event === "critical");
-        else if (event === "death") fx.death(0, -35);
+        if (
+          event === "hit" ||
+          event === "critical" ||
+          event === "critical-echo" ||
+          event === "hit-smoke"
+        )
+          fx.impact(
+            0,
+            1.1,
+            -34.86,
+            event === "critical" || event === "critical-echo",
+          );
+        else if (event === "death" || event === "death-smoke") fx.death(0, -35);
+        else if (event === "finisher") fx.death(0, -35, 2, true, 0, -1);
+        else if (event === "orb-flight")
+          fx.orb(new T.Vector3(-1, 1.6, -32), new T.Vector3(0, 0, -1));
         else if (event === "nova") fx.pulse(0, -35);
         else if (event === "level") fx.levelUp(0, -35);
         else if (event === "hurt") fx.playerHurt();
@@ -120,8 +136,11 @@ try {
         else if (event === "explosion")
           fx["procedural"].emit("explosion", 0, 1, -35);
         else fx.pickup(event === "gold" ? "gold" : "xp", 0, -35, 1);
-        for (let i = 0; i < Math.ceil(age * 120); i++)
+        draw();
+        for (let i = 0; i < Math.ceil(age * 120); i++) {
           fx.step(1 / 120, i / 120);
+          if (i % 8 === 0) draw();
+        }
         draw();
         const pixels = new Uint8Array(width * height * 4);
         renderer
@@ -190,6 +209,11 @@ try {
     for (const [event, age] of [
       ["hit", 0.07],
       ["critical", 0.07],
+      ["critical-echo", 0.17],
+      ["hit-smoke", 0.32],
+      ["death-smoke", 0.45],
+      ["finisher", 0.25],
+      ["orb-flight", 0.08],
       ["death", 0.2],
       ["nova", 0.2],
       ["explosion", 0.2],
@@ -249,7 +273,7 @@ try {
     JSON.stringify({ report, stress }, null, 2),
   );
   console.log(
-    "PASS: texture-free shaders, 12 event scenarios at 720p/1080p, GPU colors, world occlusion, reduced mode, capacity and cleanup.",
+    "PASS: texture-free shaders, 17 event scenarios at 720p/1080p, GPU colors, world occlusion, reduced mode, capacity and cleanup.",
   );
 } finally {
   await browser?.close();

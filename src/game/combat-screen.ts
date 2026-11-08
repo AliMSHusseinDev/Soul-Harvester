@@ -27,7 +27,7 @@ export class CombatScreen {
           float red=edge*hurt*(.62+.12*grain);
           float rays=0.;
           if(celebration>0.)rays=pow(max(0.,sin(atan(q.y,q.x)*11.+clock*.35)),14.);
-          float blue=wash*.11+celebration*(.07+rays*.14)*smoothstep(0.,1.,length(q));
+          float blue=wash*.11+celebration*(.07+rays*.19)*smoothstep(0.,1.,length(q));
           float alpha=min(.65,red+blue);
           if(alpha<.002)discard;
           gl_FragColor=vec4(mix(vec3(.16,.84,.92),vec3(.67,.025,.085),red/max(.001,red+blue)),alpha);
@@ -61,7 +61,8 @@ export class CombatScreen {
     const gain = reduced ? 0.45 : 1;
     this.uniforms.hurt.value = this.hurt * gain;
     this.uniforms.wash.value = this.wash * gain;
-    this.uniforms.celebration.value = this.celebration * gain;
+    this.uniforms.celebration.value =
+      this.celebration * gain * Math.min(1, (1 - this.celebration) * 8);
     this.uniforms.clock.value += dt;
   }
   diagnostics() {

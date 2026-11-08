@@ -1,6 +1,6 @@
 # Procedural combat effects
 
-Version 0.11.0 replaces all combat sprite sheets with code-generated shapes. No particle PNG, canvas texture, atlas or frame sequence is loaded. Enemy artwork, weapon/world surfaces and the font retain their separate existing assets.
+Version 0.12.0 retains the texture-free system introduced in 0.11.0, which replaced all combat sprite sheets with code-generated shapes. No particle PNG, canvas texture, atlas or frame sequence is loaded. Enemy artwork, weapon/world surfaces and the font retain their separate existing assets.
 
 ## Event composition
 
@@ -41,3 +41,17 @@ World particles respect normal depth. Primary cores and rings render after the w
 - `node scripts/actual-combat-check.mjs` exercises the compiled game through actual input, including bullets, incoming damage and abilities. Screenshots/report data are saved under ignored `artifacts/`.
 
 This is an original procedural interpretation of the supplied 19.5-second reference. Exact source-game timing or rendering internals cannot be recovered from that recording. Software-rendered tests do not establish hardware 60 FPS or guarantee absence of every possible visual defect.
+
+## 0.12.0 layered feedback
+
+All particle birth sizes use a 1.15 multiplier. Near-plane fades and projected size caps still apply, so point-blank fragments do not grow into obstructing blocks. Density remains bounded independently of size.
+
+Critical hits schedule a second ring and glint 70ms later. Delayed layers live in the same pool with negative age, do not move or render before activation, and integrate only the portion of a step after birth. Pausing freezes the sequence; resetting cancels it. A first-presentation world-visibility check prevents a delayed layer from leaking through walls on slow frames.
+
+Death bursts add a floor ring, three rising curved teal wisps, short trails behind selected fragments and eight dusty rose/burgundy smoke puffs. The smoke uses evolving lobes, a gradual opacity attack, a slower dissolve and low angular velocity. A separate smoke overlap grid admits at most three puff centers per cell. Ordinary hits use smaller, shorter puffs of the same family. Critical lethal events carry their critical flag and incoming direction into the finishing renderer, without changing rewards or damage.
+
+Trail samples are collected into twelve preallocated staging records per simulation step and appended after integration. This avoids slot-order-dependent double stepping. Trail children do not emit more trails and use only unreserved capacity. Particle storage and the number of primary draw calls remain bounded.
+
+Nova/explosion/level effects gain delayed fractured arcs and expanding secondary rings. Ground planes keep world-space size so a wave centered on the player remains visible around the camera. Level-up stars use tangential velocity around the player and the screen rays have a short attack envelope. Fire orbs share an animated hot-core shader, a faint geometry halo and rate-limited curved ember plumes; no dynamic light or texture is allocated per emission.
+
+The expanded render suite covers seventeen scenarios at both resolutions, including smoke after the core has vanished, delayed critical echoes, critical finishing blows and the orb in flight. Unit tests additionally cover delayed activation/reset, trail cleanup and kill metadata/reward integrity.

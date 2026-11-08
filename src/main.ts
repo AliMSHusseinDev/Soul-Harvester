@@ -444,7 +444,14 @@ async function boot() {
                 },
           );
       } else if (event.kind === "kill") {
-        effects.death(event.x, event.z, event.value);
+        effects.death(
+          event.x,
+          event.z,
+          event.value,
+          !!event.critical,
+          event.incomingX,
+          event.incomingZ,
+        );
         audio.death();
       } else if (event.kind === "playerHit") {
         ui.hit();
@@ -706,7 +713,7 @@ async function boot() {
   Object.defineProperty(window, "__soulHarvester", {
     value: () => ({
       ready: true,
-      version: "0.11.0",
+      version: "0.12.0",
       timeScale: cinematic.scale,
       cinematicActive: cinematic.active,
       stamina: player.stamina,

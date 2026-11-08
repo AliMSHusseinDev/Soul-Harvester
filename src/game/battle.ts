@@ -751,7 +751,11 @@ export class Battle {
     if (e.hp <= 0) {
       e.active = false;
       this.souls++;
-      this.emit("kill", e.x, e.z, e.kind);
+      this.emit("kill", e.x, e.z, e.kind, undefined, {
+        critical: impact?.critical,
+        incomingX: impact?.incomingX ?? (e.x - from.x) / d,
+        incomingZ: impact?.incomingZ ?? (e.z - from.z) / d,
+      });
       this.loot.release(e.x, e.z, this.rewards.roll(e.kind, e.wave));
       return true;
     }

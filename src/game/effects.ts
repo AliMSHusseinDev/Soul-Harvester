@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { orbMaterial } from "./orb-material";
 import { CombatScreen } from "./combat-screen";
 import { ProceduralVFX } from "./procedural-vfx";
 import { DamageNumbers } from "./damage-numbers";
@@ -26,8 +27,13 @@ export class Effects {
     tint: { value: number };
   }[] = [];
   private corpseMaps = [0, 1, 2, 3].map(guardTexture);
-  private orbs: { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number }[] =
-    [];
+  private orbClock = { value: 0 };
+  private orbs: {
+    mesh: THREE.Mesh;
+    velocity: THREE.Vector3;
+    life: number;
+    trailClock: number;
+  }[] = [];
   private ring: THREE.Mesh;
   private ringPositions = new Float32Array(65 * 2 * 3);
   private ringLife = 0;
@@ -132,14 +138,30 @@ export class Effects {
       };
       this.corpses.push({ sprite, life: 0, tint });
     }
+    const fireMaterial = orbMaterial(this.orbClock),
+      auraMaterial = new THREE.MeshBasicMaterial({
+        color: 0xff8c2d,
+        transparent: true,
+        opacity: 0.14,
+        depthWrite: false,
+        toneMapped: false,
+      });
     for (let i = 0; i < 6; i++) {
       const mesh = new THREE.Mesh(
         new THREE.IcosahedronGeometry(0.16, 1),
-        new THREE.MeshBasicMaterial({ color: 0xffb95d }),
+        fireMaterial,
       );
       mesh.visible = false;
       scene.add(mesh);
-      this.orbs.push({ mesh, velocity: new THREE.Vector3(), life: 0 });
+      mesh.add(
+        new THREE.Mesh(new THREE.IcosahedronGeometry(0.22, 1), auraMaterial),
+      );
+      this.orbs.push({
+        mesh,
+        velocity: new THREE.Vector3(),
+        life: 0,
+        trailClock: 0,
+      });
     }
     const rg = new THREE.BufferGeometry();
     rg.setAttribute(
@@ -253,7 +275,14 @@ export class Effects {
       this.reduced,
     );
   }
-  death(x: number, z: number, kind = 0) {
+  death(
+    x: number,
+    z: number,
+    kind = 0,
+    critical = false,
+    incomingX = 0,
+    incomingZ = 0,
+  ) {
     const c = this.corpses.find((c) => c.life <= 0) ?? this.corpses[0],
       scale = ENEMY_TYPES[kind].scale;
     c.sprite.material.map = this.corpseMaps[kind];
@@ -272,6 +301,10 @@ export class Effects {
       z,
       scale,
       this.reduced,
+      undefined,
+      incomingX,
+      incomingZ,
+      critical,
     );
   }
   spawn(x: number, z: number) {
@@ -303,6 +336,7 @@ export class Effects {
     const o = this.orbs.find((o) => o.life <= 0);
     if (!o) return;
     o.life = 3;
+    o.trailClock = 0;
     o.mesh.visible = true;
     o.mesh.position.copy(position).addScaledVector(direction, 0.25);
     o.velocity.copy(direction).multiplyScalar(19);
@@ -324,6 +358,7 @@ export class Effects {
     );
   }
   step(dt: number, time: number) {
+    this.orbClock.value += dt;
     this.healing += Math.max(0, this.battle.health - this.lastHealth);
     this.lastHealth = this.battle.health;
     this.healCooldown = Math.max(0, this.healCooldown - dt);
@@ -377,15 +412,13 @@ export class Effects {
           delta = o.velocity.clone().multiplyScalar(dt);
         o.mesh.position.add(delta);
         const end = o.mesh.position;
-        this.procedural.emit(
-          "trail",
-          end.x,
-          end.y,
-          end.z,
-          2,
-          this.reduced,
-          0xffa63b,
-        );
+        o.mesh.scale.setScalar(1 + 0.07 * Math.sin(this.orbClock.value * 18));
+        o.mesh.rotation.y += dt * 2.5;
+        o.trailClock += dt;
+        if (o.trailClock >= 0.045) {
+          o.trailClock %= 0.045;
+          this.procedural.emit("orb", end.x, end.y, end.z, 1, this.reduced);
+        }
         this.ray.set(start, delta.clone().normalize());
         let hit =
           end.y < groundHeight(end.x, end.z) + 0.1 ||
@@ -513,6 +546,7 @@ export class Effects {
   reset() {
     this.lastHealth = this.battle.health;
     this.healing = this.healCooldown = 0;
+    this.orbClock.value = 0;
     this.numbers.reset();
     for (const c of this.corpses) {
       c.life = 0;

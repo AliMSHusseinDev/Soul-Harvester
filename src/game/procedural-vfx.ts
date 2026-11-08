@@ -54,11 +54,23 @@ export function particleMaterial(cube = false, overlay = false) {
         }else if(shape<4.5){
           vec2 flow=q*3.+vec2(seed*17.+t*.8,t*1.8);
           float n=noise(flow)*.65+noise(flow*2.1)*.25+noise(flow*4.1)*.1;
-          float density=1.-dot(q,q)+.6*(n-.5);
-          alpha=smoothstep(.05,.55,density)*(.5+.35*n);
-          highlight=n*.12;
-        }else if(shape>5.5){
+          // Overlapping, evolving lobes keep a soft stepped silhouette.
+          vec2 curl=q+vec2(.14*sin(q.y*4.+t*3.+seed*8.),.1*cos(q.x*5.-t*2.));
+          float density=1.-dot(curl,curl)+.7*(n-.5);
+          alpha=smoothstep(.08,.6,density)*(.48+.35*n);
+          highlight=n*.025;
+        }else if(shape>5.5 && shape<6.5){
           vec2 a=abs(q); alpha=step(max(min(a.x,a.y)*4.5,max(a.x,a.y)),.86);highlight=.08;
+        }else if(shape>6.5 && shape<7.5){
+          float center=.26*sin(q.y*3.+t*5.+seed*8.);
+          float width=.08+.16*(1.-abs(q.y));
+          alpha=(1.-smoothstep(width,width+.09,abs(q.x-center)))*(1.-smoothstep(.55,1.,abs(q.y)));
+          highlight=.35;
+        }else if(shape>7.5){
+          float a=atan(q.y,q.x),r=length(q);
+          float edge=.73+.045*sin(a*13.+t*7.+seed*20.);
+          alpha=(1.-smoothstep(.022,.06,abs(r-edge)))*step(.15,sin(a*3.+seed*8.+t*2.));
+          highlight=.4;
         }
         alpha*=vData.y;
         if(alpha<.015)discard;
@@ -91,6 +103,7 @@ export class ProceduralVFX {
     -Math.PI / 2,
   );
   private frame = 0;
+  private smokeCoverage = new Uint8Array(16 * 9);
   private cubeCoverage = new Uint8Array(16 * 9);
   private coreCoverage = new Uint8Array(16 * 9);
   private rendered = 0;
@@ -141,6 +154,7 @@ export class ProceduralVFX {
     color?: number,
     nx = 0,
     nz = 0,
+    finishing = false,
   ) {
     this.simulation.emit(
       event,
@@ -152,6 +166,7 @@ export class ProceduralVFX {
       color,
       nx,
       nz,
+      finishing,
     );
   }
   step(dt: number) {
@@ -159,6 +174,7 @@ export class ProceduralVFX {
   }
   render(height: number) {
     this.frame++;
+    this.smokeCoverage.fill(0);
     this.cubeCoverage.fill(0);
     this.coreCoverage.fill(0);
     this.rendered = 0;
@@ -166,9 +182,11 @@ export class ProceduralVFX {
     const focal = height / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
     for (let i = 0; i < this.simulation.items.length; i++) {
       const p = this.simulation.items[i];
-      if (p.life <= 0) continue;
+      if (p.life <= 0 || p.age < 0) continue;
       this.view.set(p.x, p.y, p.z).applyMatrix4(this.camera.matrixWorldInverse);
-      const depth = -this.view.z,
+      const depth = p.ground
+          ? Math.max(1, Math.abs(this.view.z))
+          : -this.view.z,
         t = Math.min(
           1,
           (p.overlay && !p.presented ? Math.min(0.025, p.age) : p.age) / p.max,
@@ -181,7 +199,7 @@ export class ProceduralVFX {
       )
         continue;
       if (p.overlay) {
-        if (p.age < 0.04 || ((i + this.frame) & 3) === 0) {
+        if (!p.presented || p.age < 0.04 || ((i + this.frame) & 3) === 0) {
           this.anchor.set(p.anchorX, p.anchorY, p.anchorZ);
           p.visible = !this.visibility.occluded(
             this.camera.position,
@@ -190,7 +208,7 @@ export class ProceduralVFX {
         }
         if (!p.visible) continue;
       }
-      if (p.shape === SHAPE.cube || p.overlay) {
+      if (p.shape === SHAPE.cube || p.shape === SHAPE.smoke || p.overlay) {
         const cx = Math.floor(
             ((this.view.x * focal) / depth / (height * this.camera.aspect) +
               0.5) *
@@ -198,7 +216,11 @@ export class ProceduralVFX {
           ),
           cy = Math.floor(((-this.view.y * focal) / depth / height + 0.5) * 9);
         if (cx >= 0 && cx < 16 && cy >= 0 && cy < 9) {
-          const cells = p.overlay ? this.coreCoverage : this.cubeCoverage,
+          const cells = p.overlay
+              ? this.coreCoverage
+              : p.shape === SHAPE.smoke
+                ? this.smokeCoverage
+                : this.cubeCoverage,
             cell = cy * 16 + cx;
           if (cells[cell] >= (p.overlay ? 4 : 3)) continue;
           cells[cell]++;
@@ -211,7 +233,8 @@ export class ProceduralVFX {
             ? this.overlay
             : this.world;
       let size = p.size;
-      if (p.shape === SHAPE.ring) size *= 0.38 + 1.8 * (1 - Math.exp(-t * 5));
+      if (p.shape === SHAPE.ring || p.shape === SHAPE.arc)
+        size *= 0.38 + 1.8 * (1 - Math.exp(-t * 5));
       else if (p.shape === SHAPE.smoke) size *= 0.7 + t * 2.7;
       else if (p.shape === SHAPE.star)
         size *= 0.7 + 0.8 * Math.sin((Math.min(1, t * 2) * Math.PI) / 2);
@@ -219,10 +242,13 @@ export class ProceduralVFX {
       // Cap overlay footprint and distant detail. Near-plane objects are never screen-filling.
       const cap =
         p.shape === SHAPE.cube ? 0.035 : p.shape === SHAPE.smoke ? 0.08 : 0.16;
-      size = Math.min(size, (depth * height * cap) / focal);
+      if (!p.ground) size = Math.min(size, (depth * height * cap) / focal);
       if (p.shape !== SHAPE.smoke)
         size = Math.max(size, Math.min(p.size * 1.4, (depth * 2) / focal));
-      let alpha = (1 - Math.pow(t, 3)) * (p.shape === SHAPE.smoke ? 0.4 : 1);
+      let alpha =
+        p.shape === SHAPE.smoke
+          ? Math.min(1, t * 9) * Math.pow(1 - t, 0.9) * 0.46
+          : 1 - Math.pow(t, 3);
       if (p.shape === SHAPE.cube || p.shape === SHAPE.smoke)
         alpha *= Math.min(1, Math.max(0, (depth - 0.18) / 0.45));
       if (p.ground) alpha *= 0.65;
@@ -233,8 +259,10 @@ export class ProceduralVFX {
       );
       if (p.shape === SHAPE.cube)
         this.dummy.rotation.set(p.angle * 0.7, p.angle, p.angle * 0.4);
-      else if (p.ground) this.dummy.quaternion.copy(this.groundRotation);
-      else {
+      else if (p.ground) {
+        this.dummy.quaternion.copy(this.groundRotation);
+        this.dummy.rotateZ(p.angle);
+      } else {
         this.dummy.quaternion.copy(this.camera.quaternion);
         if (p.shape === SHAPE.streak) {
           // Project velocity into the camera plane for physically aligned spark ribbons.
@@ -246,7 +274,9 @@ export class ProceduralVFX {
       }
       this.dummy.scale.set(
         size,
-        p.shape === SHAPE.streak ? size * p.stretch : size,
+        p.shape === SHAPE.streak || p.shape === SHAPE.wisp
+          ? size * p.stretch
+          : size,
         p.shape === SHAPE.cube ? size : 0.1,
       );
       this.dummy.updateMatrix();
@@ -270,6 +300,14 @@ export class ProceduralVFX {
       textures: 0,
       capacity: PARTICLE_CAPACITY,
       active: this.simulation.active,
+      delayed: this.simulation.items.filter((p) => p.life > 0 && p.age < 0)
+        .length,
+      smoke: this.simulation.items.filter(
+        (p) => p.life > 0 && p.shape === SHAPE.smoke,
+      ).length,
+      wisps: this.simulation.items.filter(
+        (p) => p.life > 0 && p.shape === SHAPE.wisp,
+      ).length,
       rendered: this.rendered,
       draws:
         Number(this.world.count > 0) +
