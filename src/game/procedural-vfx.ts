@@ -62,7 +62,8 @@ export function particleMaterial(cube = false, overlay = false) {
           // Overlapping, evolving lobes keep a soft stepped silhouette.
           vec2 curl=q+vec2(.14*sin(q.y*4.+t*3.+seed*8.),.1*cos(q.x*5.-t*2.));
           float density=1.-dot(curl,curl)+.7*(n-.5);
-          alpha=floor(smoothstep(.08,.6,density)*(.48+.35*n)*5.+.5)/5.;
+          // Pixel-grid sampling keeps the silhouette sharp; continuous alpha avoids temporal stepping.
+          alpha=smoothstep(.08,.6,density)*(.48+.35*n);
           highlight=n*.025;
         }else if(shape>5.5 && shape<6.5){
           vec2 a=abs(q); alpha=step(max(min(a.x,a.y)*4.5,max(a.x,a.y)),.86);highlight=.08;
@@ -122,7 +123,6 @@ export class ProceduralVFX {
     -Math.PI / 2,
   );
   private frame = 0;
-  private smokeCoverage = new Uint8Array(16 * 9);
   private cubeCoverage = new Uint8Array(16 * 9);
   private coreCoverage = new Uint8Array(16 * 9);
   private rendered = 0;
@@ -199,7 +199,6 @@ export class ProceduralVFX {
   }
   render(height: number) {
     this.frame++;
-    this.smokeCoverage.fill(0);
     this.cubeCoverage.fill(0);
     this.coreCoverage.fill(0);
     this.rendered = 0;
@@ -233,12 +232,7 @@ export class ProceduralVFX {
         }
         if (!p.visible) continue;
       }
-      if (
-        p.shape === SHAPE.cube ||
-        p.shape === SHAPE.ribbon ||
-        p.shape === SHAPE.smoke ||
-        p.overlay
-      ) {
+      if (p.shape === SHAPE.cube || p.shape === SHAPE.ribbon || p.overlay) {
         const cx = Math.floor(
             ((this.view.x * focal) / depth / (height * this.camera.aspect) +
               0.5) *
@@ -246,11 +240,7 @@ export class ProceduralVFX {
           ),
           cy = Math.floor(((-this.view.y * focal) / depth / height + 0.5) * 9);
         if (cx >= 0 && cx < 16 && cy >= 0 && cy < 9) {
-          const cells = p.overlay
-              ? this.coreCoverage
-              : p.shape === SHAPE.smoke
-                ? this.smokeCoverage
-                : this.cubeCoverage,
+          const cells = p.overlay ? this.coreCoverage : this.cubeCoverage,
             cell = cy * 16 + cx;
           if (cells[cell] >= (p.overlay ? 4 : p.shape === SHAPE.ribbon ? 6 : 3))
             continue;

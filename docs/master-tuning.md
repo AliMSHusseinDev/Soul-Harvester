@@ -56,3 +56,7 @@ Enemy type count density is `1 + .18 * max(0, scale−1) + .06 * log2(max(1, hp/
 ## 0.14.9 Bloody smoke
 
 `bloodSmokeLifeGain`=1.4 extends death smoke from 0.65–1s to 0.91–1.4s after the existing 0.1s delay. `bloodSmokeWindSpeed`=.22, `bloodSmokeCurlSpeed`=.12 and `bloodSmokeRiseSpeed`=.12 control continuous drift/curl/rise. Closed-form curl integrals preserve motion across timestep partitions. A smoothstep entrance and final 45%-of-life fade avoid opacity jumps. Blood color, eight-puff count, view caps, Splatter and Bleeding settings remain.
+
+## 0.14.10 Smoke motion stability
+
+Smoke no longer participates in the 16×9 screen-cell admission limit: camera movement used to switch individual puffs on/off at tile boundaries. Fixed simulation capacity, world depth, smooth near-camera opacity and smoke footprint caps remain. The smoke shader keeps pixel-grid sampling but uses continuous density opacity instead of five alpha levels. Lifetime and wind settings retain 0.14.9 values.

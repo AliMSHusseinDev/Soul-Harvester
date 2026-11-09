@@ -256,6 +256,43 @@ try {
       },
     };
   });
+  const smokeMotion = await page.evaluate(() => {
+    const f = window.fixture;
+    f.show("death-smoke", 0.4, 1280, 720);
+    const sim = f.fx["procedural"].simulation;
+    for (const p of sim.items) if (p.shape !== 4) p.life = 0;
+    const smoke = sim.items.filter((p) => p.life > 0 && p.shape === 4);
+    // Deliberately overlap all eight puffs, then sweep their screen-cell boundaries.
+    for (const p of smoke) {
+      p.x = 0;
+      p.y = 1.3;
+      p.z = -35;
+    }
+    const positions = smoke.map((p) => [p.x, p.y, p.z]);
+    const counts = [];
+    for (let i = 0; i < 40; i++) {
+      f.camera.position.set(-0.5 + i / 39, 1.8, -28);
+      f.camera.lookAt(0.1 * Math.sin(i * 0.1), 1.3, -35);
+      f.draw();
+      counts.push(f.fx.diagnostics().procedural.rendered);
+    }
+    return {
+      expected: smoke.length,
+      counts,
+      unchanged:
+        JSON.stringify(positions) ===
+        JSON.stringify(smoke.map((p) => [p.x, p.y, p.z])),
+    };
+  });
+  assert.equal(smokeMotion.expected, 8);
+  assert.ok(
+    smokeMotion.counts.every((n) => n === 8),
+    "camera motion never tile-culls smoke puffs",
+  );
+  assert.ok(
+    smokeMotion.unchanged,
+    "camera movement leaves world smoke positions unchanged",
+  );
   const report = [],
     shotCaptures = new Map();
   for (const [width, height] of [
