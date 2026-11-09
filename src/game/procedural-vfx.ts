@@ -3,6 +3,7 @@ import * as THREE from "three";
 import {
   ParticleSimulation,
   debrisOpacity,
+  bloodSmokeOpacity,
   PARTICLE_CAPACITY,
   SHAPE,
   type ParticleEvent,
@@ -288,7 +289,9 @@ export class ProceduralVFX {
         size = Math.max(size, Math.min(p.size * 1.4, (depth * 2) / focal));
       let alpha =
         p.shape === SHAPE.smoke
-          ? Math.min(1, t * 9) * Math.pow(1 - t, 0.9) * 0.46
+          ? p.color === VFX.lethalColor
+            ? bloodSmokeOpacity(t)
+            : Math.min(1, t * 9) * Math.pow(1 - t, 0.9) * 0.46
           : 1 - Math.pow(t, 3);
       if (p.shape === SHAPE.cube || p.shape === SHAPE.smoke)
         alpha *= Math.min(1, Math.max(0, (depth - 0.18) / 0.45));

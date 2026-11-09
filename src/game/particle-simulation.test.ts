@@ -8,6 +8,7 @@ import {
   debrisOpacity,
   splatterRange,
   bleedingRange,
+  bloodSmokeOpacity,
   enemyParticleDensity,
 } from "./particle-simulation";
 it("reproduces seeded events with independent particles and distinct event profiles", () => {
@@ -537,4 +538,44 @@ it("gives larger tougher enemy types a modest bounded particle bonus", () => {
     enemyParticleDensity(1.05, 56 / 43),
   );
   expect(enemyParticleDensity(100, 1e12)).toBe(1.3);
+});
+
+it("extends only bloody death smoke by 40% and fades smoothly", () => {
+  const a = new ParticleSimulation(),
+    b = new ParticleSimulation(),
+    gain = VFX.bloodSmokeLifeGain;
+  try {
+    VFX.bloodSmokeLifeGain = 1;
+    a.emit("death", 0, 1, 0);
+    VFX.bloodSmokeLifeGain = gain;
+    b.emit("death", 0, 1, 0);
+  } finally {
+    VFX.bloodSmokeLifeGain = gain;
+  }
+  const smoke = b.items.filter((p) => p.life > 0 && p.shape === SHAPE.smoke);
+  expect(smoke).toHaveLength(8);
+  for (let i = 0; i < a.items.length; i++)
+    if (a.items[i].life > 0)
+      expect(b.items[i].max).toBeCloseTo(
+        a.items[i].max * (a.items[i].shape === SHAPE.smoke ? 1.4 : 1),
+        10,
+      );
+  expect(bloodSmokeOpacity(0)).toBe(0);
+  expect(bloodSmokeOpacity(1)).toBe(0);
+  let last = 1;
+  for (let t = 0.55; t <= 1; t += 0.01) {
+    const opacity = bloodSmokeOpacity(t);
+    expect(opacity).toBeLessThanOrEqual(last);
+    last = opacity;
+  }
+  const c = new ParticleSimulation();
+  c.emit("death", 0, 1, 0);
+  b.step(0.5, () => -100);
+  for (let i = 0; i < 30; i++) c.step(1 / 60, () => -100);
+  const other = c.items.filter((p) => p.life > 0 && p.shape === SHAPE.smoke);
+  for (let i = 0; i < smoke.length; i++)
+    for (const axis of ["x", "y", "z"] as const)
+      expect(smoke[i][axis]).toBeCloseTo(other[i][axis], 8);
+  for (let i = 0; i < 180; i++) b.step(1 / 60, () => 0);
+  expect(b.active).toBe(0);
 });

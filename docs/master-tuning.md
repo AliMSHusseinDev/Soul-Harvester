@@ -52,3 +52,7 @@ Both profiles vary their fan from the bullet contact/direction and seeded per-ki
 Relative to 0.14.7: Bleeding velocity +50% (`bleedingLaunchGain` 1.95), horizontal range +50% (`bleedingRangeGain` 2.55), count +10% (`bleedingCountGain` 1.1 after previous rounding), total lifetime −20%. Hold is now 1.68–2.04s and final fade 0.28s. `bleedingRangeReferenceLife` preserves the prior analytical range reference independently of live lifetime. Ordinary/critical/reduced counts are 44/50/18 before enemy bonuses.
 
 Enemy type count density is `1 + .18 * max(0, scale−1) + .06 * log2(max(1, hp/baseHp))`, capped at 1.3. It scales both primary blood profiles, with nearest-integer rounding; smoke count and fixed pool budgets stay unchanged. `enemyParticleSizeWeight`, `enemyParticleDifficultyWeight` and `enemyParticleCountCap` expose these controls. Health uses base enemy type health, so wave scaling does not cause unbounded visual growth. Splatter speed/range/size/lifetime are unchanged.
+
+## 0.14.9 Bloody smoke
+
+`bloodSmokeLifeGain`=1.4 extends death smoke from 0.65–1s to 0.91–1.4s after the existing 0.1s delay. `bloodSmokeWindSpeed`=.22, `bloodSmokeCurlSpeed`=.12 and `bloodSmokeRiseSpeed`=.12 control continuous drift/curl/rise. Closed-form curl integrals preserve motion across timestep partitions. A smoothstep entrance and final 45%-of-life fade avoid opacity jumps. Blood color, eight-puff count, view caps, Splatter and Bleeding settings remain.

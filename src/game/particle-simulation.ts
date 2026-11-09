@@ -68,6 +68,13 @@ export function enemyParticleDensity(scale: number, healthRatio: number) {
       Math.log2(Math.max(1, healthRatio)) * F.enemyParticleDifficultyWeight,
   );
 }
+export function bloodSmokeOpacity(t: number) {
+  const smooth = (v: number) => {
+    const x = Math.max(0, Math.min(1, v));
+    return x * x * (3 - 2 * x);
+  };
+  return 0.46 * smooth(t / 0.14) * (1 - smooth((t - 0.55) / 0.45));
+}
 export function bleedingRange(scale = 1) {
   return (
     (((F.deathSpeedMin + F.deathSpeedRange + 1.5) *
@@ -664,7 +671,7 @@ export class ParticleSimulation {
           p.z += (this.random() - 0.5) * 0.2 * scale;
           p.color = F.lethalColor;
           p.age = -F.lethalSmokeDelay;
-          p.life = p.max = 0.65 + this.random() * 0.35;
+          p.life = p.max = (0.65 + this.random() * 0.35) * F.bloodSmokeLifeGain;
           p.vx *= 0.2;
           p.vz *= 0.2;
           p.vy = 0.3 + this.random() * 0.45;
@@ -834,6 +841,23 @@ export class ParticleSimulation {
       p.vx *= e;
       p.vz *= e;
       p.vy = p.vy * e - p.gravity * k;
+      if (p.shape === SHAPE.smoke && p.color === F.lethalColor) {
+        // Analytic curl integrals: continuous wind without frame-dependent noise or allocations.
+        const a = p.age - activeDt,
+          b = p.age,
+          phase = p.seed * Math.PI * 2;
+        p.x +=
+          F.bloodSmokeWindSpeed * activeDt +
+          (F.bloodSmokeCurlSpeed *
+            (Math.cos(a * 2 + phase) - Math.cos(b * 2 + phase))) /
+            2;
+        p.z +=
+          (F.bloodSmokeCurlSpeed *
+            (Math.sin(b * 1.6 + phase) - Math.sin(a * 1.6 + phase))) /
+          1.6;
+        p.y += F.bloodSmokeRiseSpeed * activeDt;
+      }
+
       if (Number.isFinite(p.rangeLimit)) {
         let rx = p.x - p.anchorX,
           ry = p.shape === SHAPE.debris ? 0 : p.y - p.anchorY,
