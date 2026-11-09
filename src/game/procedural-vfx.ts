@@ -73,13 +73,19 @@ export function particleMaterial(cube = false, overlay = false) {
           float edge=.73+.045*sin(a*13.+t*7.+seed*20.);
           alpha=(1.-smoothstep(.022,.06,abs(r-edge)))*step(.15,sin(a*3.+seed*8.+t*2.));
           highlight=.4;
-        }else if(shape>8.5){
+        }else if(shape>8.5 && shape<9.5){
           // Broken pixel rays: a tapered staircase with detached square flecks.
           float row=floor(vUv.y*12.);
           float width=.2+.5*(1.-vUv.y)+hash(vec2(row,seed*17.))*.18;
           float breaks=step(.18,hash(vec2(row,seed*31.)));
           alpha=step(abs(q.x),width)*step(abs(q.y),.98)*breaks;
           highlight=0.;
+        }
+        if(shape>9.5){
+          vec2 cell=floor(vUv*5.);
+          float stem=step(1.,cell.x)*step(cell.x,2.)*step(1.,cell.y)*step(cell.y,3.);
+          float corner=step(2.,cell.x)*step(cell.x,3.)*step(2.,cell.y)*step(cell.y,3.);
+          alpha=max(stem,corner);highlight=0.;
         }
         if(vColor.r>vColor.g*2. && vColor.r>vColor.b*2.)highlight=0.;
         alpha*=vData.y;
@@ -280,6 +286,11 @@ export class ProceduralVFX {
           : 1 - Math.pow(t, 3);
       if (p.shape === SHAPE.cube || p.shape === SHAPE.smoke)
         alpha *= Math.min(1, Math.max(0, (depth - 0.18) / 0.45));
+      if (p.shape === SHAPE.debris)
+        alpha *= Math.min(
+          1,
+          Math.max(0, (Math.min(p.max, p.expireAge) - p.age) / VFX.debrisFade),
+        );
       if (p.ground) alpha *= 0.65;
       this.dummy.position.set(
         p.x,

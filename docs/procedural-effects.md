@@ -1,6 +1,6 @@
 # Procedural combat effects
 
-Version 0.14.1 emphasizes the enemy's body response from the newer 48.8-second reference recording. Combat particles remain geometry and shader functions: no particle PNG, canvas texture, sprite sheet, atlas or frame sequence is loaded. Enemy artwork, weapon/world surfaces and fonts retain their existing assets.
+Version 0.14.2 emphasizes the enemy's body response from the newer 48.8-second reference recording. Combat particles remain geometry and shader functions: no particle PNG, canvas texture, sprite sheet, atlas or frame sequence is loaded. Enemy artwork, weapon/world surfaces and fonts retain their existing assets.
 
 ## Event composition
 
@@ -8,7 +8,7 @@ Version 0.14.1 emphasizes the enemy's body response from the newer 48.8-second r
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Normal hit   | Approximately 100ms alpha-preserving white enemy flash, small ivory impact, directional gold flecks, short dusty red smoke                                     |
 | Critical hit | White flash, compact amber/ivory accent, short outward ticks after 45ms, larger upward damage text                                                             |
-| Death        | White silhouette, foot-anchored burgundy collapse, pixel erosion, wide-scattering broken pixel rays in #780606, matching dotted trails and muted crimson smoke |
+| Death        | White silhouette, foot-anchored burgundy collapse, pixel erosion, wide-scattering broken pixel rays in #820808, matching dotted trails and muted crimson smoke |
 | Magic kill   | The death composition plus a radial cyan spray                                                                                                                 |
 | Player hurt  | Saturating red edge pulse, small crimson flecks, damped pitch/roll and weapon reaction                                                                         |
 | Nova         | Teal chips/ribbons, staggered terrain rings and fractured arcs, cyan screen wash                                                                               |
@@ -63,7 +63,7 @@ Loot retains exactly-once reward accounting and clear-path checks. It launches w
 ## Validation
 
 - Unit tests cover seeded profiles, step-rate-independent motion, terrain clearance, priority reserves, delayed activation, trails, remnant envelopes, kill metadata, pause and cleanup.
-- `npm run test:combat-vfx` renders twenty-one scenarios at 720p/1080p, including particle-isolated white/burgundy remnants, magic spray, actual framebuffer colors, wall rejection, reduced effects, saturation and cleanup.
+- `npm run test:combat-vfx` renders twenty-three scenarios at 720p/1080p, including particle-isolated white/burgundy remnants, magic spray, actual framebuffer colors, wall rejection, reduced effects, saturation and cleanup.
 - `npm run test:world-polish` checks ADS weapon-pixel protection at both resolutions, compact crit coverage, four world surface categories, decals, wind/reduced motion, token models and foliage shadow compilation.
 - `npm run test:handling` checks the visible expanded sprint crosshair and existing movement/weapon handling.
 - `npm run test:polish` checks real body responses, damage numbers, casting, muzzle/smoke and forty-enemy loot/level rewards.
@@ -72,3 +72,11 @@ Loot retains exactly-once reward accounting and clear-path checks. It launches w
 This is an original procedural interpretation of the supplied recordings. Exact source-game rendering internals cannot be recovered from video. Software-rendered checks do not establish hardware 60 FPS or guarantee every possible visual case.
 
 In 0.14.1, death rays use #780606, 7–14 m/s initial horizontal emission before the global 1.3 scatter multiplier, 0.62–0.84s lifetimes and 1.25 drag. All moving, non-overlay, non-ground particle profiles receive the scatter multiplier; primary accents and ground rings retain their authored anchors and view caps.
+
+## 0.14.2 two-layer death response
+
+The #820808 splatter rays, smoke and trail dots have zero gravity and no terrain collision response. World depth still occludes particles behind terrain; they never bounce or snap to the floor.
+
+A separate #b32020 angular pixel-shard layer occupies the former chip slots, keeping the total burst budget unchanged. Shards are slightly wider, launch at 70% nominal horizontal velocity, use stronger drag and gravity, and have mixed contact behavior. About 55% allow one or two damped bounces; the rest settle immediately. Rest stops translation, spin and gravity, followed by a 0.2s fade. A finite 1.4–1.7s lifetime also bounds airborne pieces. Terrain clearance accounts for shard size. All collision state resets when a pool slot is reused, including trail children.
+
+Colors, nominal spread, gravity, drag, bounce chance, restitution, fade and lifetime are editable in VFX in tuning.ts. Tests cover both collision modes, finite bounce budgets, settling, expiry and isolated falling/bouncing renders at both resolutions.

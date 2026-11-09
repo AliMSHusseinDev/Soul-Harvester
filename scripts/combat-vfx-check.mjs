@@ -105,6 +105,8 @@ try {
         actor.visible = ![
           "death",
           "death-smoke",
+          "debris-fall",
+          "debris-bounce",
           "remnant-white",
           "remnant-burgundy",
           "remnant-late",
@@ -133,6 +135,8 @@ try {
         else if (
           event === "death" ||
           event === "death-smoke" ||
+          event === "debris-fall" ||
+          event === "debris-bounce" ||
           event === "remnant-white" ||
           event === "remnant-burgundy" ||
           event === "remnant-late"
@@ -155,6 +159,9 @@ try {
         else fx.pickup(event === "gold" ? "gold" : "xp", 0, -35, 1);
         // Isolate the body phases so particle colors cannot satisfy these checks.
         if (event.startsWith("remnant-")) fx["procedural"].simulation.reset();
+        if (event.startsWith("debris-"))
+          for (const p of fx["procedural"].simulation.items)
+            if (p.shape !== 10) p.life = 0;
         draw();
         for (let i = 0; i < Math.ceil(age * 120); i++) {
           fx.step(1 / 120, i / 120);
@@ -236,6 +243,8 @@ try {
       ["finisher", 0.25],
       ["orb-flight", 0.08],
       ["death", 0.2],
+      ["debris-fall", 0.35],
+      ["debris-bounce", 0.65],
       ["remnant-white", 0.035],
       ["remnant-burgundy", 0.17],
       ["remnant-late", 0.3],
@@ -324,7 +333,7 @@ try {
     JSON.stringify({ report, stress }, null, 2),
   );
   console.log(
-    "PASS: texture-free shaders, 21 event scenarios at 720p/1080p, GPU colors, world occlusion, reduced mode, capacity and cleanup.",
+    "PASS: texture-free shaders, 23 event scenarios at 720p/1080p, GPU colors, world occlusion, reduced mode, capacity and cleanup.",
   );
 } finally {
   await browser?.close();

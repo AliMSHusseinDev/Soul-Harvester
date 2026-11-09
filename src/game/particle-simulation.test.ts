@@ -23,7 +23,7 @@ it("reproduces seeded events with independent particles and distinct event profi
   expect(a.items).toEqual(b.items);
   expect(
     new Set(a.items.filter((p) => p.life > 0).map((p) => p.shape)).size,
-  ).toBe(8);
+  ).toBe(9);
   expect(a.items.some((p) => p.overlay && p.shape === SHAPE.star)).toBe(true);
   expect(
     a.items.some((p) => p.shape === SHAPE.ribbon && p.priority === 2),
@@ -56,9 +56,9 @@ it("integrates drag and gravity analytically across step rates and bounces above
   const p = new ParticleSimulation();
   p.emit("death", 0, 0.05, 0);
   for (let i = 0; i < 30; i++) p.step(1 / 60, () => 0);
-  expect(p.items.filter((p) => p.life > 0).every((p) => p.y >= 0.035)).toBe(
-    true,
-  );
+  expect(
+    p.items.filter((p) => p.life > 0 && p.collision).every((p) => p.y >= 0.035),
+  ).toBe(true);
 });
 it("reduces density without removing primary hit feedback, freezes on zero dt", () => {
   const full = new ParticleSimulation(),
@@ -143,7 +143,9 @@ it("uses the requested deep red and scatters a death burst several metres withou
   const p = new ParticleSimulation();
   p.emit("death", 0, 5, 0);
   expect(
-    p.items.filter((p) => p.life > 0).every((p) => p.color === 0x780606),
+    p.items
+      .filter((p) => p.life > 0)
+      .every((p) => p.color === 0x820808 || p.color === 0xb32020),
   ).toBe(true);
   for (let i = 0; i < 30; i++) p.step(1 / 60, () => 0);
   const rays = p.items.filter((p) => p.life > 0 && p.shape === SHAPE.ribbon);
@@ -151,6 +153,47 @@ it("uses the requested deep red and scatters a death burst several metres withou
     10,
   );
   expect(rays.some((p) => p.x > 3) && rays.some((p) => p.x < -3)).toBe(true);
+  for (let i = 0; i < 240; i++) p.step(1 / 60, () => 0);
+  expect(p.active).toBe(0);
+});
+
+it("keeps splatter free of gravity and terrain response while debris mixes limited bounce and settle", () => {
+  const p = new ParticleSimulation();
+  p.emit("death", 0, 0.9, 0);
+  const rays = p.items.filter((p) => p.life > 0 && p.shape === SHAPE.ribbon),
+    chunks = p.items.filter((p) => p.life > 0 && p.shape === SHAPE.debris);
+  expect(
+    rays.every((p) => p.color === 0x820808 && p.gravity === 0 && !p.collision),
+  ).toBe(true);
+  expect(
+    chunks.every((p) => p.color === 0xb32020 && p.gravity > 0 && p.collision),
+  ).toBe(true);
+  expect(chunks.some((p) => p.bounceLimit === 0)).toBe(true);
+  expect(chunks.some((p) => p.bounceLimit > 0)).toBe(true);
+  const down = rays[0];
+  down.y = 0.04;
+  down.vy = -2;
+  p.step(0.05, () => 0);
+  expect(down.y).toBeLessThan(0);
+  expect(down.vy).toBeLessThan(0);
+  expect(down.bounces).toBe(0);
+  let bouncing = false,
+    resting = false;
+  for (let i = 0; i < 180; i++) {
+    p.step(1 / 120, () => 0);
+    for (const c of chunks) {
+      if (c.bounces > 0) bouncing = true;
+      if (c.settled) {
+        resting = true;
+        expect(c.vx).toBe(0);
+        expect(c.vy).toBe(0);
+        expect(c.y).toBeGreaterThanOrEqual(0.035);
+        expect(c.expireAge - c.age).toBeLessThanOrEqual(0.2 + 1e-8);
+      }
+      expect(c.bounces).toBeLessThanOrEqual(c.bounceLimit);
+    }
+  }
+  expect(bouncing && resting).toBe(true);
   for (let i = 0; i < 240; i++) p.step(1 / 60, () => 0);
   expect(p.active).toBe(0);
 });

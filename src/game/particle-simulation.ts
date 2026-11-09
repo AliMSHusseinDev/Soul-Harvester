@@ -29,8 +29,14 @@ export const SHAPE = {
   wisp: 7,
   arc: 8,
   ribbon: 9,
+  debris: 10,
 } as const;
 export interface Particle {
+  collision: boolean;
+  bounceLimit: number;
+  bounces: number;
+  settled: boolean;
+  expireAge: number;
   trail: number;
   trailClock: number;
   life: number;
@@ -87,6 +93,11 @@ export class ParticleSimulation {
   readonly items: Particle[] = Array.from(
     { length: PARTICLE_CAPACITY },
     () => ({
+      collision: true,
+      bounceLimit: Infinity,
+      bounces: 0,
+      settled: false,
+      expireAge: Infinity,
       trail: 0,
       trailClock: 0,
       life: 0,
@@ -247,6 +258,11 @@ export class ParticleSimulation {
               ? 0.38 + this.random() * 0.48
               : 0.18 + this.random() * 0.25;
       Object.assign(p, {
+        collision: true,
+        bounceLimit: Infinity,
+        bounces: 0,
+        settled: false,
+        expireAge: Infinity,
         trail: 0,
         trailClock: 0,
         life,
@@ -389,7 +405,8 @@ export class ParticleSimulation {
         p.spin = (this.random() - 0.5) * 0.5;
       }
       if (death) {
-        p.shape = i % 3 === 0 ? SHAPE.chip : SHAPE.ribbon;
+        p.shape = i % 3 === 0 ? SHAPE.debris : SHAPE.ribbon;
+        p.collision = false;
         p.color = F.deathColor;
         p.size =
           (p.shape === SHAPE.ribbon
@@ -397,12 +414,27 @@ export class ParticleSimulation {
             : 0.025 + this.random() * 0.035) * scale;
         p.stretch = p.shape === SHAPE.ribbon ? 5 + this.random() * 4 : 1;
         p.life = p.max = F.deathLifeMin + this.random() * F.deathLifeRange;
-        p.gravity = F.deathGravity;
+        p.gravity = 0;
         p.drag = F.deathDrag;
         p.vy = (this.random() - 0.25) * 9 * scale;
         if (p.shape === SHAPE.ribbon && i % 2 === 0) p.trail = 1;
+        if (p.shape === SHAPE.debris) {
+          p.color = F.debrisColor;
+          p.collision = true;
+          p.size = (0.07 + this.random() * 0.03) * scale;
+          p.stretch = 1;
+          p.vx *= F.debrisSpread;
+          p.vz *= F.debrisSpread;
+          p.vy = (2 + this.random() * 2) * scale;
+          p.gravity = F.debrisGravity;
+          p.drag = F.debrisDrag;
+          p.life = p.max = F.debrisLifeMin + this.random() * F.debrisLifeRange;
+          p.bounceLimit =
+            this.random() < F.debrisBounceChance ? 1 + (i % 2) : 0;
+        }
         if (i >= count - 8) {
           p.shape = SHAPE.smoke;
+          p.collision = false;
           p.trail = 0;
           p.size = (0.36 + this.random() * 0.2) * scale;
           p.x += (this.random() - 0.5) * 0.2 * scale;
@@ -412,7 +444,7 @@ export class ParticleSimulation {
           p.vx *= 0.2;
           p.vz *= 0.2;
           p.vy = 0.3 + this.random() * 0.45;
-          p.gravity = -0.5;
+          p.gravity = 0;
           p.drag = 3;
           p.spin = (this.random() - 0.5) * 0.5;
         }
@@ -562,7 +594,7 @@ export class ParticleSimulation {
       p.age += dt;
       if (p.age < 0) continue;
       const activeDt = previousAge < 0 ? Math.min(dt, p.age) : dt;
-      p.life = Math.max(0, p.max - p.age);
+      p.life = Math.max(0, Math.min(p.max, p.expireAge) - p.age);
       if (p.overlay && !p.presented && p.age < p.max + 0.18)
         p.life = Math.max(0.0001, p.life);
       if (p.life <= 0) continue;
@@ -584,18 +616,30 @@ export class ParticleSimulation {
           p.trailClock %= 0.045;
           const t = trailSources[trails++];
           t.x = p.x;
-          t.y = Math.max(p.y, floor(p.x, p.z) + 0.035);
+          t.y = p.collision ? Math.max(p.y, floor(p.x, p.z) + 0.035) : p.y;
           t.z = p.z;
           t.size = p.size * 0.48;
           t.color = p.shape === SHAPE.ribbon ? F.deathColor : p.color;
         }
       }
-      const ground = floor(p.x, p.z) + 0.035;
-      if (p.y < ground) {
+      const ground =
+        floor(p.x, p.z) +
+        (p.shape === SHAPE.debris ? Math.max(0.035, p.size * 0.55) : 0.035);
+      if (p.collision && p.y < ground) {
         p.y = ground;
-        p.vy = Math.abs(p.vy) * 0.22;
-        p.vx *= 0.65;
-        p.vz *= 0.65;
+        if (p.bounces < p.bounceLimit && Math.abs(p.vy) > 0.65) {
+          p.bounces++;
+          p.vy =
+            Math.abs(p.vy) *
+            (p.shape === SHAPE.debris ? F.debrisRestitution : 0.22);
+          p.vx *= 0.65;
+          p.vz *= 0.65;
+        } else {
+          p.settled = true;
+          p.vx = p.vy = p.vz = p.gravity = p.spin = 0;
+          if (p.shape === SHAPE.debris)
+            p.expireAge = Math.min(p.expireAge, p.age + F.debrisFade);
+        }
       }
     }
     // Append trails after integration so their birth frame is independent of slot order.
@@ -620,6 +664,11 @@ export class ParticleSimulation {
       }
       if (!child) break;
       Object.assign(child, {
+        collision: false,
+        bounceLimit: 0,
+        bounces: 0,
+        settled: false,
+        expireAge: Infinity,
         angle: 0,
         spin: 0,
         stretch: 1,
