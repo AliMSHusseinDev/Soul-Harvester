@@ -81,3 +81,13 @@ it("bounds sparse-world triangle work and respects the range limit", () => {
   expect(world.hit(ray, 100)?.distance).toBeCloseTo(9.5);
   expect(world.triangleTests).toBeLessThan((400 * 12) / 20);
 });
+
+it("samples raised map surfaces for particle support without changing the fallback terrain", () => {
+  const scene = new THREE.Scene(),
+    slab = new THREE.Mesh(new THREE.BoxGeometry(2, 0.12, 2), material("paver"));
+  slab.position.y = 0.06;
+  scene.add(slab);
+  const world = new WorldRaycast(scene);
+  expect(world.supportHeight(0, 0, 1, 0)).toBeCloseTo(0.12);
+  expect(world.supportHeight(3, 0, 1, 0)).toBe(0);
+});

@@ -5,6 +5,7 @@ import {
   PARTICLE_CAPACITY,
   SHAPE,
   dragMotion,
+  debrisOpacity,
 } from "./particle-simulation";
 it("reproduces seeded events with independent particles and distinct event profiles", () => {
   const a = new ParticleSimulation(),
@@ -193,7 +194,7 @@ it("keeps splatter free of gravity and terrain response while debris mixes limit
         expect(c.vx).toBe(0);
         expect(c.vy).toBe(0);
         expect(c.y).toBeGreaterThanOrEqual(0.035);
-        expect(c.expireAge - c.age).toBeLessThanOrEqual(0.2 + 1e-8);
+        expect(c.expireAge).toBe(Infinity);
       }
       expect(c.bounces).toBeLessThanOrEqual(c.bounceLimit);
     }
@@ -295,4 +296,44 @@ it("increases only nongravity birth sizes by exactly six percent", () => {
       const factor = a.items[i].color === 0xb32020 ? 1.06 : 1;
       expect(b.items[i].size).toBeCloseTo(a.items[i].size * factor, 10);
     }
+});
+
+it("keeps gravity shards alive 50% longer and fades only after their hold lifetime", () => {
+  const p = new ParticleSimulation();
+  p.emit("death", 0, 0.9, 0);
+  const chunks = p.items.filter((p) => p.life > 0 && p.shape === SHAPE.debris);
+  expect(
+    chunks.every(
+      (p) =>
+        p.fadeAt >= 2.1 &&
+        p.fadeAt <= 2.55 &&
+        Math.abs(p.max - p.fadeAt - 0.35) < 1e-9,
+    ),
+  ).toBe(true);
+  for (let i = 0; i < 120; i++) p.step(1 / 60, () => 0);
+  expect(
+    chunks.every((p) => p.life > 0 && debrisOpacity(p.age, p.fadeAt) === 1),
+  ).toBe(true);
+  for (const c of chunks) {
+    expect(debrisOpacity(c.fadeAt, c.fadeAt)).toBe(1);
+    expect(debrisOpacity(c.fadeAt + 0.175, c.fadeAt)).toBeCloseTo(0.5);
+    expect(debrisOpacity(c.fadeAt + 0.35, c.fadeAt)).toBeCloseTo(0);
+  }
+  for (let i = 0; i < 120; i++) p.step(1 / 60, () => 0);
+  expect(p.active).toBe(0);
+});
+it("rests shards above raised map surfaces without cancelling mixed bounce behavior", () => {
+  const p = new ParticleSimulation();
+  p.surfaceFloor = () => 0.12;
+  p.emit("death", 0, 0.9, 0);
+  const chunks = p.items.filter((p) => p.life > 0 && p.shape === SHAPE.debris);
+  for (let i = 0; i < 100; i++) p.step(1 / 60, () => 0);
+  expect(
+    chunks.every(
+      (p) => p.settled && p.y >= 0.12 + p.size * 0.45 + 0.012 - 1e-8,
+    ),
+  ).toBe(true);
+  expect(
+    chunks.some((p) => p.bounces === 0) && chunks.some((p) => p.bounces > 0),
+  ).toBe(true);
 });

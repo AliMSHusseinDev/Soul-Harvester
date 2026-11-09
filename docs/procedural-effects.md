@@ -1,6 +1,6 @@
 # Procedural combat effects
 
-Version 0.14.4 emphasizes the enemy's body response from the newer 48.8-second reference recording. Combat particles remain geometry and shader functions: no particle PNG, canvas texture, sprite sheet, atlas or frame sequence is loaded. Enemy artwork, weapon/world surfaces and fonts retain their existing assets.
+Version 0.14.5 emphasizes the enemy's body response from the newer 48.8-second reference recording. Combat particles remain geometry and shader functions: no particle PNG, canvas texture, sprite sheet, atlas or frame sequence is loaded. Enemy artwork, weapon/world surfaces and fonts retain their existing assets.
 
 ## Event composition
 
@@ -63,7 +63,7 @@ Loot retains exactly-once reward accounting and clear-path checks. It launches w
 ## Validation
 
 - Unit tests cover seeded profiles, step-rate-independent motion, terrain clearance, priority reserves, delayed activation, trails, remnant envelopes, kill metadata, pause and cleanup.
-- `npm run test:combat-vfx` renders twenty-five scenarios at 720p/1080p, including particle-isolated lethal blood remnants, magic spray, actual framebuffer colors, wall rejection, reduced effects, saturation and cleanup.
+- `npm run test:combat-vfx` renders twenty-seven scenarios at 720p/1080p, including particle-isolated lethal blood remnants, magic spray, actual framebuffer colors, wall rejection, reduced effects, saturation and cleanup.
 - `npm run test:world-polish` checks ADS weapon-pixel protection at both resolutions, compact crit coverage, four world surface categories, decals, wind/reduced motion, token models and foliage shadow compilation.
 - `npm run test:handling` checks the visible expanded sprint crosshair and existing movement/weapon handling.
 - `npm run test:polish` checks real body responses, damage numbers, casting, muzzle/smoke and forty-enemy loot/level rewards.
@@ -94,3 +94,11 @@ Lethal events now retain the exact contact point, incoming XYZ direction and sur
 Only #b32020 birth sizes gain another 1.06 multiplier; trails inherit that size through their parent. Gravity shards receive a further 1.5 count multiplier after previous whole-particle rounding: ordinary deaths increase from 23 to 35, critical finishers from 26 to 39, and reduced-density deaths from 9 to 14. Pool capacity and projected size caps remain.
 
 Tests check lethal metadata transport, deterministic replay, successive fan variation, contact/direction sensitivity, exact 6% size scaling and preserved wide 3D spread. Left/right body-contact renders are distinct at both resolutions. Production mouse/keyboard combat checks exercise real bullet kills and the complete feedback pipeline.
+
+## 0.14.5 gravity shard hold, fade and surface clearance
+
+Gravity shards now launch at 20% nominal horizontal scatter. Their hold lifetime increases 50% to 2.1–2.55 seconds; settling no longer shortens it. A separate 0.35-second smoothstep fade follows, for a bounded total life of 2.45–2.9 seconds. Nongravity profiles and counts retain their existing settings.
+
+The simulation caches visible-surface height queries while shards travel and samples the contact footprint when they settle. These queries use the world's static geometry BVH, including raised paving, with the shared terrain fallback. Resting positions are checked against the pixel mask's visible bounds and camera orientation, with a small depth separation. This avoids clipping through map textures without unnecessarily lifting the entire particle quad. Physics proxy clearance also includes shard size. Mixed zero/one/two-bounce behavior remains.
+
+Tests cover the complete hold before fading, fade endpoints, raised support surfaces, continued mixed bounce behavior and a low-camera world render of all 35 resting shards after two seconds. Two extra VFX scenarios capture the hold and fade phases at both resolutions.

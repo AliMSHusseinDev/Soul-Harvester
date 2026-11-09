@@ -66,6 +66,9 @@ try {
       fx = new Effects(scene, battle, camera),
       weapon = new Weapon(camera);
     await fx.ready;
+    fx.setSurfaceFloor((x, z, ceiling) =>
+      world.ballistics.supportHeight(x, z, ceiling, islandSurfaceHeight(x, z)),
+    );
     camera.position.set(0, 1.72, -33);
     camera.lookAt(0, 1.72, -50);
     view.add(camera);
@@ -224,6 +227,34 @@ try {
         world.reducedMotion = false;
         return { changed, reduced, world: world.diagnostics() };
       },
+      settledShards() {
+        fx.reset();
+        weapon.group.visible = false;
+        fx.death(0, -35);
+        for (let i = 0; i < 120; i++) fx.step(1 / 60, i / 60);
+        camera.position.set(0, 0.4, -33);
+        camera.lookAt(0, 0.08, -35);
+        draw();
+        const shards = fx["procedural"].simulation.items.filter(
+          (p) => p.life > 0 && p.shape === 10,
+        );
+        return {
+          count: shards.length,
+          settled: shards.every((p) => p.settled),
+          minClearance: Math.min(
+            ...shards.map(
+              (p) =>
+                p.y -
+                world.ballistics.supportHeight(
+                  p.x,
+                  p.z,
+                  p.y + 0.3,
+                  islandSurfaceHeight(p.x, p.z),
+                ),
+            ),
+          ),
+        };
+      },
       tokens() {
         fx.reset();
         weapon.group.visible = false;
@@ -302,6 +333,11 @@ try {
   assert.ok(report.breeze.changed > 100);
   assert.equal(report.breeze.reduced, 0);
   await page.screenshot({ path: "artifacts/world-breeze.png" });
+  report.shards = await page.evaluate(() => window.fixture.settledShards());
+  assert.equal(report.shards.count, 35);
+  assert.ok(report.shards.settled);
+  assert.ok(report.shards.minClearance > 0.035);
+  await page.screenshot({ path: "artifacts/world-settled-shards.png" });
   report.tokens = await page.evaluate(() => window.fixture.tokens());
   assert.equal(report.tokens.gold, 1);
   assert.equal(report.tokens.xp, 1);

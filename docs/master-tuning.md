@@ -35,3 +35,5 @@ Run `npm test`, `npm run build`, `npm run test:world-polish` and the relevant br
 Splatter profiles: `VFX.nongravitySplatterColor` and `VFX.gravitySplatterColor`. `gravityAmountGain` controls only the gravity shard count (1.5 means +50%, rounded up); `lethalColor` and `lethalSmokeDelay` control the killing-shot body/smoke sequence.
 
 Version 0.14.4 adds `VFX.gravityAdditionalGain` (another 1.5 multiplier after the previous integer shard count) and `VFX.nongravitySizeGain` (1.06). Shot-dependent fan orientation and variation are deterministic; appearance variation does not modify damage or rewards.
+
+Gravity shard timing now separates `debrisLifeMin`/`debrisLifeRange` (hold, 2.1–2.55s) from `debrisFade` (0.35s afterwards). `debrisSpread` is now 0.2 for gentler horizontal launch. Settling preserves the full hold time.

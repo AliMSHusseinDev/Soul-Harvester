@@ -42,7 +42,15 @@ export interface SplatterImpact {
   ny: number;
   nz: number;
 }
+export function debrisOpacity(age: number, fadeAt: number) {
+  const t = Math.max(0, Math.min(1, (age - fadeAt) / F.debrisFade));
+  return 1 - t * t * (3 - 2 * t);
+}
 export interface Particle {
+  fadeAt: number;
+  floorY: number;
+  floorX: number;
+  floorZ: number;
   collision: boolean;
   bounceLimit: number;
   bounces: number;
@@ -101,9 +109,14 @@ export function dragMotion(
   };
 }
 export class ParticleSimulation {
+  surfaceFloor?: (x: number, z: number, ceiling: number) => number;
   readonly items: Particle[] = Array.from(
     { length: PARTICLE_CAPACITY },
     () => ({
+      fadeAt: Infinity,
+      floorY: NaN,
+      floorX: 0,
+      floorZ: 0,
       collision: true,
       bounceLimit: Infinity,
       bounces: 0,
@@ -318,6 +331,10 @@ export class ParticleSimulation {
               ? 0.38 + this.random() * 0.48
               : 0.18 + this.random() * 0.25;
       Object.assign(p, {
+        fadeAt: Infinity,
+        floorY: NaN,
+        floorX: 0,
+        floorZ: 0,
         collision: true,
         bounceLimit: Infinity,
         bounces: 0,
@@ -507,7 +524,8 @@ export class ParticleSimulation {
           p.vy = (2 + this.random() * 2) * scale;
           p.gravity = F.debrisGravity;
           p.drag = F.debrisDrag;
-          p.life = p.max = F.debrisLifeMin + this.random() * F.debrisLifeRange;
+          p.fadeAt = F.debrisLifeMin + this.random() * F.debrisLifeRange;
+          p.life = p.max = p.fadeAt + F.debrisFade;
           p.bounceLimit =
             this.random() < F.debrisBounceChance ? 1 + (i % 2) : 0;
         }
@@ -704,9 +722,23 @@ export class ParticleSimulation {
             p.shape === SHAPE.ribbon ? F.nongravitySplatterColor : p.color;
         }
       }
-      const ground =
-        floor(p.x, p.z) +
-        (p.shape === SHAPE.debris ? Math.max(0.035, p.size * 0.55) : 0.035);
+      let support = floor(p.x, p.z);
+      if (p.shape === SHAPE.debris && this.surfaceFloor) {
+        if (
+          !Number.isFinite(p.floorY) ||
+          (!p.settled && Math.hypot(p.x - p.floorX, p.z - p.floorZ) > 0.15)
+        ) {
+          p.floorY = this.surfaceFloor(p.x, p.z, p.y + 0.3);
+          p.floorX = p.x;
+          p.floorZ = p.z;
+        }
+        support = Math.max(support, p.floorY);
+      }
+      const clearance =
+        p.shape === SHAPE.debris
+          ? Math.max(0.035, p.size * 0.45 + 0.012)
+          : 0.035;
+      const ground = support + clearance;
       if (p.collision && p.y < ground) {
         p.y = ground;
         if (p.bounces < p.bounceLimit && Math.abs(p.vy) > 0.65) {
@@ -719,8 +751,22 @@ export class ParticleSimulation {
         } else {
           p.settled = true;
           p.vx = p.vy = p.vz = p.gravity = p.spin = 0;
-          if (p.shape === SHAPE.debris)
-            p.expireAge = Math.min(p.expireAge, p.age + F.debrisFade);
+          if (p.shape === SHAPE.debris) {
+            p.floorY = support;
+            if (this.surfaceFloor)
+              for (let j = 0; j < 4; j++) {
+                const offset = p.size * 0.75;
+                p.floorY = Math.max(
+                  p.floorY,
+                  this.surfaceFloor(
+                    p.x + (j & 1 ? offset : -offset),
+                    p.z + (j & 2 ? offset : -offset),
+                    p.y + 0.3,
+                  ),
+                );
+              }
+            p.y = p.floorY + clearance;
+          }
         }
       }
     }
@@ -746,6 +792,10 @@ export class ParticleSimulation {
       }
       if (!child) break;
       Object.assign(child, {
+        fadeAt: Infinity,
+        floorY: NaN,
+        floorX: 0,
+        floorZ: 0,
         collision: false,
         bounceLimit: 0,
         bounces: 0,

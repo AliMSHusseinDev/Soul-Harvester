@@ -2,6 +2,7 @@ import { VFX } from "./tuning";
 import * as THREE from "three";
 import {
   ParticleSimulation,
+  debrisOpacity,
   PARTICLE_CAPACITY,
   SHAPE,
   type ParticleEvent,
@@ -289,15 +290,26 @@ export class ProceduralVFX {
           : 1 - Math.pow(t, 3);
       if (p.shape === SHAPE.cube || p.shape === SHAPE.smoke)
         alpha *= Math.min(1, Math.max(0, (depth - 0.18) / 0.45));
-      if (p.shape === SHAPE.debris)
-        alpha *= Math.min(
-          1,
-          Math.max(0, (Math.min(p.max, p.expireAge) - p.age) / VFX.debrisFade),
-        );
+      if (p.shape === SHAPE.debris) alpha = debrisOpacity(p.age, p.fadeAt);
       if (p.ground) alpha *= 0.65;
+      // The five-cell L mask occupies +/-0.3 of the quad: keep its visible lower edge off the surface.
+      const c = Math.cos(p.angle),
+        s = Math.sin(p.angle),
+        rightY = this.camera.matrixWorld.elements[1],
+        upY = this.camera.matrixWorld.elements[5];
+      const restingY =
+        p.floorY +
+        size *
+          0.3 *
+          (Math.abs(rightY * c + upY * s) + Math.abs(-rightY * s + upY * c)) +
+        0.012;
       this.dummy.position.set(
         p.x,
-        p.ground ? groundHeight(p.x, p.z) + 0.065 : p.y,
+        p.ground
+          ? groundHeight(p.x, p.z) + 0.065
+          : p.shape === SHAPE.debris && p.settled
+            ? restingY
+            : p.y,
         p.z,
       );
       if (p.shape === SHAPE.cube)

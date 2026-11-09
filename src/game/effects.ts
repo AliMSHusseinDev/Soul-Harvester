@@ -216,6 +216,9 @@ export class Effects {
       hit.normal.y,
     );
   }
+  setSurfaceFloor(query: (x: number, z: number, ceiling: number) => number) {
+    this.procedural.simulation.surfaceFloor = query;
+  }
   cast(point: THREE.Vector3, orb: boolean) {
     this.stats.casts++;
     this.procedural.emit(

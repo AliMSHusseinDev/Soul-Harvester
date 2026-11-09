@@ -159,6 +159,9 @@ async function boot() {
   const direction = new THREE.Vector3(),
     center = new THREE.Vector2(),
     raycaster = new THREE.Raycaster();
+  effects.setSurfaceFloor((x, z, ceiling) =>
+    world.ballistics.supportHeight(x, z, ceiling, groundHeight(x, z)),
+  );
   effects.visibility.surfaceQuery = (ray, range) =>
     world.ballistics.occluded(ray, range);
   const bellPoint = new THREE.Vector3(),
@@ -754,7 +757,7 @@ async function boot() {
   Object.defineProperty(window, "__soulHarvester", {
     value: () => ({
       ready: true,
-      version: "0.14.4",
+      version: "0.14.5",
       timeScale: cinematic.scale,
       cinematicActive: cinematic.active,
       stamina: player.stamina,

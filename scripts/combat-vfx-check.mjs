@@ -109,6 +109,8 @@ try {
           "death-right",
           "debris-fall",
           "debris-bounce",
+          "debris-hold",
+          "debris-fade",
           "remnant-flash",
           "remnant-burgundy",
           "remnant-late",
@@ -139,6 +141,8 @@ try {
           event === "death-smoke" ||
           event === "debris-fall" ||
           event === "debris-bounce" ||
+          event === "debris-hold" ||
+          event === "debris-fade" ||
           event === "remnant-flash" ||
           event === "remnant-burgundy" ||
           event === "remnant-late"
@@ -263,6 +267,8 @@ try {
       ["death-right", 0.2],
       ["debris-fall", 0.35],
       ["debris-bounce", 0.65],
+      ["debris-hold", 2],
+      ["debris-fade", 2.6],
       ["remnant-flash", 0.035],
       ["remnant-burgundy", 0.17],
       ["remnant-late", 0.3],
@@ -366,7 +372,7 @@ try {
     JSON.stringify({ report, stress }, null, 2),
   );
   console.log(
-    "PASS: texture-free shaders, 25 event scenarios at 720p/1080p, GPU colors, world occlusion, reduced mode, capacity and cleanup.",
+    "PASS: texture-free shaders, 27 event scenarios at 720p/1080p, GPU colors, world occlusion, reduced mode, capacity and cleanup.",
   );
 } finally {
   await browser?.close();

@@ -99,6 +99,10 @@ export interface SurfaceHit {
 export class WorldRaycast {
   private entries: Entry[] = [];
   private tree: BoxTree;
+  private supportRay = new THREE.Ray(
+    new THREE.Vector3(),
+    new THREE.Vector3(0, -1, 0),
+  );
   private localRay = new THREE.Ray();
   private a = new THREE.Vector3();
   private b = new THREE.Vector3();
@@ -299,6 +303,16 @@ export class WorldRaycast {
           surface: this.found,
         }
       : null;
+  }
+  supportHeight(x: number, z: number, ceiling: number, fallback: number) {
+    this.supportRay.origin.set(x, Math.max(ceiling, fallback + 0.3), z);
+    this.search(
+      this.supportRay,
+      Math.max(2, this.supportRay.origin.y - fallback + 1),
+    );
+    return this.found && this.hitNormal.y > 0.2
+      ? Math.max(fallback, this.hitPoint.y)
+      : fallback;
   }
   occluded(ray: THREE.Ray, range: number) {
     this.search(ray, range);
