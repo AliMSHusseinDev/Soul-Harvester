@@ -7,6 +7,7 @@ import {
   dragMotion,
   debrisOpacity,
   splatterRange,
+  bleedingRange,
 } from "./particle-simulation";
 it("reproduces seeded events with independent particles and distinct event profiles", () => {
   const a = new ParticleSimulation(),
@@ -207,9 +208,9 @@ it("uses weight-driven splatter and preserves debris mixed bounce and settle", (
 
 it("applies the further gravity multiplier while preserving rays and eight smoke puffs", () => {
   for (const [finishing, reduced, expected] of [
-    [false, false, 35],
-    [true, false, 39],
-    [false, true, 14],
+    [false, false, 40],
+    [true, false, 45],
+    [false, true, 16],
   ] as const) {
     const p = new ParticleSimulation();
     p.emit("death", 0, 2, 0, 1, reduced, undefined, 0, 0, finishing);
@@ -280,21 +281,21 @@ it("uses shot position/direction and reproducible per-kill fan variation", () =>
     first.map((p) => p.slice(0, 3)),
   );
 });
-it("increases only nongravity birth sizes by exactly six percent", () => {
-  const gain = VFX.nongravitySizeGain,
+it("increases only splatter birth sizes by ten percent over the previous version", () => {
+  const gain = VFX.splatterSizeGain,
     a = new ParticleSimulation(),
     b = new ParticleSimulation();
   try {
-    VFX.nongravitySizeGain = 1;
+    VFX.splatterSizeGain = 1.06;
     a.emit("death", 0, 2, 0);
-    VFX.nongravitySizeGain = gain;
+    VFX.splatterSizeGain = gain;
     b.emit("death", 0, 2, 0);
   } finally {
-    VFX.nongravitySizeGain = gain;
+    VFX.splatterSizeGain = gain;
   }
   for (let i = 0; i < a.items.length; i++)
     if (a.items[i].life > 0) {
-      const factor = a.items[i].color === 0xb32020 ? 1.06 : 1;
+      const factor = a.items[i].color === 0xb32020 ? 1.1 : 1;
       expect(b.items[i].size).toBeCloseTo(a.items[i].size * factor, 10);
     }
 });
@@ -328,7 +329,7 @@ it("rests shards above raised map surfaces without cancelling mixed bounce behav
   p.surfaceFloor = () => 0.12;
   p.emit("death", 0, 0.9, 0);
   const chunks = p.items.filter((p) => p.life > 0 && p.shape === SHAPE.debris);
-  for (let i = 0; i < 100; i++) p.step(1 / 60, () => 0);
+  for (let i = 0; i < 120; i++) p.step(1 / 60, () => 0);
   expect(
     chunks.every(
       (p) => p.settled && p.y >= 0.12 + p.size * 0.45 + 0.012 - 1e-8,
@@ -339,12 +340,12 @@ it("rests shards above raised map surfaces without cancelling mixed bounce behav
   ).toBe(true);
 });
 
-it("increases launch speed 50%, ray count 20%, keeps size fixed and enforces the 70%-expanded envelope", () => {
+it("reduces splatter launch 25% and applies the current ray count and range", () => {
   const original = VFX.splatterLaunchGain,
     a = new ParticleSimulation(),
     b = new ParticleSimulation();
   try {
-    VFX.splatterLaunchGain = 1;
+    VFX.splatterLaunchGain = 1.5;
     a.emit("death", 0, 4, 0);
     VFX.splatterLaunchGain = original;
     b.emit("death", 0, 4, 0);
@@ -352,12 +353,12 @@ it("increases launch speed 50%, ray count 20%, keeps size fixed and enforces the
     VFX.splatterLaunchGain = original;
   }
   const rays = b.items.filter((p) => p.life > 0 && p.shape === SHAPE.ribbon);
-  expect(rays).toHaveLength(35);
+  expect(rays).toHaveLength(37);
   for (let i = 0; i < a.items.length; i++)
     if (a.items[i].shape === SHAPE.ribbon && a.items[i].life > 0) {
       expect(b.items[i].size).toBe(a.items[i].size);
       for (const k of ["vx", "vy", "vz"] as const)
-        expect(b.items[i][k]).toBeCloseTo(a.items[i][k] * 1.5, 10);
+        expect(b.items[i][k]).toBeCloseTo(a.items[i][k] * 0.75, 10);
     }
   expect(
     rays.some((p) => p.weight < 0.4) && rays.some((p) => p.weight > 1),
@@ -375,7 +376,11 @@ it("increases launch speed 50%, ray count 20%, keeps size fixed and enforces the
       (p) => p.life > 0 && Number.isFinite(p.rangeLimit),
     ))
       expect(
-        Math.hypot(p.x - p.anchorX, p.y - p.anchorY, p.z - p.anchorZ),
+        Math.hypot(
+          p.x - p.anchorX,
+          p.shape === SHAPE.debris ? 0 : p.y - p.anchorY,
+          p.z - p.anchorZ,
+        ),
       ).toBeLessThanOrEqual(cap + 1e-6);
   }
   expect(b.active).toBe(0);
@@ -395,7 +400,7 @@ it("lets some light rays approach the cap while others stop short and never brig
   } finally {
     VFX.splatterRangeGain = gain;
   }
-  expect(splatterRange() / baseline).toBeCloseTo(1.7, 10);
+  expect(splatterRange() / baseline).toBeCloseTo(1.02, 10);
   for (let i = 0; i < 180; i++) {
     p.step(1 / 120, () => 0);
     rays.forEach((r, j) => {
@@ -423,4 +428,71 @@ it("lets some light rays approach the cap while others stop short and never brig
     ),
   ).toBe(true);
   expect(light.some(({ r, peak }) => peak < r.rangeLimit * 0.7)).toBe(true);
+});
+
+it("launches bleeding 30% faster at fixed sizes and varies its weights and contact-oriented fans", () => {
+  const gain = VFX.bleedingLaunchGain,
+    a = new ParticleSimulation(),
+    b = new ParticleSimulation();
+  const impact = {
+    x: 0.3,
+    y: 1.4,
+    z: 0,
+    dx: 0,
+    dy: 0.1,
+    dz: -1,
+    nx: 0,
+    ny: 0,
+    nz: 1,
+  };
+  try {
+    VFX.bleedingLaunchGain = 1;
+    a.emit("death", 0, 1, 0, 1, false, undefined, 0, -1, false, 0, impact);
+    VFX.bleedingLaunchGain = gain;
+    b.emit("death", 0, 1, 0, 1, false, undefined, 0, -1, false, 0, impact);
+  } finally {
+    VFX.bleedingLaunchGain = gain;
+  }
+  const shards = b.items.filter((p) => p.life > 0 && p.shape === SHAPE.debris);
+  expect(shards).toHaveLength(40);
+  for (let i = 0; i < a.items.length; i++)
+    if (a.items[i].life > 0 && a.items[i].shape === SHAPE.debris) {
+      expect(b.items[i].size).toBe(a.items[i].size);
+      for (const k of ["vx", "vy", "vz"] as const)
+        expect(b.items[i][k]).toBeCloseTo(a.items[i][k] * 1.3, 10);
+    }
+  expect(
+    shards.every(
+      (p) => p.x === impact.x && p.y === impact.y && p.z === impact.z,
+    ),
+  ).toBe(true);
+  expect(
+    shards.some((p) => p.weight < 1) && shards.some((p) => p.weight > 1.5),
+  ).toBe(true);
+  const range = VFX.bleedingRangeGain;
+  let baseline = 0;
+  try {
+    VFX.bleedingRangeGain = 1;
+    baseline = bleedingRange();
+  } finally {
+    VFX.bleedingRangeGain = range;
+  }
+  expect(bleedingRange() / baseline).toBeCloseTo(1.7, 10);
+  const before = shards.map((p) => [p.vx, p.vy, p.vz]);
+  b.emit("death", 0, 1, 0, 1, false, undefined, 0, -1, false, 0, impact);
+  expect(
+    b.items
+      .filter((p) => p.life > 0 && p.shape === SHAPE.debris)
+      .slice(shards.length)
+      .map((p) => [p.vx, p.vy, p.vz]),
+  ).not.toEqual(before);
+  for (let i = 0; i < 240; i++) {
+    b.step(1 / 60, () => 0);
+    for (const p of b.items.filter(
+      (p) => p.life > 0 && p.shape === SHAPE.debris,
+    ))
+      expect(Math.hypot(p.x - p.anchorX, p.z - p.anchorZ)).toBeLessThanOrEqual(
+        p.rangeLimit + 1e-7,
+      );
+  }
 });

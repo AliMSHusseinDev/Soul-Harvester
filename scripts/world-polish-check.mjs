@@ -334,7 +334,7 @@ try {
   assert.equal(report.breeze.reduced, 0);
   await page.screenshot({ path: "artifacts/world-breeze.png" });
   report.shards = await page.evaluate(() => window.fixture.settledShards());
-  assert.equal(report.shards.count, 35);
+  assert.equal(report.shards.count, 40);
   assert.ok(report.shards.settled);
   assert.ok(report.shards.minClearance > 0.035);
   await page.screenshot({ path: "artifacts/world-settled-shards.png" });

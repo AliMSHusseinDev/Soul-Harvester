@@ -32,10 +32,17 @@ Keep pool capacities positive integers, probabilities within 0–1, positive tim
 
 Run `npm test`, `npm run build`, `npm run test:world-polish` and the relevant browser regression after changing balance. Use `npm run test:handling` for movement/accuracy and `npm run test:combat-vfx` for particle profiles.
 
-Splatter profiles: `VFX.nongravitySplatterColor` and `VFX.gravitySplatterColor`. `gravityAmountGain` controls only the gravity shard count (1.5 means +50%, rounded up); `lethalColor` and `lethalSmokeDelay` control the killing-shot body/smoke sequence.
+The current profiles are **Splatter** (`VFX.splatterColor`, #b32020) and **Bleeding** (`VFX.bleedingColor`, #820808). `lethalColor` and `lethalSmokeDelay` control the killing-shot body/smoke sequence.
 
-Version 0.14.4 adds `VFX.gravityAdditionalGain` (another 1.5 multiplier after the previous integer shard count) and `VFX.nongravitySizeGain` (1.06). Shot-dependent fan orientation and variation are deterministic; appearance variation does not modify damage or rewards.
+Version 0.14.7 applies these changes relative to 0.14.6:
 
-Gravity shard timing now separates `debrisLifeMin`/`debrisLifeRange` (hold, 2.1–2.55s) from `debrisFade` (0.35s afterwards). `debrisSpread` is now 0.2 for gentler horizontal launch. Settling preserves the full hold time.
+| Profile | Launch speed | Range limit | Count | Size |
+| --- | --- | --- | --- | --- |
+| Splatter | −25% | −40% | +5% | +10% |
+| Bleeding | +30% | +70% | +15% | unchanged |
 
-Version 0.14.6: `splatterLaunchGain`=1.5, `splatterAmountGain`=1.2, `splatterRangeGain`=1.7. `splatterWeightGravity`, `splatterLightLifeGain`, `splatterMediumLifeGain`, `splatterLightDrag` and `splatterLightDragRange` control apparent weight response for the #b32020 profile. The inherited nongravity name now identifies this weighted profile. Sizes are unchanged.
+Splatter uses `splatterLaunchGain`=1.125, `splatterRangeGain`=1.02 and `splatterSizeGain`=1.166. These include the preceding gains (1.5, 1.7 and 1.06 respectively). `splatterAdditionalAmountGain`=1.05 applies after the existing count stage, rounded to the nearest whole particle. Ordinary deaths produce 37 primary splatter particles instead of 35.
+
+Bleeding uses `bleedingLaunchGain`=1.3, `bleedingRangeGain`=1.7 and `bleedingAdditionalAmountGain`=1.15. Its historical count stages remain `gravityAmountGain` and `gravityAdditionalGain`; the new multiplier rounds the resulting count to the nearest whole particle (35 → 40 on ordinary deaths). Its range is horizontal, derived from the previous conservative drag/velocity envelope, whereas Splatter's limit is a 3D radius. Both scale with enemy size.
+
+Both profiles vary their fan from the bullet contact/direction and seeded per-kill variation. Apparent weight changes gravity/drag independently of size. Bleeding retains mixed bounce/settle behavior, terrain clearance, `debrisLifeMin`/`debrisLifeRange` hold (2.1–2.55s) and `debrisFade` (0.35s). Reaching the horizontal range cap does not shorten that hold or stop gravity.

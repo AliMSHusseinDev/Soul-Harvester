@@ -59,6 +59,17 @@ export function splatterRange(scale = 1) {
     scale
   );
 }
+export function bleedingRange(scale = 1) {
+  return (
+    (((F.deathSpeedMin + F.deathSpeedRange + 1.5) *
+      F.debrisSpread *
+      F.scatterGain *
+      -Math.expm1(-F.debrisDrag * (F.debrisLifeMin + F.debrisLifeRange))) /
+      F.debrisDrag) *
+    F.bleedingRangeGain *
+    scale
+  );
+}
 export interface Particle {
   rangeOpacity: number;
   weight: number;
@@ -267,14 +278,20 @@ export class ParticleSimulation {
           )
         : 0,
       gravityExtra =
-        Math.ceil(
-          Math.ceil(gravityBase * F.gravityAmountGain) *
-            F.gravityAdditionalGain,
+        Math.round(
+          Math.ceil(
+            Math.ceil(gravityBase * F.gravityAmountGain) *
+              F.gravityAdditionalGain,
+          ) * F.bleedingAdditionalAmountGain,
         ) - gravityBase,
       rayBase = death
         ? baseCount - 8 - gravityBase - (finishing && !reduced ? 2 : 0)
         : 0,
-      rayExtra = Math.ceil(Math.max(0, rayBase) * (F.splatterAmountGain - 1)),
+      rayExtra =
+        Math.round(
+          Math.ceil(Math.max(0, rayBase) * F.splatterAmountGain) *
+            F.splatterAdditionalAmountGain,
+        ) - Math.max(0, rayBase),
       count = baseCount + gravityExtra + rayExtra,
       palette = color
         ? [color]
@@ -516,7 +533,7 @@ export class ParticleSimulation {
               ? SHAPE.debris
               : SHAPE.ribbon;
         p.collision = false;
-        p.color = F.nongravitySplatterColor;
+        p.color = F.splatterColor;
         p.size =
           (p.shape === SHAPE.ribbon
             ? 0.04 + this.random() * 0.025
@@ -572,15 +589,50 @@ export class ParticleSimulation {
           p.vz *= F.splatterLaunchGain;
         }
         if (p.shape === SHAPE.debris) {
-          p.color = F.gravitySplatterColor;
+          p.color = F.bleedingColor;
           p.collision = true;
           p.size = (0.07 + this.random() * 0.03) * scale;
           p.stretch = 1;
-          p.vx *= F.debrisSpread;
-          p.vz *= F.debrisSpread;
-          p.vy = (2 + this.random() * 2) * scale;
-          p.gravity = F.debrisGravity;
-          p.drag = F.debrisDrag;
+          const theta = a + phase + 0.2 * Math.sin(a * lobes + twist),
+            speed = radial * F.debrisSpread,
+            along = speed * (0.35 + 0.5 * Math.sin(theta));
+          p.vx =
+            (tx * Math.cos(theta) * speed + dx * along) *
+            scale *
+            F.bleedingLaunchGain;
+          p.vz =
+            (tz * Math.cos(theta) * speed + dz * along) *
+            scale *
+            F.bleedingLaunchGain;
+          const targetSpeed =
+            Math.hypot(
+              Math.cos(a) * radial + nx * 1.5,
+              Math.sin(a) * radial + nz * 1.5,
+            ) *
+            F.debrisSpread *
+            scale *
+            F.bleedingLaunchGain;
+          const directionLength = Math.hypot(p.vx, p.vz);
+          if (directionLength > 0.001) {
+            p.vx *= targetSpeed / directionLength;
+            p.vz *= targetSpeed / directionLength;
+          }
+          p.vy = (2 + this.random() * 2) * scale * F.bleedingLaunchGain;
+          p.weight =
+            p.seed < 0.4
+              ? 0.55 + p.seed * 0.625
+              : p.seed < 0.8
+                ? 1.05 + (p.seed - 0.4) * 0.75
+                : 1.7 + (p.seed - 0.8) * 2;
+          p.gravity = F.debrisGravity * p.weight;
+          p.drag =
+            F.debrisDrag * (p.weight < 1 ? 0.55 : p.weight > 1.5 ? 1.2 : 1);
+          p.rangeLimit = bleedingRange(scale);
+          if (impact) {
+            p.x = p.anchorX = impact.x;
+            p.y = p.anchorY = impact.y;
+            p.z = p.anchorZ = impact.z;
+          }
           p.fadeAt = F.debrisLifeMin + this.random() * F.debrisLifeRange;
           p.life = p.max = p.fadeAt + F.debrisFade;
           p.bounceLimit =
@@ -588,6 +640,8 @@ export class ParticleSimulation {
         }
         if (i >= baseCount - 8 && i < baseCount) {
           p.shape = SHAPE.smoke;
+          p.weight = 0;
+          p.rangeLimit = Infinity;
           p.collision = false;
           p.trail = 0;
           p.size = (0.36 + this.random() * 0.2) * scale;
@@ -730,7 +784,7 @@ export class ParticleSimulation {
         p.vy *= F.scatterGain;
         p.vz *= F.scatterGain;
       }
-      if (p.color === F.nongravitySplatterColor) p.size *= F.nongravitySizeGain;
+      if (p.color === F.splatterColor) p.size *= F.splatterSizeGain;
       p.size *= PARTICLE_SIZE_GAIN;
       this.emitted++;
     }
@@ -767,7 +821,7 @@ export class ParticleSimulation {
       p.vy = p.vy * e - p.gravity * k;
       if (Number.isFinite(p.rangeLimit)) {
         let rx = p.x - p.anchorX,
-          ry = p.y - p.anchorY,
+          ry = p.shape === SHAPE.debris ? 0 : p.y - p.anchorY,
           rz = p.z - p.anchorZ;
         const distance = Math.hypot(rx, ry, rz),
           radius = p.rangeLimit;
@@ -775,8 +829,12 @@ export class ParticleSimulation {
           0,
           Math.min(1, (radius - distance) / (radius * 0.12)),
         );
-        p.rangeOpacity = Math.min(p.rangeOpacity, edge * edge * (3 - 2 * edge));
-        if (p.rangeOpacity < 1)
+        if (p.shape !== SHAPE.debris)
+          p.rangeOpacity = Math.min(
+            p.rangeOpacity,
+            edge * edge * (3 - 2 * edge),
+          );
+        if (p.shape !== SHAPE.debris && p.rangeOpacity < 1)
           p.expireAge = Math.min(p.expireAge, p.age + 0.16);
         if (distance > radius * 0.8) {
           const inverse = 1 / Math.max(0.001, distance);
@@ -791,7 +849,7 @@ export class ParticleSimulation {
           p.vz -= rz * loss;
           if (distance > radius) {
             p.x = p.anchorX + rx * radius;
-            p.y = p.anchorY + ry * radius;
+            if (p.shape !== SHAPE.debris) p.y = p.anchorY + ry * radius;
             p.z = p.anchorZ + rz * radius;
           }
         }
@@ -811,8 +869,7 @@ export class ParticleSimulation {
           t.y = p.collision ? Math.max(p.y, floor(p.x, p.z) + 0.035) : p.y;
           t.z = p.z;
           t.size = p.size * 0.48;
-          t.color =
-            p.shape === SHAPE.ribbon ? F.nongravitySplatterColor : p.color;
+          t.color = p.shape === SHAPE.ribbon ? F.splatterColor : p.color;
         }
       }
       let support = floor(p.x, p.z);
@@ -866,7 +923,11 @@ export class ParticleSimulation {
       }
       if (
         Number.isFinite(p.rangeLimit) &&
-        Math.hypot(p.x - p.anchorX, p.y - p.anchorY, p.z - p.anchorZ) >
+        Math.hypot(
+          p.x - p.anchorX,
+          p.shape === SHAPE.debris ? 0 : p.y - p.anchorY,
+          p.z - p.anchorZ,
+        ) >
           p.rangeLimit + 1e-7
       ) {
         p.life = 0;

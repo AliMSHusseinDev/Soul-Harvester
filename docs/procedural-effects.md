@@ -1,6 +1,6 @@
 # Procedural combat effects
 
-Version 0.14.6 emphasizes the enemy's body response from the newer 48.8-second reference recording. Combat particles remain geometry and shader functions: no particle PNG, canvas texture, sprite sheet, atlas or frame sequence is loaded. Enemy artwork, weapon/world surfaces and fonts retain their existing assets.
+Version 0.14.7 emphasizes the enemy's body response from the newer 48.8-second reference recording. Combat particles remain geometry and shader functions: no particle PNG, canvas texture, sprite sheet, atlas or frame sequence is loaded. Enemy artwork, weapon/world surfaces and fonts retain their existing assets.
 
 ## Event composition
 
@@ -112,3 +112,11 @@ A conservative reference travel envelope is derived from the preceding fan's spe
 Seeded weight tiers vary gravitational acceleration, drag and duration independently of size. Heavy rays drop and settle quickly; light rays have lower drag and longer duration. Some approach the cap while others stop well short. Grounded weighted rays fade quickly without bouncing; existing dark gravity shards retain mixed bounce/settle behavior and their full hold/fade lifetime. Trails inherit the parent's range anchor and boundary opacity.
 
 Tests compare exact 1.5 launch scaling, unchanged sizes, exact 1.7 radius scaling, ray counts, weight response ordering, wide/short light trajectories, monotone edge fading, hard bounds over stepped terrain, cleanup and deterministic shot-driven variation. Two additional render scenarios show later weighted-flight phases.
+
+## 0.14.7 Splatter and Bleeding
+
+The profile names are now Splatter (#b32020) and Bleeding (#820808). Relative to 0.14.6, Splatter has 25% lower launch velocity, a 40% smaller range limit, 5% more primary particles (35 → 37) and 10% larger particles. These are the final requested corrections, replacing the initially proposed 10% speed and 30% range reductions.
+
+Bleeding has 30% higher launch velocity, 70% more horizontal range and 15% more particles (35 → 40), with unchanged sizes. Seeded light/medium/heavy weights vary gravity and drag independently of size. The impact position, incoming bullet direction and varied angular fan drive each burst; horizontal velocity is normalized to preserve the requested launch multiplier. Its horizontal range guard retains vertical gravity, mixed bounce/settle and the full hold/fade sequence. Smoke is excluded from bleeding weight/range settings. Existing pool limits, ADS protection, terrain support and texture-free rendering remain.
+
+Validation includes 118 unit tests, the strict production build, all 29 VFX scenarios at 720p/1080p, and world/ADS/terrain checks. The unit suite covers exact gains/counts, unchanged bleeding sizes, contact anchoring, per-burst variation, weight tiers and hard range bounds. See the [release report](release-0.14.7.md) for captures and production combat verification.
