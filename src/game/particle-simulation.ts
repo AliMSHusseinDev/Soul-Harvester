@@ -390,19 +390,16 @@ export class ParticleSimulation {
       }
       if (death) {
         p.shape = i % 3 === 0 ? SHAPE.chip : SHAPE.ribbon;
-        p.color =
-          i % 3 === 0
-            ? 0x9e2844
-            : [0xf18a9c, 0xe87088, 0xd65d77, 0xf6a3ac][i % 4];
+        p.color = F.deathColor;
         p.size =
           (p.shape === SHAPE.ribbon
-            ? 0.05 + this.random() * 0.04
+            ? 0.04 + this.random() * 0.025
             : 0.025 + this.random() * 0.035) * scale;
-        p.stretch = p.shape === SHAPE.ribbon ? 3.4 + this.random() * 2.4 : 1;
+        p.stretch = p.shape === SHAPE.ribbon ? 5 + this.random() * 4 : 1;
         p.life = p.max = F.deathLifeMin + this.random() * F.deathLifeRange;
         p.gravity = F.deathGravity;
         p.drag = F.deathDrag;
-        p.vy = (this.random() - 0.15) * 5 * scale;
+        p.vy = (this.random() - 0.25) * 9 * scale;
         if (p.shape === SHAPE.ribbon && i % 2 === 0) p.trail = 1;
         if (i >= count - 8) {
           p.shape = SHAPE.smoke;
@@ -410,7 +407,7 @@ export class ParticleSimulation {
           p.size = (0.36 + this.random() * 0.2) * scale;
           p.x += (this.random() - 0.5) * 0.2 * scale;
           p.z += (this.random() - 0.5) * 0.2 * scale;
-          p.color = [0xd47b8d, 0x98485e, 0xc8798c, 0xae596e][i % 4];
+          p.color = F.deathColor;
           p.life = p.max = 0.65 + this.random() * 0.35;
           p.vx *= 0.2;
           p.vz *= 0.2;
@@ -541,6 +538,11 @@ export class ParticleSimulation {
         p.gravity = -0.3;
       }
       if (!small && p.shape === SHAPE.streak && i % 5 === 0) p.trail = 1;
+      if (!p.ground && !p.overlay) {
+        p.vx *= F.scatterGain;
+        p.vy *= F.scatterGain;
+        p.vz *= F.scatterGain;
+      }
       p.size *= PARTICLE_SIZE_GAIN;
       this.emitted++;
     }
@@ -582,10 +584,10 @@ export class ParticleSimulation {
           p.trailClock %= 0.045;
           const t = trailSources[trails++];
           t.x = p.x;
-          t.y = p.y;
+          t.y = Math.max(p.y, floor(p.x, p.z) + 0.035);
           t.z = p.z;
           t.size = p.size * 0.48;
-          t.color = p.shape === SHAPE.ribbon ? 0x98283f : p.color;
+          t.color = p.shape === SHAPE.ribbon ? F.deathColor : p.color;
         }
       }
       const ground = floor(p.x, p.z) + 0.035;

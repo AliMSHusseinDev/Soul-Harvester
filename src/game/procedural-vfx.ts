@@ -74,11 +74,14 @@ export function particleMaterial(cube = false, overlay = false) {
           alpha=(1.-smoothstep(.022,.06,abs(r-edge)))*step(.15,sin(a*3.+seed*8.+t*2.));
           highlight=.4;
         }else if(shape>8.5){
-          // Thin faceted flakes with an angled tip and two rose-colored faces.
-          float taper=mix(.85-.18*abs(q.y),.9*(1.-abs(q.y))+.03,step(.5,seed));
-          alpha=step(abs(q.x),taper)*step(abs(q.y),.98);
-          highlight=step(q.x+.2*q.y,0.)*.22;
+          // Broken pixel rays: a tapered staircase with detached square flecks.
+          float row=floor(vUv.y*12.);
+          float width=.2+.5*(1.-vUv.y)+hash(vec2(row,seed*17.))*.18;
+          float breaks=step(.18,hash(vec2(row,seed*31.)));
+          alpha=step(abs(q.x),width)*step(abs(q.y),.98)*breaks;
+          highlight=0.;
         }
+        if(vColor.r>vColor.g*2. && vColor.r>vColor.b*2.)highlight=0.;
         alpha*=vData.y;
         if(alpha<.015)discard;
         gl_FragColor=vec4(mix(vColor,vec3(1.),highlight)*vLight,alpha);
@@ -283,14 +286,14 @@ export class ProceduralVFX {
         p.ground ? groundHeight(p.x, p.z) + 0.065 : p.y,
         p.z,
       );
-      if (p.shape === SHAPE.cube || p.shape === SHAPE.ribbon)
+      if (p.shape === SHAPE.cube)
         this.dummy.rotation.set(p.angle * 0.7, p.angle, p.angle * 0.4);
       else if (p.ground) {
         this.dummy.quaternion.copy(this.groundRotation);
         this.dummy.rotateZ(p.angle);
       } else {
         this.dummy.quaternion.copy(this.camera.quaternion);
-        if (p.shape === SHAPE.streak) {
+        if (p.shape === SHAPE.streak || p.shape === SHAPE.ribbon) {
           // Project velocity into the camera plane for physically aligned spark ribbons.
           this.along
             .set(p.vx, p.vy, p.vz)

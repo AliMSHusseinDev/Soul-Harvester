@@ -138,3 +138,19 @@ it("keeps critical accents compact and scatters death flakes across a broad arc"
     flakes.filter((p) => Math.hypot(p.x, p.z) > 1.8).length,
   ).toBeGreaterThan(8);
 });
+
+it("uses the requested deep red and scatters a death burst several metres without losing its bounded lifetime", () => {
+  const p = new ParticleSimulation();
+  p.emit("death", 0, 5, 0);
+  expect(
+    p.items.filter((p) => p.life > 0).every((p) => p.color === 0x780606),
+  ).toBe(true);
+  for (let i = 0; i < 30; i++) p.step(1 / 60, () => 0);
+  const rays = p.items.filter((p) => p.life > 0 && p.shape === SHAPE.ribbon);
+  expect(rays.filter((p) => Math.hypot(p.x, p.z) > 3.5).length).toBeGreaterThan(
+    10,
+  );
+  expect(rays.some((p) => p.x > 3) && rays.some((p) => p.x < -3)).toBe(true);
+  for (let i = 0; i < 240; i++) p.step(1 / 60, () => 0);
+  expect(p.active).toBe(0);
+});

@@ -176,7 +176,7 @@ try {
             b = pixels[i + 2];
           if (r > 150 && g > 100 && b < g * 0.75) gold++;
           if (r > 230 && g > 230 && b > 220) white++;
-          if (r > 90 && r > g * 1.6 && b > g) red++;
+          if (r > 65 && r > g * 1.6 && r > b * 1.3) red++;
           if (g > 150 && b > 140 && r < g * 0.9) cyan++;
           if (r > 40 && r > g * 1.4 && b > g) burgundy++;
         }

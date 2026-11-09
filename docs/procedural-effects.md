@@ -1,20 +1,20 @@
 # Procedural combat effects
 
-Version 0.14.0 emphasizes the enemy's body response from the newer 48.8-second reference recording. Combat particles remain geometry and shader functions: no particle PNG, canvas texture, sprite sheet, atlas or frame sequence is loaded. Enemy artwork, weapon/world surfaces and fonts retain their existing assets.
+Version 0.14.1 emphasizes the enemy's body response from the newer 48.8-second reference recording. Combat particles remain geometry and shader functions: no particle PNG, canvas texture, sprite sheet, atlas or frame sequence is loaded. Enemy artwork, weapon/world surfaces and fonts retain their existing assets.
 
 ## Event composition
 
-| Event        | Layers                                                                                                                                                      |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Normal hit   | Approximately 100ms alpha-preserving white enemy flash, small ivory impact, directional gold flecks, short dusty red smoke                                  |
-| Critical hit | White flash, compact amber/ivory accent, short outward ticks after 45ms, larger upward damage text                                                          |
-| Death        | White silhouette, foot-anchored burgundy collapse, pixel erosion, wide-scattering flat rose strips/diamonds, dotted dark red trails and muted crimson smoke |
-| Magic kill   | The death composition plus a radial cyan spray                                                                                                              |
-| Player hurt  | Saturating red edge pulse, small crimson flecks, damped pitch/roll and weapon reaction                                                                      |
-| Nova         | Teal chips/ribbons, staggered terrain rings and fractured arcs, cyan screen wash                                                                            |
-| Fire orb     | Palm flash, animated hot core/halo, curved ember plumes, orange explosion and smoke                                                                         |
-| Pickup       | Immediate independent loot launch on death; attraction trails, glints, existing UI/chimes                                                                   |
-| Level up     | Rising orbital stars, terrain rings, blue rays/wash, existing banner and bounded cinematic time                                                             |
+| Event        | Layers                                                                                                                                                         |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Normal hit   | Approximately 100ms alpha-preserving white enemy flash, small ivory impact, directional gold flecks, short dusty red smoke                                     |
+| Critical hit | White flash, compact amber/ivory accent, short outward ticks after 45ms, larger upward damage text                                                             |
+| Death        | White silhouette, foot-anchored burgundy collapse, pixel erosion, wide-scattering broken pixel rays in #780606, matching dotted trails and muted crimson smoke |
+| Magic kill   | The death composition plus a radial cyan spray                                                                                                                 |
+| Player hurt  | Saturating red edge pulse, small crimson flecks, damped pitch/roll and weapon reaction                                                                         |
+| Nova         | Teal chips/ribbons, staggered terrain rings and fractured arcs, cyan screen wash                                                                               |
+| Fire orb     | Palm flash, animated hot core/halo, curved ember plumes, orange explosion and smoke                                                                            |
+| Pickup       | Immediate independent loot launch on death; attraction trails, glints, existing UI/chimes                                                                      |
+| Level up     | Rising orbital stars, terrain rings, blue rays/wash, existing banner and bounded cinematic time                                                                |
 
 The ordinary-hit gold ring and always-on death floor shockwave/teal wisps from 0.12.0 have been removed. Critical hits and finishers use short gold ticks; the earlier expanding critical rings have also been removed. Cyan death spray is explicitly tied to nova/orb kills in this implementation; the reference does not reveal the source game's exact trigger.
 
@@ -40,7 +40,7 @@ The pool reserves 256 slots from low-priority ambient/trail traffic. High-priori
 
 ## Rendering and visibility
 
-`procedural-vfx.ts` has at most three instanced particle draws: world planes, world cubes and impact planes. The cube path remains available but ordinary death no longer emits cubes. Twelve-cell masks (fourteen for stepped smoke) construct beveled chips, two-tone rose strips/diamonds, stars, broken annuli, wisps and evolving noise smoke. Death flakes rotate in world space, exposing flat faces; directional sparks align to projected velocity. Output applies display color conversion.
+`procedural-vfx.ts` has at most three instanced particle draws: world planes, world cubes and impact planes. The cube path remains available but ordinary death no longer emits cubes. Twelve-cell masks (fourteen for stepped smoke) construct beveled chips, broken deep-red pixel rays, stars, broken annuli, wisps and evolving noise smoke. Death rays and sparks align to projected velocity; stepped gaps and detached pixel cells form sharp silhouettes. Deep-red masks retain their authored color without white facet highlights. Output applies display color conversion.
 
 World particles respect normal depth. Primary impact accents render after the world and before the weapon, preserving the ADS iron sights. Their anchors are checked against the shared visible-geometry BVH (with the collider/floor fallback used by isolated fixtures); this is center-line visibility, not per-pixel wall-edge clipping. Remnants stay in the depth-tested world scene.
 
@@ -70,3 +70,5 @@ Loot retains exactly-once reward accounting and clear-path checks. It launches w
 - `node scripts/actual-combat-check.mjs` exercises the compiled game through actual input, including bullets, incoming damage and abilities. Screenshots/report data go to ignored `artifacts/`.
 
 This is an original procedural interpretation of the supplied recordings. Exact source-game rendering internals cannot be recovered from video. Software-rendered checks do not establish hardware 60 FPS or guarantee every possible visual case.
+
+In 0.14.1, death rays use #780606, 7–14 m/s initial horizontal emission before the global 1.3 scatter multiplier, 0.62–0.84s lifetimes and 1.25 drag. All moving, non-overlay, non-ground particle profiles receive the scatter multiplier; primary accents and ground rings retain their authored anchors and view caps.
