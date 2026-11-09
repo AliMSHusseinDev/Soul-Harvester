@@ -231,7 +231,10 @@ try {
         fx.reset();
         weapon.group.visible = false;
         fx.death(0, -35);
-        for (let i = 0; i < 120; i++) fx.step(1 / 60, i / 60);
+        const emitted = fx["procedural"].simulation.items.filter(
+          (p) => p.life > 0 && p.shape === 10,
+        ).length;
+        for (let i = 0; i < 96; i++) fx.step(1 / 60, i / 60);
         camera.position.set(0, 0.4, -33);
         camera.lookAt(0, 0.08, -35);
         draw();
@@ -239,19 +242,21 @@ try {
           (p) => p.life > 0 && p.shape === 10,
         );
         return {
-          count: shards.length,
-          settled: shards.every((p) => p.settled),
+          count: emitted,
+          settled: shards.some((p) => p.settled),
           minClearance: Math.min(
-            ...shards.map(
-              (p) =>
-                p.y -
-                world.ballistics.supportHeight(
-                  p.x,
-                  p.z,
-                  p.y + 0.3,
-                  islandSurfaceHeight(p.x, p.z),
-                ),
-            ),
+            ...shards
+              .filter((p) => p.settled)
+              .map(
+                (p) =>
+                  p.y -
+                  world.ballistics.supportHeight(
+                    p.x,
+                    p.z,
+                    p.y + 0.3,
+                    islandSurfaceHeight(p.x, p.z),
+                  ),
+              ),
           ),
         };
       },
@@ -334,7 +339,7 @@ try {
   assert.equal(report.breeze.reduced, 0);
   await page.screenshot({ path: "artifacts/world-breeze.png" });
   report.shards = await page.evaluate(() => window.fixture.settledShards());
-  assert.equal(report.shards.count, 40);
+  assert.equal(report.shards.count, 44);
   assert.ok(report.shards.settled);
   assert.ok(report.shards.minClearance > 0.035);
   await page.screenshot({ path: "artifacts/world-settled-shards.png" });

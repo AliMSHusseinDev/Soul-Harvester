@@ -59,12 +59,21 @@ export function splatterRange(scale = 1) {
     scale
   );
 }
+// Logarithmic difficulty response gives tougher types a modest, bounded count bonus.
+export function enemyParticleDensity(scale: number, healthRatio: number) {
+  return Math.min(
+    F.enemyParticleCountCap,
+    1 +
+      Math.max(0, scale - 1) * F.enemyParticleSizeWeight +
+      Math.log2(Math.max(1, healthRatio)) * F.enemyParticleDifficultyWeight,
+  );
+}
 export function bleedingRange(scale = 1) {
   return (
     (((F.deathSpeedMin + F.deathSpeedRange + 1.5) *
       F.debrisSpread *
       F.scatterGain *
-      -Math.expm1(-F.debrisDrag * (F.debrisLifeMin + F.debrisLifeRange))) /
+      -Math.expm1(-F.debrisDrag * F.bleedingRangeReferenceLife)) /
       F.debrisDrag) *
     F.bleedingRangeGain *
     scale
@@ -223,6 +232,7 @@ export class ParticleSimulation {
     finishing = false,
     ny = 0,
     impact?: SplatterImpact,
+    density = 1,
   ) {
     this.events[event]++;
     const serial = ++this.serial;
@@ -279,10 +289,14 @@ export class ParticleSimulation {
         : 0,
       gravityExtra =
         Math.round(
-          Math.ceil(
-            Math.ceil(gravityBase * F.gravityAmountGain) *
-              F.gravityAdditionalGain,
-          ) * F.bleedingAdditionalAmountGain,
+          Math.round(
+            Math.ceil(
+              Math.ceil(gravityBase * F.gravityAmountGain) *
+                F.gravityAdditionalGain,
+            ) * F.bleedingAdditionalAmountGain,
+          ) *
+            F.bleedingCountGain *
+            Math.max(1, Math.min(F.enemyParticleCountCap, density)),
         ) - gravityBase,
       rayBase = death
         ? baseCount - 8 - gravityBase - (finishing && !reduced ? 2 : 0)
@@ -290,7 +304,8 @@ export class ParticleSimulation {
       rayExtra =
         Math.round(
           Math.ceil(Math.max(0, rayBase) * F.splatterAmountGain) *
-            F.splatterAdditionalAmountGain,
+            F.splatterAdditionalAmountGain *
+            Math.max(1, Math.min(F.enemyParticleCountCap, density)),
         ) - Math.max(0, rayBase),
       count = baseCount + gravityExtra + rayExtra,
       palette = color

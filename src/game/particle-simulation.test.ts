@@ -8,6 +8,7 @@ import {
   debrisOpacity,
   splatterRange,
   bleedingRange,
+  enemyParticleDensity,
 } from "./particle-simulation";
 it("reproduces seeded events with independent particles and distinct event profiles", () => {
   const a = new ParticleSimulation(),
@@ -208,9 +209,9 @@ it("uses weight-driven splatter and preserves debris mixed bounce and settle", (
 
 it("applies the further gravity multiplier while preserving rays and eight smoke puffs", () => {
   for (const [finishing, reduced, expected] of [
-    [false, false, 40],
-    [true, false, 45],
-    [false, true, 16],
+    [false, false, 44],
+    [true, false, 50],
+    [false, true, 18],
   ] as const) {
     const p = new ParticleSimulation();
     p.emit("death", 0, 2, 0, 1, reduced, undefined, 0, 0, finishing);
@@ -300,26 +301,26 @@ it("increases only splatter birth sizes by ten percent over the previous version
     }
 });
 
-it("keeps gravity shards alive 50% longer and fades only after their hold lifetime", () => {
+it("reduces bleeding lifetime 20% and fades only after their hold lifetime", () => {
   const p = new ParticleSimulation();
   p.emit("death", 0, 0.9, 0);
   const chunks = p.items.filter((p) => p.life > 0 && p.shape === SHAPE.debris);
   expect(
     chunks.every(
       (p) =>
-        p.fadeAt >= 2.1 &&
-        p.fadeAt <= 2.55 &&
-        Math.abs(p.max - p.fadeAt - 0.35) < 1e-9,
+        p.fadeAt >= 1.68 &&
+        p.fadeAt <= 2.04 &&
+        Math.abs(p.max - p.fadeAt - 0.28) < 1e-9,
     ),
   ).toBe(true);
-  for (let i = 0; i < 120; i++) p.step(1 / 60, () => 0);
+  for (let i = 0; i < 90; i++) p.step(1 / 60, () => 0);
   expect(
     chunks.every((p) => p.life > 0 && debrisOpacity(p.age, p.fadeAt) === 1),
   ).toBe(true);
   for (const c of chunks) {
     expect(debrisOpacity(c.fadeAt, c.fadeAt)).toBe(1);
-    expect(debrisOpacity(c.fadeAt + 0.175, c.fadeAt)).toBeCloseTo(0.5);
-    expect(debrisOpacity(c.fadeAt + 0.35, c.fadeAt)).toBeCloseTo(0);
+    expect(debrisOpacity(c.fadeAt + 0.14, c.fadeAt)).toBeCloseTo(0.5);
+    expect(debrisOpacity(c.fadeAt + 0.28, c.fadeAt)).toBeCloseTo(0);
   }
   for (let i = 0; i < 120; i++) p.step(1 / 60, () => 0);
   expect(p.active).toBe(0);
@@ -430,7 +431,7 @@ it("lets some light rays approach the cap while others stop short and never brig
   expect(light.some(({ r, peak }) => peak < r.rangeLimit * 0.7)).toBe(true);
 });
 
-it("launches bleeding 30% faster at fixed sizes and varies its weights and contact-oriented fans", () => {
+it("launches bleeding 50% faster than 0.14.7 at fixed sizes and varies its weights and contact-oriented fans", () => {
   const gain = VFX.bleedingLaunchGain,
     a = new ParticleSimulation(),
     b = new ParticleSimulation();
@@ -446,7 +447,7 @@ it("launches bleeding 30% faster at fixed sizes and varies its weights and conta
     nz: 1,
   };
   try {
-    VFX.bleedingLaunchGain = 1;
+    VFX.bleedingLaunchGain = 1.3;
     a.emit("death", 0, 1, 0, 1, false, undefined, 0, -1, false, 0, impact);
     VFX.bleedingLaunchGain = gain;
     b.emit("death", 0, 1, 0, 1, false, undefined, 0, -1, false, 0, impact);
@@ -454,12 +455,12 @@ it("launches bleeding 30% faster at fixed sizes and varies its weights and conta
     VFX.bleedingLaunchGain = gain;
   }
   const shards = b.items.filter((p) => p.life > 0 && p.shape === SHAPE.debris);
-  expect(shards).toHaveLength(40);
+  expect(shards).toHaveLength(44);
   for (let i = 0; i < a.items.length; i++)
     if (a.items[i].life > 0 && a.items[i].shape === SHAPE.debris) {
       expect(b.items[i].size).toBe(a.items[i].size);
       for (const k of ["vx", "vy", "vz"] as const)
-        expect(b.items[i][k]).toBeCloseTo(a.items[i][k] * 1.3, 10);
+        expect(b.items[i][k]).toBeCloseTo(a.items[i][k] * 1.5, 10);
     }
   expect(
     shards.every(
@@ -472,12 +473,12 @@ it("launches bleeding 30% faster at fixed sizes and varies its weights and conta
   const range = VFX.bleedingRangeGain;
   let baseline = 0;
   try {
-    VFX.bleedingRangeGain = 1;
+    VFX.bleedingRangeGain = 1.7;
     baseline = bleedingRange();
   } finally {
     VFX.bleedingRangeGain = range;
   }
-  expect(bleedingRange() / baseline).toBeCloseTo(1.7, 10);
+  expect(bleedingRange() / baseline).toBeCloseTo(1.5, 10);
   const before = shards.map((p) => [p.vx, p.vy, p.vz]);
   b.emit("death", 0, 1, 0, 1, false, undefined, 0, -1, false, 0, impact);
   expect(
@@ -495,4 +496,45 @@ it("launches bleeding 30% faster at fixed sizes and varies its weights and conta
         p.rangeLimit + 1e-7,
       );
   }
+});
+
+it("bounds enemy-dependent counts without changing smoke or particle sizes", () => {
+  const emit = (density: number) => {
+    const p = new ParticleSimulation();
+    p.emit(
+      "death",
+      0,
+      1,
+      0,
+      1,
+      false,
+      undefined,
+      0,
+      0,
+      false,
+      0,
+      undefined,
+      density,
+    );
+    return p.items.filter((p) => p.life > 0);
+  };
+  const normal = emit(1),
+    large = emit(1.3),
+    capped = emit(100);
+  for (const shape of [SHAPE.debris, SHAPE.ribbon]) {
+    const a = normal.filter((p) => p.shape === shape),
+      b = large.filter((p) => p.shape === shape);
+    expect(b.length).toBe(Math.round(a.length * 1.3));
+    expect(capped.filter((p) => p.shape === shape).length).toBe(b.length);
+  }
+  expect(large.filter((p) => p.shape === SHAPE.smoke)).toHaveLength(8);
+});
+
+it("gives larger tougher enemy types a modest bounded particle bonus", () => {
+  expect(enemyParticleDensity(1, 1)).toBe(1);
+  expect(enemyParticleDensity(0.82, 29 / 43)).toBe(1);
+  expect(enemyParticleDensity(1.45, 135 / 43)).toBeGreaterThan(
+    enemyParticleDensity(1.05, 56 / 43),
+  );
+  expect(enemyParticleDensity(100, 1e12)).toBe(1.3);
 });

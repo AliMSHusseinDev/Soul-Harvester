@@ -1,3 +1,4 @@
+import { enemyParticleDensity } from "./particle-simulation";
 import type { SplatterImpact } from "./particle-simulation";
 import { coinGeometry, crystalGeometry } from "./loot-geometry";
 import { SurfaceImpacts } from "./surface-impacts";
@@ -284,6 +285,7 @@ export class Effects {
       critical,
       0,
       impact,
+      enemyParticleDensity(scale, ENEMY_TYPES[kind].hp / ENEMY_TYPES[0].hp),
     );
     if (magic)
       this.procedural.emit(

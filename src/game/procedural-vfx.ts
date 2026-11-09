@@ -175,6 +175,7 @@ export class ProceduralVFX {
     finishing = false,
     ny = 0,
     impact?: SplatterImpact,
+    density = 1,
   ) {
     this.simulation.emit(
       event,
@@ -189,6 +190,7 @@ export class ProceduralVFX {
       finishing,
       ny,
       impact,
+      density,
     );
   }
   step(dt: number) {

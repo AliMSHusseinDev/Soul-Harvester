@@ -46,3 +46,9 @@ Splatter uses `splatterLaunchGain`=1.125, `splatterRangeGain`=1.02 and `splatter
 Bleeding uses `bleedingLaunchGain`=1.3, `bleedingRangeGain`=1.7 and `bleedingAdditionalAmountGain`=1.15. Its historical count stages remain `gravityAmountGain` and `gravityAdditionalGain`; the new multiplier rounds the resulting count to the nearest whole particle (35 → 40 on ordinary deaths). Its range is horizontal, derived from the previous conservative drag/velocity envelope, whereas Splatter's limit is a 3D radius. Both scale with enemy size.
 
 Both profiles vary their fan from the bullet contact/direction and seeded per-kill variation. Apparent weight changes gravity/drag independently of size. Bleeding retains mixed bounce/settle behavior, terrain clearance, `debrisLifeMin`/`debrisLifeRange` hold (2.1–2.55s) and `debrisFade` (0.35s). Reaching the horizontal range cap does not shorten that hold or stop gravity.
+
+## 0.14.8 Bleeding update
+
+Relative to 0.14.7: Bleeding velocity +50% (`bleedingLaunchGain` 1.95), horizontal range +50% (`bleedingRangeGain` 2.55), count +10% (`bleedingCountGain` 1.1 after previous rounding), total lifetime −20%. Hold is now 1.68–2.04s and final fade 0.28s. `bleedingRangeReferenceLife` preserves the prior analytical range reference independently of live lifetime. Ordinary/critical/reduced counts are 44/50/18 before enemy bonuses.
+
+Enemy type count density is `1 + .18 * max(0, scale−1) + .06 * log2(max(1, hp/baseHp))`, capped at 1.3. It scales both primary blood profiles, with nearest-integer rounding; smoke count and fixed pool budgets stay unchanged. `enemyParticleSizeWeight`, `enemyParticleDifficultyWeight` and `enemyParticleCountCap` expose these controls. Health uses base enemy type health, so wave scaling does not cause unbounded visual growth. Splatter speed/range/size/lifetime are unchanged.
