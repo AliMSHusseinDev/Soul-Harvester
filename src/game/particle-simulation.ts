@@ -211,7 +211,18 @@ export class ParticleSimulation {
                             : critical
                               ? F.criticalCount
                               : F.hitCount,
-      count = Math.max(1, Math.ceil(total * (reduced ? F.reducedDensity : 1))),
+      baseCount = Math.max(
+        1,
+        Math.ceil(total * (reduced ? F.reducedDensity : 1)),
+      ),
+      gravityBase = death
+        ? Math.max(
+            0,
+            Math.ceil((baseCount - 8) / 3) -
+              (finishing && !reduced && baseCount - 8 > 6 ? 1 : 0),
+          )
+        : 0,
+      count = baseCount + Math.ceil(gravityBase * (F.gravityAmountGain - 1)),
       palette = color
         ? [color]
         : death || event === "hurt"
@@ -405,9 +416,9 @@ export class ParticleSimulation {
         p.spin = (this.random() - 0.5) * 0.5;
       }
       if (death) {
-        p.shape = i % 3 === 0 ? SHAPE.debris : SHAPE.ribbon;
+        p.shape = i >= baseCount || i % 3 === 0 ? SHAPE.debris : SHAPE.ribbon;
         p.collision = false;
-        p.color = F.deathColor;
+        p.color = F.nongravitySplatterColor;
         p.size =
           (p.shape === SHAPE.ribbon
             ? 0.04 + this.random() * 0.025
@@ -419,7 +430,7 @@ export class ParticleSimulation {
         p.vy = (this.random() - 0.25) * 9 * scale;
         if (p.shape === SHAPE.ribbon && i % 2 === 0) p.trail = 1;
         if (p.shape === SHAPE.debris) {
-          p.color = F.debrisColor;
+          p.color = F.gravitySplatterColor;
           p.collision = true;
           p.size = (0.07 + this.random() * 0.03) * scale;
           p.stretch = 1;
@@ -432,14 +443,15 @@ export class ParticleSimulation {
           p.bounceLimit =
             this.random() < F.debrisBounceChance ? 1 + (i % 2) : 0;
         }
-        if (i >= count - 8) {
+        if (i >= baseCount - 8 && i < baseCount) {
           p.shape = SHAPE.smoke;
           p.collision = false;
           p.trail = 0;
           p.size = (0.36 + this.random() * 0.2) * scale;
           p.x += (this.random() - 0.5) * 0.2 * scale;
           p.z += (this.random() - 0.5) * 0.2 * scale;
-          p.color = F.deathColor;
+          p.color = F.lethalColor;
+          p.age = -F.lethalSmokeDelay;
           p.life = p.max = 0.65 + this.random() * 0.35;
           p.vx *= 0.2;
           p.vz *= 0.2;
@@ -619,7 +631,8 @@ export class ParticleSimulation {
           t.y = p.collision ? Math.max(p.y, floor(p.x, p.z) + 0.035) : p.y;
           t.z = p.z;
           t.size = p.size * 0.48;
-          t.color = p.shape === SHAPE.ribbon ? F.deathColor : p.color;
+          t.color =
+            p.shape === SHAPE.ribbon ? F.nongravitySplatterColor : p.color;
         }
       }
       const ground =

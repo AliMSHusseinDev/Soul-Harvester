@@ -418,7 +418,7 @@ try {
     () => window.__polish.v.diagnostics().remnants,
   );
   assert.ok(whiteRemnant.active > 0);
-  await page.screenshot({ path: "artifacts/polish-death-white.png" });
+  await page.screenshot({ path: "artifacts/polish-death-blood.png" });
   await page.evaluate(() => window.__polish.advanceDeath());
   await frame();
   const burgundy = await page.evaluate(
@@ -426,7 +426,7 @@ try {
   );
   assert.ok(
     burgundy.phases.every(
-      (p) => p.white === 0 && p.height < 1 && p.opacity < 1,
+      (p) => p.flash === 0 && p.height < 1 && p.opacity < 1,
     ),
   );
   assert.ok(

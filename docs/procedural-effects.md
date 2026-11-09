@@ -1,20 +1,20 @@
 # Procedural combat effects
 
-Version 0.14.2 emphasizes the enemy's body response from the newer 48.8-second reference recording. Combat particles remain geometry and shader functions: no particle PNG, canvas texture, sprite sheet, atlas or frame sequence is loaded. Enemy artwork, weapon/world surfaces and fonts retain their existing assets.
+Version 0.14.3 emphasizes the enemy's body response from the newer 48.8-second reference recording. Combat particles remain geometry and shader functions: no particle PNG, canvas texture, sprite sheet, atlas or frame sequence is loaded. Enemy artwork, weapon/world surfaces and fonts retain their existing assets.
 
 ## Event composition
 
-| Event        | Layers                                                                                                                                                         |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Normal hit   | Approximately 100ms alpha-preserving white enemy flash, small ivory impact, directional gold flecks, short dusty red smoke                                     |
-| Critical hit | White flash, compact amber/ivory accent, short outward ticks after 45ms, larger upward damage text                                                             |
-| Death        | White silhouette, foot-anchored burgundy collapse, pixel erosion, wide-scattering broken pixel rays in #820808, matching dotted trails and muted crimson smoke |
-| Magic kill   | The death composition plus a radial cyan spray                                                                                                                 |
-| Player hurt  | Saturating red edge pulse, small crimson flecks, damped pitch/roll and weapon reaction                                                                         |
-| Nova         | Teal chips/ribbons, staggered terrain rings and fractured arcs, cyan screen wash                                                                               |
-| Fire orb     | Palm flash, animated hot core/halo, curved ember plumes, orange explosion and smoke                                                                            |
-| Pickup       | Immediate independent loot launch on death; attraction trails, glints, existing UI/chimes                                                                      |
-| Level up     | Rising orbital stars, terrain rings, blue rays/wash, existing banner and bounded cinematic time                                                                |
+| Event        | Layers                                                                                                                                                                     |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Normal hit   | Approximately 100ms alpha-preserving white nonlethal enemy flash, small ivory impact, directional gold flecks, short dusty red smoke                                       |
+| Critical hit | White flash, compact amber/ivory accent, short outward ticks after 45ms, larger upward damage text                                                                         |
+| Death        | Blood-colored lethal silhouette, foot-anchored blood collapse, pixel erosion, wide-scattering broken pixel rays in #b32020, matching dotted trails and muted crimson smoke |
+| Magic kill   | The death composition plus a radial cyan spray                                                                                                                             |
+| Player hurt  | Saturating red edge pulse, small crimson flecks, damped pitch/roll and weapon reaction                                                                                     |
+| Nova         | Teal chips/ribbons, staggered terrain rings and fractured arcs, cyan screen wash                                                                                           |
+| Fire orb     | Palm flash, animated hot core/halo, curved ember plumes, orange explosion and smoke                                                                                        |
+| Pickup       | Immediate independent loot launch on death; attraction trails, glints, existing UI/chimes                                                                                  |
+| Level up     | Rising orbital stars, terrain rings, blue rays/wash, existing banner and bounded cinematic time                                                                            |
 
 The ordinary-hit gold ring and always-on death floor shockwave/teal wisps from 0.12.0 have been removed. Critical hits and finishers use short gold ticks; the earlier expanding critical rings have also been removed. Cyan death spray is explicitly tied to nova/orb kills in this implementation; the reference does not reveal the source game's exact trigger.
 
@@ -24,7 +24,7 @@ Living enemies apply their flash after lighting and fog while preserving their a
 
 `enemy-remnants.ts` replaces twenty individual corpse sprites with a sixty-four-slot pool and at most four instanced meshes, one per enemy type. Each mesh reuses existing character artwork and shallow alpha geometry. This is character geometry, not a particle sprite sheet.
 
-Over 380ms, clamped cubic envelopes control white-to-burgundy color, vertical collapse, narrowing, fading and deterministic UV-cell erosion. The pivot stays above the feet and uses the same terrain height as gameplay. The silhouette stays upright when the player looks down. Loot launches on the lethal simulation event independently of the remnant. Reset and expiry reclaim every slot.
+Over 380ms, clamped cubic envelopes control blood color, vertical collapse, narrowing, fading and deterministic UV-cell erosion. The pivot stays above the feet and uses the same terrain height as gameplay. The silhouette stays upright when the player looks down. Loot launches on the lethal simulation event independently of the remnant. Reset and expiry reclaim every slot.
 
 Enemies have one additional shared instanced contact-shadow draw. Its stepped radial mask follows terrain slope; this is a visual grounding cue rather than a dynamic shadow map. Green terrain tiles, gold weapon materials, clouds, fill light and teal fog have been tuned for clearer foregrounds and layered distance. Map layout and navigation are unchanged.
 
@@ -63,7 +63,7 @@ Loot retains exactly-once reward accounting and clear-path checks. It launches w
 ## Validation
 
 - Unit tests cover seeded profiles, step-rate-independent motion, terrain clearance, priority reserves, delayed activation, trails, remnant envelopes, kill metadata, pause and cleanup.
-- `npm run test:combat-vfx` renders twenty-three scenarios at 720p/1080p, including particle-isolated white/burgundy remnants, magic spray, actual framebuffer colors, wall rejection, reduced effects, saturation and cleanup.
+- `npm run test:combat-vfx` renders twenty-three scenarios at 720p/1080p, including particle-isolated lethal blood remnants, magic spray, actual framebuffer colors, wall rejection, reduced effects, saturation and cleanup.
 - `npm run test:world-polish` checks ADS weapon-pixel protection at both resolutions, compact crit coverage, four world surface categories, decals, wind/reduced motion, token models and foliage shadow compilation.
 - `npm run test:handling` checks the visible expanded sprint crosshair and existing movement/weapon handling.
 - `npm run test:polish` checks real body responses, damage numbers, casting, muzzle/smoke and forty-enemy loot/level rewards.
@@ -80,3 +80,9 @@ The #820808 splatter rays, smoke and trail dots have zero gravity and no terrain
 A separate #b32020 angular pixel-shard layer occupies the former chip slots, keeping the total burst budget unchanged. Shards are slightly wider, launch at 70% nominal horizontal velocity, use stronger drag and gravity, and have mixed contact behavior. About 55% allow one or two damped bounces; the rest settle immediately. Rest stops translation, spin and gravity, followed by a 0.2s fade. A finite 1.4–1.7s lifetime also bounds airborne pieces. Terrain clearance accounts for shard size. All collision state resets when a pool slot is reused, including trail children.
 
 Colors, nominal spread, gravity, drag, bounce chance, restitution, fade and lifetime are editable in VFX in tuning.ts. Tests cover both collision modes, finite bounce budgets, settling, expiry and isolated falling/bouncing renders at both resolutions.
+
+## 0.14.3 color swap and lethal sequence
+
+The named profiles are now nongravity splatter (#b32020) and gravity splatter (#820808). Gravity shard count receives a 1.5 multiplier, rounded up to whole particles, without reducing the existing ray or smoke counts. Normal full-density deaths therefore emit 23 gravity shards instead of 15; critical finishers emit 26 instead of 17. Fixed pool capacity, priorities and screen caps remain.
+
+The lethal body remnant uses #7d101a throughout its flash/collapse, preserving alpha; it never turns white. Nonlethal enemy flashes remain white. Eight smoke puffs use the same #7d101a and are scheduled 100ms after the lethal event. Smoke activation follows fixed simulation time and resets with the pool. Both the isolated initial body color and delayed smoke are checked independently.

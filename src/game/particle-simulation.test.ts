@@ -145,7 +145,7 @@ it("uses the requested deep red and scatters a death burst several metres withou
   expect(
     p.items
       .filter((p) => p.life > 0)
-      .every((p) => p.color === 0x820808 || p.color === 0xb32020),
+      .every((p) => [0x820808, 0xb32020, 0x7d101a].includes(p.color)),
   ).toBe(true);
   for (let i = 0; i < 30; i++) p.step(1 / 60, () => 0);
   const rays = p.items.filter((p) => p.life > 0 && p.shape === SHAPE.ribbon);
@@ -163,10 +163,10 @@ it("keeps splatter free of gravity and terrain response while debris mixes limit
   const rays = p.items.filter((p) => p.life > 0 && p.shape === SHAPE.ribbon),
     chunks = p.items.filter((p) => p.life > 0 && p.shape === SHAPE.debris);
   expect(
-    rays.every((p) => p.color === 0x820808 && p.gravity === 0 && !p.collision),
+    rays.every((p) => p.color === 0xb32020 && p.gravity === 0 && !p.collision),
   ).toBe(true);
   expect(
-    chunks.every((p) => p.color === 0xb32020 && p.gravity > 0 && p.collision),
+    chunks.every((p) => p.color === 0x820808 && p.gravity > 0 && p.collision),
   ).toBe(true);
   expect(chunks.some((p) => p.bounceLimit === 0)).toBe(true);
   expect(chunks.some((p) => p.bounceLimit > 0)).toBe(true);
@@ -196,4 +196,36 @@ it("keeps splatter free of gravity and terrain response while debris mixes limit
   expect(bouncing && resting).toBe(true);
   for (let i = 0; i < 240; i++) p.step(1 / 60, () => 0);
   expect(p.active).toBe(0);
+});
+
+it("adds half again as many gravity shards while preserving rays and eight smoke puffs", () => {
+  for (const [finishing, reduced, expected] of [
+    [false, false, 23],
+    [true, false, 26],
+    [false, true, 9],
+  ] as const) {
+    const p = new ParticleSimulation();
+    p.emit("death", 0, 2, 0, 1, reduced, undefined, 0, 0, finishing);
+    expect(
+      p.items.filter((p) => p.life > 0 && p.shape === SHAPE.debris),
+    ).toHaveLength(expected);
+    expect(
+      p.items.filter((p) => p.life > 0 && p.shape === SHAPE.smoke),
+    ).toHaveLength(8);
+    expect(
+      p.items
+        .filter((p) => p.life > 0 && p.shape === SHAPE.ribbon)
+        .every((p) => p.color === 0xb32020),
+    ).toBe(true);
+  }
+});
+it("delays lethal blood smoke until after the first body flash", () => {
+  const p = new ParticleSimulation();
+  p.emit("death", 0, 2, 0);
+  const smoke = p.items.filter((p) => p.life > 0 && p.shape === SHAPE.smoke);
+  expect(smoke.every((p) => p.color === 0x7d101a && p.age < 0)).toBe(true);
+  p.step(0.09, () => 0);
+  expect(smoke.every((p) => p.age < 0)).toBe(true);
+  p.step(0.02, () => 0);
+  expect(smoke.every((p) => p.age >= 0)).toBe(true);
 });

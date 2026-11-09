@@ -31,3 +31,5 @@ Default random critical chance is 4% + 1.5 percentage points per instinct rank, 
 Keep pool capacities positive integers, probabilities within 0–1, positive timings and sensible upgrade limits. Map placement changes should be checked against scenery/navigation. Geometry authoring coordinates and numerical solver tolerances remain alongside their implementations.
 
 Run `npm test`, `npm run build`, `npm run test:world-polish` and the relevant browser regression after changing balance. Use `npm run test:handling` for movement/accuracy and `npm run test:combat-vfx` for particle profiles.
+
+Splatter profiles: `VFX.nongravitySplatterColor` and `VFX.gravitySplatterColor`. `gravityAmountGain` controls only the gravity shard count (1.5 means +50%, rounded up); `lethalColor` and `lethalSmokeDelay` control the killing-shot body/smoke sequence.

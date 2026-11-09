@@ -9,13 +9,13 @@ const smooth = (t: number) => {
   t = Math.max(0, Math.min(1, t));
   return t * t * (3 - 2 * t);
 };
-/** Foot-anchored collapse: white silhouette, burgundy remnant, then pixel erosion. */
+/** Foot-anchored collapse: blood silhouette, blood remnant, then pixel erosion. */
 export function remnantPose(age: number) {
   age *= 0.38 / DURATION;
   return {
     height: 1 - 0.62 * smooth((age - 0.045) / 0.27),
     width: 1 - 0.18 * smooth((age - 0.08) / 0.24),
-    white: 1 - smooth((age - 0.085) / 0.045),
+    flash: 1 - smooth((age - 0.085) / 0.045),
     opacity:
       (1 - smooth((age - 0.085) / 0.295)) *
       (1 - 0.35 * smooth((age - 0.085) / 0.06)),
@@ -63,7 +63,7 @@ export class EnemyRemnants {
         });
       geometry.setAttribute("remnantState", state);
       state.setUsage(THREE.DynamicDrawUsage);
-      const burgundy = { value: new THREE.Color(0x732b40) };
+      const burgundy = { value: new THREE.Color(VFX.lethalColor) };
       material.onBeforeCompile = (shader) => {
         shader.uniforms.uRemnantColor = burgundy;
         shader.vertexShader = shader.vertexShader
@@ -86,7 +86,7 @@ export class EnemyRemnants {
       vec2 cell=floor(vMapUv*vec2(32.,40.));
       float grain=fract(sin(dot(cell,vec2(127.1,311.7)))*43758.5453);
       if(vRemnant.z>grain)discard;
-      diffuseColor.rgb=mix(uRemnantColor,vec3(1.),vRemnant.x);
+      diffuseColor.rgb=uRemnantColor;
       diffuseColor.a*=vRemnant.y;`,
           );
       };
@@ -146,7 +146,7 @@ export class EnemyRemnants {
       const b = this.batches[p.kind],
         i = b.count++;
       b.mesh.setMatrixAt(i, this.dummy.matrix);
-      b.state.setXYZ(i, pose.white, pose.opacity, pose.dissolve);
+      b.state.setXYZ(i, pose.flash, pose.opacity, pose.dissolve);
       p.shown = true;
     }
     for (const b of this.batches) {

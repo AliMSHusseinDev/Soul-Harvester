@@ -107,7 +107,7 @@ try {
           "death-smoke",
           "debris-fall",
           "debris-bounce",
-          "remnant-white",
+          "remnant-flash",
           "remnant-burgundy",
           "remnant-late",
           "magic-death",
@@ -137,7 +137,7 @@ try {
           event === "death-smoke" ||
           event === "debris-fall" ||
           event === "debris-bounce" ||
-          event === "remnant-white" ||
+          event === "remnant-flash" ||
           event === "remnant-burgundy" ||
           event === "remnant-late"
         )
@@ -245,7 +245,7 @@ try {
       ["death", 0.2],
       ["debris-fall", 0.35],
       ["debris-bounce", 0.65],
-      ["remnant-white", 0.035],
+      ["remnant-flash", 0.035],
       ["remnant-burgundy", 0.17],
       ["remnant-late", 0.3],
       ["magic-death", 0.2],
@@ -270,13 +270,16 @@ try {
       if (event.startsWith("remnant-"))
         console.log(event, result.pixels, result.remnants);
       assert.equal(result.procedural.textures, 0);
-      if (event === "remnant-white") {
-        assert.ok(result.remnants.phases.every((p) => p.white === 1));
-        assert.ok(result.pixels.white > 15, "isolated white body is visible");
+      if (event === "remnant-flash") {
+        assert.ok(result.remnants.phases.every((p) => p.flash === 1));
+        assert.ok(
+          result.pixels.red > 15 && result.pixels.white === 0,
+          "isolated lethal blood flash replaces white",
+        );
       }
       if (event === "remnant-burgundy")
         assert.ok(
-          result.remnants.phases.every((p) => p.white === 0 && p.height < 1),
+          result.remnants.phases.every((p) => p.flash === 0 && p.height < 1),
         );
       if (event === "magic-death") assert.ok(result.pixels.cyan > 15);
       if (event === "death") assert.equal(result.procedural.events.soul, 0);
@@ -284,7 +287,10 @@ try {
         assert.equal(result.remnants.active, 1);
         assert.equal(result.procedural.rendered, 0);
         if (event === "remnant-burgundy")
-          assert.ok(result.pixels.burgundy > 15, "isolated remnant is visible");
+          assert.ok(
+            result.pixels.red > 15,
+            "isolated blood remnant is visible",
+          );
         if (event === "remnant-late")
           assert.ok(
             result.remnants.phases.every(
