@@ -336,6 +336,8 @@ export const VFX = {
   nongravitySplatterColor: 0xb32020,
   gravitySplatterColor: 0x820808,
   gravityAmountGain: 1.5,
+  gravityAdditionalGain: 1.5,
+  nongravitySizeGain: 1.06,
   lethalColor: 0x7d101a,
   lethalSmokeDelay: 0.1,
   debrisSpread: 0.7,

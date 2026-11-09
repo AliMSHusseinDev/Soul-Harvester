@@ -33,3 +33,5 @@ Keep pool capacities positive integers, probabilities within 0–1, positive tim
 Run `npm test`, `npm run build`, `npm run test:world-polish` and the relevant browser regression after changing balance. Use `npm run test:handling` for movement/accuracy and `npm run test:combat-vfx` for particle profiles.
 
 Splatter profiles: `VFX.nongravitySplatterColor` and `VFX.gravitySplatterColor`. `gravityAmountGain` controls only the gravity shard count (1.5 means +50%, rounded up); `lethalColor` and `lethalSmokeDelay` control the killing-shot body/smoke sequence.
+
+Version 0.14.4 adds `VFX.gravityAdditionalGain` (another 1.5 multiplier after the previous integer shard count) and `VFX.nongravitySizeGain` (1.06). Shot-dependent fan orientation and variation are deterministic; appearance variation does not modify damage or rewards.

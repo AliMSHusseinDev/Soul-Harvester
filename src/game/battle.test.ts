@@ -239,3 +239,38 @@ it("marks magic kills without treating ordinary bullet kills as soul bursts", ()
   b.releaseBurst({ x: 0, z: -30 });
   expect(b.events.find((e) => e.kind === "kill")?.magic).toBe(true);
 });
+
+it("carries the lethal contact point, shot vector and normal to death feedback", () => {
+  const b = new Battle([]);
+  Object.assign(b.enemies[0], {
+    active: true,
+    x: 0,
+    z: -30,
+    hp: 1,
+    kind: 0,
+    wave: 1,
+  });
+  b.damageEnemy(0, 10, { x: 0, z: -25 }, 0, {
+    x: 0.3,
+    y: 1.4,
+    z: -29.96,
+    bullet: true,
+    incomingX: 0.1,
+    incomingY: 0.2,
+    incomingZ: -0.9,
+    normalX: 0,
+    normalY: 0,
+    normalZ: 1,
+  });
+  expect(b.events.find((e) => e.kind === "kill")).toMatchObject({
+    x: 0,
+    z: -30,
+    impactX: 0.3,
+    y: 1.4,
+    impactZ: -29.96,
+    incomingX: 0.1,
+    incomingY: 0.2,
+    incomingZ: -0.9,
+    normalZ: 1,
+  });
+});

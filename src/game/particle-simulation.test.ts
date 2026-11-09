@@ -1,3 +1,4 @@
+import { VFX } from "./tuning";
 import { expect, it } from "vitest";
 import {
   ParticleSimulation,
@@ -149,10 +150,14 @@ it("uses the requested deep red and scatters a death burst several metres withou
   ).toBe(true);
   for (let i = 0; i < 30; i++) p.step(1 / 60, () => 0);
   const rays = p.items.filter((p) => p.life > 0 && p.shape === SHAPE.ribbon);
-  expect(rays.filter((p) => Math.hypot(p.x, p.z) > 3.5).length).toBeGreaterThan(
-    10,
-  );
-  expect(rays.some((p) => p.x > 3) && rays.some((p) => p.x < -3)).toBe(true);
+  expect(
+    rays.filter((p) => Math.hypot(p.x, p.y - 5, p.z) > 3.5).length,
+  ).toBeGreaterThan(10);
+  expect(
+    rays.some((a) =>
+      rays.some((b) => a.x * b.x + (a.y - 5) * (b.y - 5) + a.z * b.z < 0),
+    ),
+  ).toBe(true);
   for (let i = 0; i < 240; i++) p.step(1 / 60, () => 0);
   expect(p.active).toBe(0);
 });
@@ -198,11 +203,11 @@ it("keeps splatter free of gravity and terrain response while debris mixes limit
   expect(p.active).toBe(0);
 });
 
-it("adds half again as many gravity shards while preserving rays and eight smoke puffs", () => {
+it("applies the further gravity multiplier while preserving rays and eight smoke puffs", () => {
   for (const [finishing, reduced, expected] of [
-    [false, false, 23],
-    [true, false, 26],
-    [false, true, 9],
+    [false, false, 35],
+    [true, false, 39],
+    [false, true, 14],
   ] as const) {
     const p = new ParticleSimulation();
     p.emit("death", 0, 2, 0, 1, reduced, undefined, 0, 0, finishing);
@@ -228,4 +233,66 @@ it("delays lethal blood smoke until after the first body flash", () => {
   expect(smoke.every((p) => p.age < 0)).toBe(true);
   p.step(0.02, () => 0);
   expect(smoke.every((p) => p.age >= 0)).toBe(true);
+});
+
+it("uses shot position/direction and reproducible per-kill fan variation", () => {
+  const impact = {
+    x: 0.4,
+    y: 2.4,
+    z: -0.05,
+    dx: 0.15,
+    dy: 0.1,
+    dz: -1,
+    nx: 0,
+    ny: 0,
+    nz: 1,
+  };
+  const a = new ParticleSimulation(),
+    b = new ParticleSimulation();
+  for (const p of [a, b])
+    p.emit("death", 0, 2, 0, 1, false, undefined, 0, -1, false, 0, impact);
+  expect(a.items).toEqual(b.items);
+  const rays = (p: ParticleSimulation) =>
+    p.items.filter((p) => p.life > 0 && p.shape === SHAPE.ribbon);
+  expect(
+    rays(a).every(
+      (p) => p.x === impact.x && p.y === impact.y && p.z === impact.z,
+    ),
+  ).toBe(true);
+  const first = rays(a).map((p) => [p.vx, p.vy, p.vz, p.stretch]);
+  a.emit("death", 0, 2, 0, 1, false, undefined, 0, -1, false, 0, impact);
+  expect(
+    rays(a)
+      .slice(first.length)
+      .map((p) => [p.vx, p.vy, p.vz, p.stretch]),
+  ).not.toEqual(first);
+  const c = new ParticleSimulation();
+  c.emit("death", 0, 2, 0, 1, false, undefined, 0, -1, false, 0, {
+    ...impact,
+    x: -0.4,
+    y: 1.4,
+    dx: -1,
+    dz: 0,
+  });
+  expect(rays(c).map((p) => [p.vx, p.vy, p.vz])).not.toEqual(
+    first.map((p) => p.slice(0, 3)),
+  );
+});
+it("increases only nongravity birth sizes by exactly six percent", () => {
+  const gain = VFX.nongravitySizeGain,
+    a = new ParticleSimulation(),
+    b = new ParticleSimulation();
+  try {
+    VFX.nongravitySizeGain = 1;
+    a.emit("death", 0, 2, 0);
+    VFX.nongravitySizeGain = gain;
+    b.emit("death", 0, 2, 0);
+  } finally {
+    VFX.nongravitySizeGain = gain;
+  }
+  for (let i = 0; i < a.items.length; i++)
+    if (a.items[i].life > 0) {
+      const factor = a.items[i].color === 0xb32020 ? 1.06 : 1;
+      expect(b.items[i].size).toBeCloseTo(a.items[i].size * factor, 10);
+    }
 });

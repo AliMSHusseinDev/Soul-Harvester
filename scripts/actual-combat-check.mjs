@@ -102,8 +102,8 @@ try {
               if (r > 235 && g > 170 && b < g * 0.75 && r > g * 1.02)
                 visiblePixels.gold++;
               if (r > 230 && g > 230 && b > 220) visiblePixels.white++;
-              // Ruby fragments contain blue; the brown rifle does not.
-              if (r > 100 && r > g * 1.5 && b > g * 1.05) visiblePixels.red++;
+              // Red-dominant masks cover both requested splatter colors; the ROI excludes the rifle.
+              if (r > 65 && r > g * 1.6 && r > b * 1.3) visiblePixels.red++;
             }
             c.images[key] = {
               data: document.querySelector("#world").toDataURL("image/png"),

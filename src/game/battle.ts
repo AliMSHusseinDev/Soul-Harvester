@@ -105,6 +105,8 @@ export type BattleEvent = {
   normalX?: number;
   normalY?: number;
   normalZ?: number;
+  impactX?: number;
+  impactZ?: number;
 };
 export class Battle {
   readonly nav: Navigation;
@@ -259,6 +261,8 @@ export class Battle {
       normalX?: number;
       normalY?: number;
       normalZ?: number;
+      impactX?: number;
+      impactZ?: number;
     },
   ) {
     this.events.push({ kind, x, z, value, y, ...details });
@@ -767,7 +771,13 @@ export class Battle {
     if (e.hp <= 0) {
       e.active = false;
       this.souls++;
-      this.emit("kill", e.x, e.z, e.kind, undefined, {
+      this.emit("kill", e.x, e.z, e.kind, impact?.y, {
+        impactX: impact?.x,
+        impactZ: impact?.z,
+        incomingY: impact?.incomingY,
+        normalX: impact?.normalX,
+        normalY: impact?.normalY,
+        normalZ: impact?.normalZ,
         magic: impact?.magic,
         critical: impact?.critical,
         incomingX: impact?.incomingX ?? (e.x - from.x) / d,

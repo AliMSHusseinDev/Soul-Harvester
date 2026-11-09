@@ -105,6 +105,8 @@ try {
         actor.visible = ![
           "death",
           "death-smoke",
+          "death-left",
+          "death-right",
           "debris-fall",
           "debris-bounce",
           "remnant-flash",
@@ -142,7 +144,20 @@ try {
           event === "remnant-late"
         )
           fx.death(0, -35);
-        else if (event === "magic-death")
+        else if (event === "death-left" || event === "death-right") {
+          const side = event === "death-left" ? -1 : 1;
+          fx.death(0, -35, 0, false, side * 0.1, -1, false, {
+            x: side * 0.35,
+            y: 1.3,
+            z: -34.95,
+            dx: side * 0.1,
+            dy: 0.1,
+            dz: -1,
+            nx: 0,
+            ny: 0,
+            nz: 1,
+          });
+        } else if (event === "magic-death")
           fx.death(0, -35, 0, false, 0, 0, true);
         else if (event === "finisher") fx.death(0, -35, 2, true, 0, -1);
         else if (event === "orb-flight")
@@ -228,7 +243,8 @@ try {
       },
     };
   });
-  const report = [];
+  const report = [],
+    shotCaptures = new Map();
   for (const [width, height] of [
     [1280, 720],
     [1920, 1080],
@@ -243,6 +259,8 @@ try {
       ["finisher", 0.25],
       ["orb-flight", 0.08],
       ["death", 0.2],
+      ["death-left", 0.2],
+      ["death-right", 0.2],
       ["debris-fall", 0.35],
       ["debris-bounce", 0.65],
       ["remnant-flash", 0.035],
@@ -264,9 +282,11 @@ try {
           window.fixture.show(event, age, width, height),
         { event, age, width, height },
       );
-      await page.screenshot({
+      const capture = await page.screenshot({
         path: `artifacts/procedural-${height}-${event}.png`,
       });
+      if (event === "death-left" || event === "death-right")
+        shotCaptures.set(`${height}-${event}`, capture);
       if (event.startsWith("remnant-"))
         console.log(event, result.pixels, result.remnants);
       assert.equal(result.procedural.textures, 0);
@@ -315,6 +335,13 @@ try {
       "static wall rejects impact overlays",
     );
   }
+  for (const height of [720, 1080])
+    assert.ok(
+      !shotCaptures
+        .get(`${height}-death-left`)
+        .equals(shotCaptures.get(`${height}-death-right`)),
+      "different body contact produces a different rendered fan",
+    );
   const full = await page.evaluate(() =>
       window.fixture.show("critical", 0.02, 1280, 720),
     ),
@@ -339,7 +366,7 @@ try {
     JSON.stringify({ report, stress }, null, 2),
   );
   console.log(
-    "PASS: texture-free shaders, 23 event scenarios at 720p/1080p, GPU colors, world occlusion, reduced mode, capacity and cleanup.",
+    "PASS: texture-free shaders, 25 event scenarios at 720p/1080p, GPU colors, world occlusion, reduced mode, capacity and cleanup.",
   );
 } finally {
   await browser?.close();

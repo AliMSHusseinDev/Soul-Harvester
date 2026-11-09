@@ -5,6 +5,7 @@ import {
   PARTICLE_CAPACITY,
   SHAPE,
   type ParticleEvent,
+  type SplatterImpact,
 } from "./particle-simulation";
 import { groundHeight } from "./terrain";
 import type { WorldVisibility } from "./world-visibility";
@@ -172,6 +173,7 @@ export class ProceduralVFX {
     nz = 0,
     finishing = false,
     ny = 0,
+    impact?: SplatterImpact,
   ) {
     this.simulation.emit(
       event,
@@ -185,6 +187,7 @@ export class ProceduralVFX {
       nz,
       finishing,
       ny,
+      impact,
     );
   }
   step(dt: number) {

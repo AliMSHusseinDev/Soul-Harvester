@@ -31,6 +31,17 @@ export const SHAPE = {
   ribbon: 9,
   debris: 10,
 } as const;
+export interface SplatterImpact {
+  x: number;
+  y: number;
+  z: number;
+  dx: number;
+  dy: number;
+  dz: number;
+  nx: number;
+  ny: number;
+  nz: number;
+}
 export interface Particle {
   collision: boolean;
   bounceLimit: number;
@@ -168,6 +179,7 @@ export class ParticleSimulation {
     nz = 0,
     finishing = false,
     ny = 0,
+    impact?: SplatterImpact,
   ) {
     this.events[event]++;
     const serial = ++this.serial;
@@ -222,7 +234,13 @@ export class ParticleSimulation {
               (finishing && !reduced && baseCount - 8 > 6 ? 1 : 0),
           )
         : 0,
-      count = baseCount + Math.ceil(gravityBase * (F.gravityAmountGain - 1)),
+      count =
+        baseCount +
+        Math.ceil(
+          Math.ceil(gravityBase * F.gravityAmountGain) *
+            F.gravityAdditionalGain,
+        ) -
+        gravityBase,
       palette = color
         ? [color]
         : death || event === "hurt"
@@ -234,6 +252,37 @@ export class ParticleSimulation {
               event === "soul"
             ? TEAL
             : GOLD;
+    // One seeded fan frame per burst: shot-dependent axis, randomized phase/lobes/aspect.
+    const phase = death ? this.random() * Math.PI * 2 : 0,
+      aspect = death ? 0.72 + this.random() * 0.6 : 1,
+      lobes = death ? 2 + Math.floor(this.random() * 3) : 2,
+      twist = death ? this.random() * Math.PI * 2 : 0;
+    let dx = impact ? impact.dx * 0.8 + impact.nx * 0.2 : nx,
+      dy = impact ? impact.dy * 0.8 + impact.ny * 0.2 : 0,
+      dz = impact ? impact.dz * 0.8 + impact.nz * 0.2 : nz;
+    if (impact) {
+      const offset = (v: number) =>
+        Math.max(-1, Math.min(1, v / Math.max(0.1, scale)));
+      dx += offset(impact.x - x) * 0.35;
+      dy += offset(impact.y - y) * 0.35;
+      dz += offset(impact.z - z) * 0.35;
+    }
+    let len = Math.hypot(dx, dy, dz);
+    if (len < 0.001) {
+      dx = Math.sin(phase);
+      dy = 0;
+      dz = Math.cos(phase);
+      len = 1;
+    }
+    dx /= len;
+    dy /= len;
+    dz /= len;
+    const horizontal = Math.hypot(dx, dz),
+      tx = horizontal > 0.001 ? -dz / horizontal : 1,
+      tz = horizontal > 0.001 ? dx / horizontal : 0,
+      bx = dy * tz,
+      by = dz * tx - dx * tz,
+      bz = -dy * tx;
     let active = this.active;
     for (let i = 0; i < count; i++) {
       let p: Particle | undefined;
@@ -429,6 +478,25 @@ export class ParticleSimulation {
         p.drag = F.deathDrag;
         p.vy = (this.random() - 0.25) * 9 * scale;
         if (p.shape === SHAPE.ribbon && i % 2 === 0) p.trail = 1;
+        if (p.shape === SHAPE.ribbon) {
+          const theta = a + phase + 0.22 * Math.sin(a * lobes + twist),
+            speed = radial * (1 + 0.15 * Math.sin(theta * lobes + twist));
+          let u = Math.cos(theta) * speed * aspect,
+            v = Math.sin(theta) * speed * (0.6 + 0.18 * Math.cos(twist)),
+            forward = speed * (0.2 + this.random() * 0.22);
+          const normalize = speed / Math.max(0.001, Math.hypot(u, v));
+          u *= normalize;
+          v *= normalize;
+          p.vx = (tx * u + bx * v + dx * forward) * scale;
+          p.vy = (by * v + dy * forward + speed * 0.14) * scale;
+          p.vz = (tz * u + bz * v + dz * forward) * scale;
+          if (impact) {
+            p.x = p.anchorX = impact.x;
+            p.y = p.anchorY = impact.y;
+            p.z = p.anchorZ = impact.z;
+          }
+          p.stretch *= 0.82 + this.random() * 0.36;
+        }
         if (p.shape === SHAPE.debris) {
           p.color = F.gravitySplatterColor;
           p.collision = true;
@@ -587,6 +655,7 @@ export class ParticleSimulation {
         p.vy *= F.scatterGain;
         p.vz *= F.scatterGain;
       }
+      if (p.color === F.nongravitySplatterColor) p.size *= F.nongravitySizeGain;
       p.size *= PARTICLE_SIZE_GAIN;
       this.emitted++;
     }

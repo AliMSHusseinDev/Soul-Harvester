@@ -1,6 +1,6 @@
 # Procedural combat effects
 
-Version 0.14.3 emphasizes the enemy's body response from the newer 48.8-second reference recording. Combat particles remain geometry and shader functions: no particle PNG, canvas texture, sprite sheet, atlas or frame sequence is loaded. Enemy artwork, weapon/world surfaces and fonts retain their existing assets.
+Version 0.14.4 emphasizes the enemy's body response from the newer 48.8-second reference recording. Combat particles remain geometry and shader functions: no particle PNG, canvas texture, sprite sheet, atlas or frame sequence is loaded. Enemy artwork, weapon/world surfaces and fonts retain their existing assets.
 
 ## Event composition
 
@@ -63,7 +63,7 @@ Loot retains exactly-once reward accounting and clear-path checks. It launches w
 ## Validation
 
 - Unit tests cover seeded profiles, step-rate-independent motion, terrain clearance, priority reserves, delayed activation, trails, remnant envelopes, kill metadata, pause and cleanup.
-- `npm run test:combat-vfx` renders twenty-three scenarios at 720p/1080p, including particle-isolated lethal blood remnants, magic spray, actual framebuffer colors, wall rejection, reduced effects, saturation and cleanup.
+- `npm run test:combat-vfx` renders twenty-five scenarios at 720p/1080p, including particle-isolated lethal blood remnants, magic spray, actual framebuffer colors, wall rejection, reduced effects, saturation and cleanup.
 - `npm run test:world-polish` checks ADS weapon-pixel protection at both resolutions, compact crit coverage, four world surface categories, decals, wind/reduced motion, token models and foliage shadow compilation.
 - `npm run test:handling` checks the visible expanded sprint crosshair and existing movement/weapon handling.
 - `npm run test:polish` checks real body responses, damage numbers, casting, muzzle/smoke and forty-enemy loot/level rewards.
@@ -86,3 +86,11 @@ Colors, nominal spread, gravity, drag, bounce chance, restitution, fade and life
 The named profiles are now nongravity splatter (#b32020) and gravity splatter (#820808). Gravity shard count receives a 1.5 multiplier, rounded up to whole particles, without reducing the existing ray or smoke counts. Normal full-density deaths therefore emit 23 gravity shards instead of 15; critical finishers emit 26 instead of 17. Fixed pool capacity, priorities and screen caps remain.
 
 The lethal body remnant uses #7d101a throughout its flash/collapse, preserving alpha; it never turns white. Nonlethal enemy flashes remain white. Eight smoke puffs use the same #7d101a and are scheduled 100ms after the lethal event. Smoke activation follows fixed simulation time and resets with the pool. Both the isolated initial body color and delayed smoke are checked independently.
+
+## 0.14.4 contact-driven fans
+
+Lethal events now retain the exact contact point, incoming XYZ direction and surface normal through the battle event, main loop and effects renderer. Nongravity rays originate at that contact. A blended/normalized shot axis includes bounded body-contact offsets. Its orthonormal tangent frame supports a seeded angular phase, angular warp, lobe variation, aspect/density changes and per-ray stretch variation. Transverse normalization preserves broad 3D travel while changing the projected fan shape. Consecutive kills vary reproducibly without using wall-clock randomness.
+
+Only #b32020 birth sizes gain another 1.06 multiplier; trails inherit that size through their parent. Gravity shards receive a further 1.5 count multiplier after previous whole-particle rounding: ordinary deaths increase from 23 to 35, critical finishers from 26 to 39, and reduced-density deaths from 9 to 14. Pool capacity and projected size caps remain.
+
+Tests check lethal metadata transport, deterministic replay, successive fan variation, contact/direction sensitivity, exact 6% size scaling and preserved wide 3D spread. Left/right body-contact renders are distinct at both resolutions. Production mouse/keyboard combat checks exercise real bullet kills and the complete feedback pipeline.

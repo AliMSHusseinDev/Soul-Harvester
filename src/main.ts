@@ -466,6 +466,19 @@ async function boot() {
           event.incomingX,
           event.incomingZ,
           !!event.magic,
+          event.y === undefined
+            ? undefined
+            : {
+                x: event.impactX ?? event.x,
+                y: event.y,
+                z: event.impactZ ?? event.z,
+                dx: event.incomingX ?? 0,
+                dy: event.incomingY ?? 0,
+                dz: event.incomingZ ?? 0,
+                nx: event.normalX ?? 0,
+                ny: event.normalY ?? 0,
+                nz: event.normalZ ?? 0,
+              },
         );
         audio.death();
       } else if (event.kind === "playerHit") {
@@ -741,7 +754,7 @@ async function boot() {
   Object.defineProperty(window, "__soulHarvester", {
     value: () => ({
       ready: true,
-      version: "0.14.3",
+      version: "0.14.4",
       timeScale: cinematic.scale,
       cinematicActive: cinematic.active,
       stamina: player.stamina,

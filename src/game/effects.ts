@@ -1,3 +1,4 @@
+import type { SplatterImpact } from "./particle-simulation";
 import { coinGeometry, crystalGeometry } from "./loot-geometry";
 import { SurfaceImpacts } from "./surface-impacts";
 import type { SurfaceHit } from "./world-raycast";
@@ -262,6 +263,7 @@ export class Effects {
     incomingX = 0,
     incomingZ = 0,
     magic = false,
+    impact?: SplatterImpact,
   ) {
     const scale = ENEMY_TYPES[kind].scale;
     this.remnants.spawn(x, z, kind);
@@ -277,6 +279,8 @@ export class Effects {
       incomingX,
       incomingZ,
       critical,
+      0,
+      impact,
     );
     if (magic)
       this.procedural.emit(
