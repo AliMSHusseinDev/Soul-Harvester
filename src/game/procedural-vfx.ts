@@ -280,7 +280,7 @@ export class ProceduralVFX {
       let alpha =
         p.shape === SHAPE.smoke
           ? p.color === VFX.lethalColor
-            ? bloodSmokeOpacity(t)
+            ? bloodSmokeOpacity(t) * VFX.bloodSmokeCloudOpacityGain
             : Math.min(1, t * 9) * Math.pow(1 - t, 0.9) * 0.46
           : 1 - Math.pow(t, 3);
       if (p.shape === SHAPE.cube || p.shape === SHAPE.smoke)

@@ -358,6 +358,8 @@ export const VFX = {
   lethalColor: 0x7d101a,
   lethalSmokeDelay: 0.1,
   bloodSmokeLifeGain: 1.4,
+  bloodSmokeCloudSizeGain: 1.6,
+  bloodSmokeCloudOpacityGain: 1.5,
   bloodSmokeWindSpeed: 0.22,
   bloodSmokeCurlSpeed: 0.12,
   bloodSmokeRiseSpeed: 0.12,

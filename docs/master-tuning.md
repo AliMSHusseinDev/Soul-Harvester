@@ -60,3 +60,7 @@ Enemy type count density is `1 + .18 * max(0, scale−1) + .06 * log2(max(1, hp/
 ## 0.14.10 Smoke motion stability
 
 Smoke no longer participates in the 16×9 screen-cell admission limit: camera movement used to switch individual puffs on/off at tile boundaries. Fixed simulation capacity, world depth, smooth near-camera opacity and smoke footprint caps remain. The smoke shader keeps pixel-grid sampling but uses continuous density opacity instead of five alpha levels. Lifetime and wind settings retain 0.14.9 values.
+
+## 0.14.11 One bloody cloud per death
+
+Each death admits one smoke cloud instead of eight puffs. `bloodSmokeCloudSizeGain`=1.6 and `bloodSmokeCloudOpacityGain`=1.5 compensate with a modest footprint/density increase, rather than multiplying screen coverage by eight. Existing size cap, smooth fade, wind, lifetime and world depth remain. Cloud origin uses lethal contact when provided. Legacy smoke-slot partition stays internal so primary Splatter/Bleeding counts are unchanged.

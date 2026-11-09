@@ -262,7 +262,7 @@ try {
     const sim = f.fx["procedural"].simulation;
     for (const p of sim.items) if (p.shape !== 4) p.life = 0;
     const smoke = sim.items.filter((p) => p.life > 0 && p.shape === 4);
-    // Deliberately overlap all eight puffs, then sweep their screen-cell boundaries.
+    // Move the single coherent cloud, then sweep their screen-cell boundaries.
     for (const p of smoke) {
       p.x = 0;
       p.y = 1.3;
@@ -284,9 +284,9 @@ try {
         JSON.stringify(smoke.map((p) => [p.x, p.y, p.z])),
     };
   });
-  assert.equal(smokeMotion.expected, 8);
+  assert.equal(smokeMotion.expected, 1);
   assert.ok(
-    smokeMotion.counts.every((n) => n === 8),
+    smokeMotion.counts.every((n) => n === 1),
     "camera motion never tile-culls smoke puffs",
   );
   assert.ok(

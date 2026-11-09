@@ -98,7 +98,7 @@ it("adds rising smoke and dotted trails without a cyan burst on ordinary kills",
   p.emit("death", 0, 4, -8, 1, false, undefined, 0, 1, true);
   expect(
     p.items.filter((p) => p.life > 0 && p.shape === SHAPE.smoke),
-  ).toHaveLength(8);
+  ).toHaveLength(1);
   expect(p.items.some((p) => p.life > 0 && p.shape === SHAPE.wisp)).toBe(false);
   expect(
     p.items.some(
@@ -208,7 +208,7 @@ it("uses weight-driven splatter and preserves debris mixed bounce and settle", (
   expect(p.active).toBe(0);
 });
 
-it("applies the further gravity multiplier while preserving rays and eight smoke puffs", () => {
+it("applies the further gravity multiplier while preserving rays and one smoke cloud", () => {
   for (const [finishing, reduced, expected] of [
     [false, false, 44],
     [true, false, 50],
@@ -221,7 +221,7 @@ it("applies the further gravity multiplier while preserving rays and eight smoke
     ).toHaveLength(expected);
     expect(
       p.items.filter((p) => p.life > 0 && p.shape === SHAPE.smoke),
-    ).toHaveLength(8);
+    ).toHaveLength(1);
     expect(
       p.items
         .filter((p) => p.life > 0 && p.shape === SHAPE.ribbon)
@@ -528,7 +528,7 @@ it("bounds enemy-dependent counts without changing smoke or particle sizes", () 
     expect(b.length).toBe(Math.round(a.length * 1.3));
     expect(capped.filter((p) => p.shape === shape).length).toBe(b.length);
   }
-  expect(large.filter((p) => p.shape === SHAPE.smoke)).toHaveLength(8);
+  expect(large.filter((p) => p.shape === SHAPE.smoke)).toHaveLength(1);
 });
 
 it("gives larger tougher enemy types a modest bounded particle bonus", () => {
@@ -553,7 +553,7 @@ it("extends only bloody death smoke by 40% and fades smoothly", () => {
     VFX.bloodSmokeLifeGain = gain;
   }
   const smoke = b.items.filter((p) => p.life > 0 && p.shape === SHAPE.smoke);
-  expect(smoke).toHaveLength(8);
+  expect(smoke).toHaveLength(1);
   for (let i = 0; i < a.items.length; i++)
     if (a.items[i].life > 0)
       expect(b.items[i].max).toBeCloseTo(
@@ -578,4 +578,29 @@ it("extends only bloody death smoke by 40% and fades smoothly", () => {
       expect(smoke[i][axis]).toBeCloseTo(other[i][axis], 8);
   for (let i = 0; i < 180; i++) b.step(1 / 60, () => 0);
   expect(b.active).toBe(0);
+});
+it("emits one impact-anchored bloody cloud per kill at both density settings", () => {
+  for (const reduced of [false, true]) {
+    const p = new ParticleSimulation();
+    const impact = {
+      x: 2,
+      y: 1.2,
+      z: 3,
+      dx: 1,
+      dy: 0,
+      dz: 0,
+      nx: -1,
+      ny: 0,
+      nz: 0,
+    };
+    for (let i = 0; i < 3; i++)
+      p.emit("death", 0, 1, 0, 1, reduced, undefined, 1, 0, false, 0, impact);
+    const clouds = p.items.filter((p) => p.life > 0 && p.shape === SHAPE.smoke);
+    expect(clouds).toHaveLength(3);
+    expect(
+      clouds.every(
+        (p) => p.x === 2 && p.y === 1.2 && p.z === 3 && p.color === 0x7d101a,
+      ),
+    ).toBe(true);
+  }
 });

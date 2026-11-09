@@ -359,6 +359,9 @@ export class ParticleSimulation {
       bz = -dy * tx;
     let active = this.active;
     for (let i = 0; i < count; i++) {
+      // The legacy eight smoke slots define the blood-profile partition only.
+      // Admit one coherent cloud without changing Splatter/Bleeding counts.
+      if (death && i > baseCount - 8 && i < baseCount) continue;
       let p: Particle | undefined;
       // Circular scan, bounded by the fixed pool; reserve capacity for finishing/ability feedback.
       if (priority > 0 || active < PARTICLE_CAPACITY - F.reservedSlots)
@@ -666,9 +669,11 @@ export class ParticleSimulation {
           p.rangeLimit = Infinity;
           p.collision = false;
           p.trail = 0;
-          p.size = (0.36 + this.random() * 0.2) * scale;
-          p.x += (this.random() - 0.5) * 0.2 * scale;
-          p.z += (this.random() - 0.5) * 0.2 * scale;
+          p.size =
+            (0.36 + this.random() * 0.2) * scale * F.bloodSmokeCloudSizeGain;
+          p.x = impact?.x ?? x;
+          p.y = impact?.y ?? y;
+          p.z = impact?.z ?? z;
           p.color = F.lethalColor;
           p.age = -F.lethalSmokeDelay;
           p.life = p.max = (0.65 + this.random() * 0.35) * F.bloodSmokeLifeGain;
