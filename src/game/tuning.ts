@@ -357,7 +357,7 @@ export const VFX = {
   splatterLightDragRange: 0.35,
   lethalColor: 0x7d101a,
   lethalSmokeDelay: 0.1,
-  bloodSmokeLifeGain: 1.12,
+  bloodSmokeLifeGain: 0.56,
   bloodSmokeCloudSizeGain: 1.6,
   bloodSmokeDifficultySizeGain: 0.3,
   bloodSmokeSizeLifeGain: 0.15,

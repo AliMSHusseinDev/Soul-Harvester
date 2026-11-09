@@ -546,7 +546,7 @@ it("applies the shorter bloody smoke lifetime and fades smoothly", () => {
     b = new ParticleSimulation(),
     gain = VFX.bloodSmokeLifeGain;
   try {
-    VFX.bloodSmokeLifeGain = 1;
+    VFX.bloodSmokeLifeGain = 1.12;
     a.emit("death", 0, 1, 0);
     VFX.bloodSmokeLifeGain = gain;
     b.emit("death", 0, 1, 0);
@@ -558,7 +558,7 @@ it("applies the shorter bloody smoke lifetime and fades smoothly", () => {
   for (let i = 0; i < a.items.length; i++)
     if (a.items[i].life > 0)
       expect(b.items[i].max).toBeCloseTo(
-        a.items[i].max * (a.items[i].shape === SHAPE.smoke ? 1.12 : 1),
+        a.items[i].max * (a.items[i].shape === SHAPE.smoke ? 0.5 : 1),
         10,
       );
   expect(bloodSmokeOpacity(0)).toBe(0);
@@ -571,8 +571,8 @@ it("applies the shorter bloody smoke lifetime and fades smoothly", () => {
   }
   const c = new ParticleSimulation();
   c.emit("death", 0, 1, 0);
-  b.step(0.5, () => -100);
-  for (let i = 0; i < 30; i++) c.step(1 / 60, () => -100);
+  b.step(0.3, () => -100);
+  for (let i = 0; i < 18; i++) c.step(1 / 60, () => -100);
   const other = c.items.filter((p) => p.life > 0 && p.shape === SHAPE.smoke);
   for (let i = 0; i < smoke.length; i++)
     for (const axis of ["x", "y", "z"] as const)

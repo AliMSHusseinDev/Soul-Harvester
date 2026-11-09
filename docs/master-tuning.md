@@ -70,3 +70,7 @@ Each death admits one smoke cloud instead of eight puffs. `bloodSmokeCloudSizeGa
 `bloodSmokeLifeGain`=1.12 reduces 0.14.11 smoke lifetime by 20% (ordinary base 0.728–1.12s). Existing enemy size scales the cloud; `bloodSmokeDifficultySizeGain`=.3 applies a further bounded type-density bonus (up to 9%). Lifetime bonus is `.15*max(0,scale−1)+.3*(clampedDensity−1)`, capped by `bloodSmokeLifeBonusCap`=.2. Difficulty uses base enemy type health, never wave HP. The single cloud, color, wind and screen-size cap remain. Opacity uses quintic smootherstep with zero first/second derivatives at entrance and exit.
 
 Smoke samples terrain/actual support at the center and four corners of its conservative full-life footprint. Render placement uses a camera-independent bounding sphere and smooth maximum to keep the full expanding quad above the sampled support, including camera tilt/roll. No ground bounce is applied.
+
+## 0.14.13 Shorter smoke
+
+`bloodSmokeLifeGain`=0.56 halves 0.14.12 lifetime: ordinary clouds last 0.364–0.56s after the unchanged 0.1s delay. Existing type/size lifetime bonus stays capped at 20% over this new base; size scaling, difficulty bonus, quintic fade, single-cloud count, wind and terrain clearance remain unchanged.

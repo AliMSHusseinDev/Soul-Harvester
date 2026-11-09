@@ -258,7 +258,7 @@ try {
   });
   const smokeMotion = await page.evaluate(() => {
     const f = window.fixture;
-    f.show("death-smoke", 0.4, 1280, 720);
+    f.show("death-smoke", 0.25, 1280, 720);
     const sim = f.fx["procedural"].simulation;
     for (const p of sim.items) if (p.shape !== 4) p.life = 0;
     const smoke = sim.items.filter((p) => p.life > 0 && p.shape === 4);
@@ -314,7 +314,7 @@ try {
       ["critical", 0.07],
       ["critical-echo", 0.17],
       ["hit-smoke", 0.32],
-      ["death-smoke", 0.45],
+      ["death-smoke", 0.25],
       ["finisher", 0.25],
       ["orb-flight", 0.08],
       ["death", 0.2],
