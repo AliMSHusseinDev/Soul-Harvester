@@ -69,11 +69,18 @@ export function enemyParticleDensity(scale: number, healthRatio: number) {
   );
 }
 export function bloodSmokeOpacity(t: number) {
+  if (t <= 0 || t >= 1) return 0;
   const smooth = (v: number) => {
     const x = Math.max(0, Math.min(1, v));
-    return x * x * (3 - 2 * x);
+    return Math.max(0, Math.min(1, x * x * x * (x * (x * 6 - 15) + 10)));
   };
   return 0.46 * smooth(t / 0.14) * (1 - smooth((t - 0.55) / 0.45));
+}
+// Smooth maximum always clears the bounding sphere and has no hard clamp corner.
+export function smokeCenterHeight(y: number, floor: number, size: number) {
+  const bottom = floor + size * Math.SQRT1_2 + 0.025;
+  const d = y - bottom;
+  return (y + bottom + Math.sqrt(d * d + 0.0025)) * 0.5;
 }
 export function bleedingRange(scale = 1) {
   return (
@@ -670,13 +677,28 @@ export class ParticleSimulation {
           p.collision = false;
           p.trail = 0;
           p.size =
-            (0.36 + this.random() * 0.2) * scale * F.bloodSmokeCloudSizeGain;
+            (0.36 + this.random() * 0.2) *
+            scale *
+            F.bloodSmokeCloudSizeGain *
+            (1 +
+              F.bloodSmokeDifficultySizeGain *
+                (Math.max(1, Math.min(F.enemyParticleCountCap, density)) - 1));
           p.x = impact?.x ?? x;
           p.y = impact?.y ?? y;
           p.z = impact?.z ?? z;
           p.color = F.lethalColor;
           p.age = -F.lethalSmokeDelay;
-          p.life = p.max = (0.65 + this.random() * 0.35) * F.bloodSmokeLifeGain;
+          p.life = p.max =
+            (0.65 + this.random() * 0.35) *
+            F.bloodSmokeLifeGain *
+            (1 +
+              Math.min(
+                F.bloodSmokeLifeBonusCap,
+                Math.max(0, scale - 1) * F.bloodSmokeSizeLifeGain +
+                  (Math.max(1, Math.min(F.enemyParticleCountCap, density)) -
+                    1) *
+                    F.bloodSmokeDifficultyLifeGain,
+              ));
           p.vx *= 0.2;
           p.vz *= 0.2;
           p.vy = 0.3 + this.random() * 0.45;
@@ -861,6 +883,19 @@ export class ParticleSimulation {
             (Math.sin(b * 1.6 + phase) - Math.sin(a * 1.6 + phase))) /
           1.6;
         p.y += F.bloodSmokeRiseSpeed * activeDt;
+        // Query actual support over the cloud's conservative full-life footprint.
+        const radius = p.size * 3.4 * Math.SQRT1_2;
+        let supportTop = floor(p.x, p.z);
+        for (let j = 0; j < 5; j++) {
+          const px = p.x + (j === 0 ? 0 : j & 1 ? radius : -radius);
+          const pz = p.z + (j === 0 ? 0 : j & 2 ? radius : -radius);
+          supportTop = Math.max(
+            supportTop,
+            floor(px, pz),
+            this.surfaceFloor?.(px, pz, p.y + radius + 0.3) ?? -Infinity,
+          );
+        }
+        p.floorY = supportTop;
       }
 
       if (Number.isFinite(p.rangeLimit)) {

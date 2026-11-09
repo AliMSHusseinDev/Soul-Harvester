@@ -9,6 +9,7 @@ import {
   splatterRange,
   bleedingRange,
   bloodSmokeOpacity,
+  smokeCenterHeight,
   enemyParticleDensity,
 } from "./particle-simulation";
 it("reproduces seeded events with independent particles and distinct event profiles", () => {
@@ -540,7 +541,7 @@ it("gives larger tougher enemy types a modest bounded particle bonus", () => {
   expect(enemyParticleDensity(100, 1e12)).toBe(1.3);
 });
 
-it("extends only bloody death smoke by 40% and fades smoothly", () => {
+it("applies the shorter bloody smoke lifetime and fades smoothly", () => {
   const a = new ParticleSimulation(),
     b = new ParticleSimulation(),
     gain = VFX.bloodSmokeLifeGain;
@@ -557,7 +558,7 @@ it("extends only bloody death smoke by 40% and fades smoothly", () => {
   for (let i = 0; i < a.items.length; i++)
     if (a.items[i].life > 0)
       expect(b.items[i].max).toBeCloseTo(
-        a.items[i].max * (a.items[i].shape === SHAPE.smoke ? 1.4 : 1),
+        a.items[i].max * (a.items[i].shape === SHAPE.smoke ? 1.12 : 1),
         10,
       );
   expect(bloodSmokeOpacity(0)).toBe(0);
@@ -603,4 +604,45 @@ it("emits one impact-anchored bloody cloud per kill at both density settings", (
       ),
     ).toBe(true);
   }
+});
+
+it("bounds enemy smoke lifetime and size bonuses, and clears raised ground", () => {
+  const spawn = (scale: number, density: number) => {
+    const p = new ParticleSimulation();
+    p.emit(
+      "death",
+      0,
+      0.05,
+      0,
+      scale,
+      false,
+      undefined,
+      0,
+      0,
+      false,
+      0,
+      undefined,
+      density,
+    );
+    return p;
+  };
+  const base = spawn(1, 1),
+    large = spawn(1.45, 1.18),
+    huge = spawn(20, 100);
+  const cloud = (p: ParticleSimulation) =>
+    p.items.find((p) => p.life > 0 && p.shape === SHAPE.smoke)!;
+  expect(cloud(large).max).toBeGreaterThan(cloud(base).max);
+  expect(cloud(large).size).toBeGreaterThan(cloud(base).size);
+  expect(cloud(huge).max / cloud(base).max).toBeCloseTo(1.2);
+  base.surfaceFloor = () => 0.5;
+  base.step(0.2, () => 0);
+  const c = cloud(base);
+  expect(c.floorY).toBe(0.5);
+  for (const size of [0.1, 0.5, 2])
+    for (const y of [-1, 0, 2])
+      expect(
+        smokeCenterHeight(y, c.floorY, size) - size * Math.SQRT1_2,
+      ).toBeGreaterThan(0.5);
+  const e = 1e-4;
+  expect(bloodSmokeOpacity(1 - e)).toBeLessThan(1e-8);
 });

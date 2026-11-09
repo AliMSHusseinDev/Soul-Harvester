@@ -4,6 +4,7 @@ import {
   ParticleSimulation,
   debrisOpacity,
   bloodSmokeOpacity,
+  smokeCenterHeight,
   PARTICLE_CAPACITY,
   SHAPE,
   type ParticleEvent,
@@ -306,9 +307,15 @@ export class ProceduralVFX {
         p.x,
         p.ground
           ? groundHeight(p.x, p.z) + 0.065
-          : p.shape === SHAPE.debris && p.settled
-            ? restingY
-            : p.y,
+          : p.shape === SHAPE.smoke && p.color === VFX.lethalColor
+            ? smokeCenterHeight(
+                p.y,
+                Number.isFinite(p.floorY) ? p.floorY : groundHeight(p.x, p.z),
+                size,
+              )
+            : p.shape === SHAPE.debris && p.settled
+              ? restingY
+              : p.y,
         p.z,
       );
       if (p.shape === SHAPE.cube)

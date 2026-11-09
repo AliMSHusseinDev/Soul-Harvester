@@ -265,26 +265,35 @@ try {
     // Move the single coherent cloud, then sweep their screen-cell boundaries.
     for (const p of smoke) {
       p.x = 0;
-      p.y = 1.3;
+      p.y = 0.05;
+      p.floorY = 0.5;
       p.z = -35;
     }
     const positions = smoke.map((p) => [p.x, p.y, p.z]);
-    const counts = [];
+    const counts = [],
+      clearances = [];
     for (let i = 0; i < 40; i++) {
       f.camera.position.set(-0.5 + i / 39, 1.8, -28);
       f.camera.lookAt(0.1 * Math.sin(i * 0.1), 1.3, -35);
       f.draw();
       counts.push(f.fx.diagnostics().procedural.rendered);
+      const a = f.fx["procedural"]["world"].mesh.instanceMatrix.array;
+      clearances.push(a[13] - 0.5 * (Math.abs(a[1]) + Math.abs(a[5])) - 0.5);
     }
     return {
       expected: smoke.length,
       counts,
+      clearances,
       unchanged:
         JSON.stringify(positions) ===
         JSON.stringify(smoke.map((p) => [p.x, p.y, p.z])),
     };
   });
   assert.equal(smokeMotion.expected, 1);
+  assert.ok(
+    smokeMotion.clearances.every((c) => c > 0.02),
+    "smoke quad stays above raised ground across camera poses",
+  );
   assert.ok(
     smokeMotion.counts.every((n) => n === 1),
     "camera motion never tile-culls smoke puffs",

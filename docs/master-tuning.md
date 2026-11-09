@@ -64,3 +64,9 @@ Smoke no longer participates in the 16×9 screen-cell admission limit: camera mo
 ## 0.14.11 One bloody cloud per death
 
 Each death admits one smoke cloud instead of eight puffs. `bloodSmokeCloudSizeGain`=1.6 and `bloodSmokeCloudOpacityGain`=1.5 compensate with a modest footprint/density increase, rather than multiplying screen coverage by eight. Existing size cap, smooth fade, wind, lifetime and world depth remain. Cloud origin uses lethal contact when provided. Legacy smoke-slot partition stays internal so primary Splatter/Bleeding counts are unchanged.
+
+## 0.14.12 Smoke lifetime, enemy scaling and ground clearance
+
+`bloodSmokeLifeGain`=1.12 reduces 0.14.11 smoke lifetime by 20% (ordinary base 0.728–1.12s). Existing enemy size scales the cloud; `bloodSmokeDifficultySizeGain`=.3 applies a further bounded type-density bonus (up to 9%). Lifetime bonus is `.15*max(0,scale−1)+.3*(clampedDensity−1)`, capped by `bloodSmokeLifeBonusCap`=.2. Difficulty uses base enemy type health, never wave HP. The single cloud, color, wind and screen-size cap remain. Opacity uses quintic smootherstep with zero first/second derivatives at entrance and exit.
+
+Smoke samples terrain/actual support at the center and four corners of its conservative full-life footprint. Render placement uses a camera-independent bounding sphere and smooth maximum to keep the full expanding quad above the sampled support, including camera tilt/roll. No ground bounce is applied.
