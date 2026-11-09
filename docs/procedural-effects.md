@@ -1,6 +1,6 @@
 # Procedural combat effects
 
-Version 0.14.5 emphasizes the enemy's body response from the newer 48.8-second reference recording. Combat particles remain geometry and shader functions: no particle PNG, canvas texture, sprite sheet, atlas or frame sequence is loaded. Enemy artwork, weapon/world surfaces and fonts retain their existing assets.
+Version 0.14.6 emphasizes the enemy's body response from the newer 48.8-second reference recording. Combat particles remain geometry and shader functions: no particle PNG, canvas texture, sprite sheet, atlas or frame sequence is loaded. Enemy artwork, weapon/world surfaces and fonts retain their existing assets.
 
 ## Event composition
 
@@ -63,7 +63,7 @@ Loot retains exactly-once reward accounting and clear-path checks. It launches w
 ## Validation
 
 - Unit tests cover seeded profiles, step-rate-independent motion, terrain clearance, priority reserves, delayed activation, trails, remnant envelopes, kill metadata, pause and cleanup.
-- `npm run test:combat-vfx` renders twenty-seven scenarios at 720p/1080p, including particle-isolated lethal blood remnants, magic spray, actual framebuffer colors, wall rejection, reduced effects, saturation and cleanup.
+- `npm run test:combat-vfx` renders twenty-nine scenarios at 720p/1080p, including particle-isolated lethal blood remnants, magic spray, actual framebuffer colors, wall rejection, reduced effects, saturation and cleanup.
 - `npm run test:world-polish` checks ADS weapon-pixel protection at both resolutions, compact crit coverage, four world surface categories, decals, wind/reduced motion, token models and foliage shadow compilation.
 - `npm run test:handling` checks the visible expanded sprint crosshair and existing movement/weapon handling.
 - `npm run test:polish` checks real body responses, damage numbers, casting, muzzle/smoke and forty-enemy loot/level rewards.
@@ -102,3 +102,13 @@ Gravity shards now launch at 20% nominal horizontal scatter. Their hold lifetime
 The simulation caches visible-surface height queries while shards travel and samples the contact footprint when they settle. These queries use the world's static geometry BVH, including raised paving, with the shared terrain fallback. Resting positions are checked against the pixel mask's visible bounds and camera orientation, with a small depth separation. This avoids clipping through map textures without unnecessarily lifting the entire particle quad. Physics proxy clearance also includes shard size. Mixed zero/one/two-bounce behavior remains.
 
 Tests cover the complete hold before fading, fade endpoints, raised support surfaces, continued mixed bounce behavior and a low-camera world render of all 35 resting shards after two seconds. Two extra VFX scenarios capture the hold and fade phases at both resolutions.
+
+## 0.14.6 weighted wide-range splatter
+
+The profile historically called nongravity (#b32020) now has stylized apparent-weight tiers, as requested. Its initial velocity gains 1.5 and its ray count gains 1.2, rounded upward: 29 → 35 for ordinary deaths. Sizes, the #820808 shard profile, lethal flash and smoke retain their existing settings.
+
+A conservative reference travel envelope is derived from the preceding fan's speed/lobe/forward bounds, drag and maximum lifetime. Each new ray has a hard radius 1.7 times that reference, scaled by enemy size and centered on its actual contact point. Radial damping approaches the boundary; monotone edge opacity and a short exit fade prevent rebrightening. Active particles and trail births are rejected if terrain correction would put them outside the radius.
+
+Seeded weight tiers vary gravitational acceleration, drag and duration independently of size. Heavy rays drop and settle quickly; light rays have lower drag and longer duration. Some approach the cap while others stop well short. Grounded weighted rays fade quickly without bouncing; existing dark gravity shards retain mixed bounce/settle behavior and their full hold/fade lifetime. Trails inherit the parent's range anchor and boundary opacity.
+
+Tests compare exact 1.5 launch scaling, unchanged sizes, exact 1.7 radius scaling, ray counts, weight response ordering, wide/short light trajectories, monotone edge fading, hard bounds over stepped terrain, cleanup and deterministic shot-driven variation. Two additional render scenarios show later weighted-flight phases.

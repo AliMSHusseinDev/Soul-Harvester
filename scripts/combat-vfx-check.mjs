@@ -105,6 +105,8 @@ try {
         actor.visible = ![
           "death",
           "death-smoke",
+          "weighted-flight",
+          "weighted-late",
           "death-left",
           "death-right",
           "debris-fall",
@@ -118,6 +120,8 @@ try {
           "finisher",
           "near",
         ].includes(event);
+        camera.position.set(0, 2, event.startsWith("weighted-") ? -18 : -27);
+        camera.lookAt(0, 1, -35);
         fx.reduced = reduced;
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
@@ -139,6 +143,8 @@ try {
         else if (
           event === "death" ||
           event === "death-smoke" ||
+          event === "weighted-flight" ||
+          event === "weighted-late" ||
           event === "debris-fall" ||
           event === "debris-bounce" ||
           event === "debris-hold" ||
@@ -181,6 +187,9 @@ try {
         if (event.startsWith("debris-"))
           for (const p of fx["procedural"].simulation.items)
             if (p.shape !== 10) p.life = 0;
+        if (event.startsWith("weighted-"))
+          for (const p of fx["procedural"].simulation.items)
+            if (p.shape !== 9) p.life = 0;
         draw();
         for (let i = 0; i < Math.ceil(age * 120); i++) {
           fx.step(1 / 120, i / 120);
@@ -263,6 +272,8 @@ try {
       ["finisher", 0.25],
       ["orb-flight", 0.08],
       ["death", 0.2],
+      ["weighted-flight", 0.65],
+      ["weighted-late", 1.05],
       ["death-left", 0.2],
       ["death-right", 0.2],
       ["debris-fall", 0.35],
@@ -372,7 +383,7 @@ try {
     JSON.stringify({ report, stress }, null, 2),
   );
   console.log(
-    "PASS: texture-free shaders, 27 event scenarios at 720p/1080p, GPU colors, world occlusion, reduced mode, capacity and cleanup.",
+    "PASS: texture-free shaders, 29 event scenarios at 720p/1080p, GPU colors, world occlusion, reduced mode, capacity and cleanup.",
   );
 } finally {
   await browser?.close();

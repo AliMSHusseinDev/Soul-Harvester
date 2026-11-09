@@ -6,6 +6,7 @@ import {
   SHAPE,
   dragMotion,
   debrisOpacity,
+  splatterRange,
 } from "./particle-simulation";
 it("reproduces seeded events with independent particles and distinct event profiles", () => {
   const a = new ParticleSimulation(),
@@ -163,13 +164,13 @@ it("uses the requested deep red and scatters a death burst several metres withou
   expect(p.active).toBe(0);
 });
 
-it("keeps splatter free of gravity and terrain response while debris mixes limited bounce and settle", () => {
+it("uses weight-driven splatter and preserves debris mixed bounce and settle", () => {
   const p = new ParticleSimulation();
   p.emit("death", 0, 0.9, 0);
   const rays = p.items.filter((p) => p.life > 0 && p.shape === SHAPE.ribbon),
     chunks = p.items.filter((p) => p.life > 0 && p.shape === SHAPE.debris);
   expect(
-    rays.every((p) => p.color === 0xb32020 && p.gravity === 0 && !p.collision),
+    rays.every((p) => p.color === 0xb32020 && p.gravity > 0 && p.collision),
   ).toBe(true);
   expect(
     chunks.every((p) => p.color === 0x820808 && p.gravity > 0 && p.collision),
@@ -180,8 +181,8 @@ it("keeps splatter free of gravity and terrain response while debris mixes limit
   down.y = 0.04;
   down.vy = -2;
   p.step(0.05, () => 0);
-  expect(down.y).toBeLessThan(0);
-  expect(down.vy).toBeLessThan(0);
+  expect(down.y).toBeGreaterThanOrEqual(0.035);
+  expect(down.vy).toBe(0);
   expect(down.bounces).toBe(0);
   let bouncing = false,
     resting = false;
@@ -336,4 +337,90 @@ it("rests shards above raised map surfaces without cancelling mixed bounce behav
   expect(
     chunks.some((p) => p.bounces === 0) && chunks.some((p) => p.bounces > 0),
   ).toBe(true);
+});
+
+it("increases launch speed 50%, ray count 20%, keeps size fixed and enforces the 70%-expanded envelope", () => {
+  const original = VFX.splatterLaunchGain,
+    a = new ParticleSimulation(),
+    b = new ParticleSimulation();
+  try {
+    VFX.splatterLaunchGain = 1;
+    a.emit("death", 0, 4, 0);
+    VFX.splatterLaunchGain = original;
+    b.emit("death", 0, 4, 0);
+  } finally {
+    VFX.splatterLaunchGain = original;
+  }
+  const rays = b.items.filter((p) => p.life > 0 && p.shape === SHAPE.ribbon);
+  expect(rays).toHaveLength(35);
+  for (let i = 0; i < a.items.length; i++)
+    if (a.items[i].shape === SHAPE.ribbon && a.items[i].life > 0) {
+      expect(b.items[i].size).toBe(a.items[i].size);
+      for (const k of ["vx", "vy", "vz"] as const)
+        expect(b.items[i][k]).toBeCloseTo(a.items[i][k] * 1.5, 10);
+    }
+  expect(
+    rays.some((p) => p.weight < 0.4) && rays.some((p) => p.weight > 1),
+  ).toBe(true);
+  expect(
+    Math.max(...rays.filter((p) => p.weight < 0.4).map((p) => p.gravity)),
+  ).toBeLessThan(
+    Math.min(...rays.filter((p) => p.weight > 1).map((p) => p.gravity)),
+  );
+  const cap = splatterRange();
+  expect(rays.every((p) => p.rangeLimit === cap)).toBe(true);
+  for (let i = 0; i < 240; i++) {
+    b.step(1 / 60, (x) => (x > 4 ? 8 : 0));
+    for (const p of b.items.filter(
+      (p) => p.life > 0 && Number.isFinite(p.rangeLimit),
+    ))
+      expect(
+        Math.hypot(p.x - p.anchorX, p.y - p.anchorY, p.z - p.anchorZ),
+      ).toBeLessThanOrEqual(cap + 1e-6);
+  }
+  expect(b.active).toBe(0);
+});
+
+it("lets some light rays approach the cap while others stop short and never brighten after range fading", () => {
+  const p = new ParticleSimulation();
+  p.emit("death", 0, 5, 0);
+  const rays = p.items.filter((p) => p.life > 0 && p.shape === SHAPE.ribbon),
+    peaks = rays.map(() => 0),
+    alphas = rays.map(() => 1);
+  const gain = VFX.splatterRangeGain;
+  let baseline = 0;
+  try {
+    VFX.splatterRangeGain = 1;
+    baseline = splatterRange();
+  } finally {
+    VFX.splatterRangeGain = gain;
+  }
+  expect(splatterRange() / baseline).toBeCloseTo(1.7, 10);
+  for (let i = 0; i < 180; i++) {
+    p.step(1 / 120, () => 0);
+    rays.forEach((r, j) => {
+      peaks[j] = Math.max(
+        peaks[j],
+        Math.hypot(r.x - r.anchorX, r.y - r.anchorY, r.z - r.anchorZ),
+      );
+      expect(r.rangeOpacity).toBeLessThanOrEqual(alphas[j] + 1e-8);
+      alphas[j] = r.rangeOpacity;
+    });
+  }
+  const light = rays
+    .map((r, j) => ({ r, peak: peaks[j] }))
+    .filter(({ r }) => r.weight < 0.4);
+  expect(
+    light.some(({ r, peak }) => peak > r.rangeLimit * 0.8),
+    JSON.stringify(
+      light.map(({ r, peak }) => ({
+        peak,
+        range: r.rangeLimit,
+        weight: r.weight,
+        drag: r.drag,
+        max: r.max,
+      })),
+    ),
+  ).toBe(true);
+  expect(light.some(({ r, peak }) => peak < r.rangeLimit * 0.7)).toBe(true);
 });

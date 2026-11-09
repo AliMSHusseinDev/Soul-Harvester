@@ -291,6 +291,10 @@ export class ProceduralVFX {
       if (p.shape === SHAPE.cube || p.shape === SHAPE.smoke)
         alpha *= Math.min(1, Math.max(0, (depth - 0.18) / 0.45));
       if (p.shape === SHAPE.debris) alpha = debrisOpacity(p.age, p.fadeAt);
+      if (p.shape === SHAPE.ribbon)
+        alpha *=
+          p.rangeOpacity *
+          Math.min(1, Math.max(0, (p.expireAge - p.age) / 0.16));
       if (p.ground) alpha *= 0.65;
       // The five-cell L mask occupies +/-0.3 of the quad: keep its visible lower edge off the surface.
       const c = Math.cos(p.angle),
