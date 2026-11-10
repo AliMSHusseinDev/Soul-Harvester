@@ -46,3 +46,5 @@ The current death profiles are **Splatter** (`VFX.splatterColor`, #b32020) and *
 | Bleeding physics | Weighted gravity, damped mixed bounce/settle, actual support queries and size-aware clearance |
 
 Both layers retain shot-contact origin, shot direction and seeded per-kill fan variation. Size/difficulty count bonuses are bounded at 30%. Fixed pools, priority reserves, screen caps and depth protection for ADS remain. Old weighted-Splatter and bloody-smoke controls are retired. Developer Mode and local overrides are removed; production tuning lives in source again.
+
+Version 0.15.2 derives Splatter render length from exponential drag and normalized release age. Bleeding restitution uses weight and a bounded 0.26–0.42 range; bounce halves spin, and final opacity uses a quintic envelope. Timing, count and no-smoke settings retain 0.15.1 values.

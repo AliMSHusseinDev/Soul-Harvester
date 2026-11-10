@@ -10,6 +10,8 @@ import {
   bleedingRange,
   enemyParticleDensity,
   splatterOpacity,
+  splatterStretch,
+  bleedingRestitution,
 } from "./particle-simulation";
 it("reproduces seeded events with independent particles and distinct event profiles", () => {
   const a = new ParticleSimulation(),
@@ -305,4 +307,52 @@ it("maintains wide shot-fan variation and modest stronger-enemy count scaling", 
   expect(
     q.items.filter((p) => p.life > 0 && p.shape === SHAPE.debris),
   ).toHaveLength(37);
+});
+
+it("contracts splatter streaks monotonically with analytic drag and normalized release", () => {
+  let last = 6;
+  expect(splatterStretch(6, 2.6, 0, 0.3)).toBe(6);
+  for (let age = 0; age <= 0.3; age += 0.002) {
+    const length = splatterStretch(6, 2.6, age, 0.3);
+    expect(length).toBeLessThanOrEqual(last + 1e-10);
+    expect(length).toBeGreaterThan(0);
+    last = length;
+  }
+  expect(splatterStretch(6, 2.6, 0.15, 0.3)).toBeGreaterThan(
+    splatterStretch(6, 4, 0.15, 0.3),
+  );
+  expect(last).toBeLessThan(4);
+});
+it("gives heavy bleeding less rebound energy and smooths its final fade", () => {
+  expect(bleedingRestitution(0.6)).toBeGreaterThan(bleedingRestitution(2));
+  for (const weight of [0.1, 0.6, 1, 2, 10]) {
+    const r = bleedingRestitution(weight);
+    expect(r).toBeGreaterThanOrEqual(0.26);
+    expect(r).toBeLessThanOrEqual(0.42);
+    expect(r * r).toBeLessThan(0.18);
+  }
+  const sim = new ParticleSimulation();
+  sim.emit("death", 0, 0.9, 0);
+  const chunk = sim.items.find(
+    (p) => p.life > 0 && p.shape === SHAPE.debris && p.bounceLimit > 0,
+  )!;
+  chunk.y = 0.04;
+  chunk.vy = -3;
+  chunk.spin = 4;
+  sim.step(0.01, () => 0);
+  expect(chunk.bounces).toBe(1);
+  expect(chunk.spin).toBe(2);
+  expect(chunk.vy).toBeGreaterThan(0);
+  chunk.bounces = chunk.bounceLimit;
+  chunk.y = 0.04;
+  chunk.vy = -3;
+  chunk.spin = 4;
+  sim.step(0.01, () => 0);
+  expect(chunk.settled).toBe(true);
+  expect(chunk.spin).toBe(0);
+  const hold = 0.9,
+    eps = 1e-4;
+  expect(debrisOpacity(hold, hold)).toBe(1);
+  expect(debrisOpacity(hold + VFX.debrisFade, hold)).toBe(0);
+  expect(debrisOpacity(hold + VFX.debrisFade - eps, hold)).toBeLessThan(1e-8);
 });

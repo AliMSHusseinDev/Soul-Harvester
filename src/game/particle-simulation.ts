@@ -42,9 +42,32 @@ export interface SplatterImpact {
   ny: number;
   nz: number;
 }
+const smootherstep = (t: number) => {
+  const x = Math.max(0, Math.min(1, t));
+  return Math.max(0, Math.min(1, x * x * x * (x * (6 * x - 15) + 10)));
+};
 export function debrisOpacity(age: number, fadeAt: number) {
-  const t = Math.max(0, Math.min(1, (age - fadeAt) / F.debrisFade));
-  return 1 - t * t * (3 - 2 * t);
+  if (age <= fadeAt) return 1;
+  if (age >= fadeAt + F.debrisFade) return 0;
+  return 1 - smootherstep((age - fadeAt) / F.debrisFade);
+}
+/** Analytic drag-driven streak contraction; no accumulating scale mutations per frame. */
+export function splatterStretch(
+  stretch: number,
+  drag: number,
+  age: number,
+  life: number,
+) {
+  const energy = 0.45 + 0.55 * Math.exp(-Math.max(0, drag) * Math.max(0, age));
+  const release =
+    1 - 0.22 * smootherstep((age / Math.max(0.001, life) - 0.65) / 0.35);
+  return stretch * energy * release;
+}
+export function bleedingRestitution(weight: number) {
+  return Math.max(
+    0.26,
+    Math.min(0.42, F.debrisRestitution / (0.9 + 0.12 * Math.max(0, weight))),
+  );
 }
 /** Conservative reference envelope of the preceding shot-fan profile, before new launch gain. */
 export function splatterRange(scale = 1) {
@@ -891,9 +914,10 @@ export class ParticleSimulation {
           p.bounces++;
           p.vy =
             Math.abs(p.vy) *
-            (p.shape === SHAPE.debris ? F.debrisRestitution : 0.22);
+            (p.shape === SHAPE.debris ? bleedingRestitution(p.weight) : 0.22);
           p.vx *= 0.65;
           p.vz *= 0.65;
+          p.spin *= 0.5;
         } else {
           p.settled = true;
           p.vx = p.vy = p.vz = p.gravity = p.spin = 0;

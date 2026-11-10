@@ -4,6 +4,7 @@ import {
   ParticleSimulation,
   debrisOpacity,
   splatterOpacity,
+  splatterStretch,
   PARTICLE_CAPACITY,
   SHAPE,
   type ParticleEvent,
@@ -253,6 +254,10 @@ export class ProceduralVFX {
           : p.overlay
             ? this.overlay
             : this.world;
+      const stretch =
+        p.shape === SHAPE.ribbon
+          ? splatterStretch(p.stretch, p.drag, p.age, p.max)
+          : p.stretch;
       let size = p.size;
       if (p.shape === SHAPE.ring || p.shape === SHAPE.arc)
         size *= 0.38 + 1.8 * (1 - Math.exp(-t * 5));
@@ -273,7 +278,7 @@ export class ProceduralVFX {
       if (p.shape === SHAPE.ribbon)
         size = Math.min(
           size,
-          (depth * height * VFX.flakeLengthCap) / (focal * p.stretch),
+          (depth * height * VFX.flakeLengthCap) / (focal * stretch),
         );
       if (p.shape !== SHAPE.smoke)
         size = Math.max(size, Math.min(p.size * 1.4, (depth * 2) / focal));
@@ -330,7 +335,7 @@ export class ProceduralVFX {
         p.shape === SHAPE.streak ||
           p.shape === SHAPE.wisp ||
           p.shape === SHAPE.ribbon
-          ? size * p.stretch
+          ? size * stretch
           : size,
         p.shape === SHAPE.cube ? size : 0.1,
       );
