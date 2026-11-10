@@ -596,10 +596,13 @@ export class ParticleSimulation {
           p.stretch *= 0.82 + this.random() * 0.36;
           p.weight =
             p.seed < 0.35
-              ? 0.12 + p.seed * 0.6
+              ? F.splatterLightWeightMin +
+                (p.seed / 0.35) * F.splatterLightWeightRange
               : p.seed < 0.8
-                ? 0.5 + (p.seed - 0.35) * 1.1
-                : 1.1 + (p.seed - 0.8) * 3;
+                ? F.splatterMediumWeightMin +
+                  ((p.seed - 0.35) / 0.45) * F.splatterMediumWeightRange
+                : F.splatterHeavyWeightMin +
+                  ((p.seed - 0.8) / 0.2) * F.splatterHeavyWeightRange;
           p.gravity = p.weight * F.splatterWeightGravity;
           p.drag =
             p.weight < 0.4
@@ -652,10 +655,13 @@ export class ParticleSimulation {
           p.vy = (2 + this.random() * 2) * scale * F.bleedingLaunchGain;
           p.weight =
             p.seed < 0.4
-              ? 0.55 + p.seed * 0.625
+              ? F.bleedingLightWeightMin +
+                (p.seed / 0.4) * F.bleedingLightWeightRange
               : p.seed < 0.8
-                ? 1.05 + (p.seed - 0.4) * 0.75
-                : 1.7 + (p.seed - 0.8) * 2;
+                ? F.bleedingMediumWeightMin +
+                  ((p.seed - 0.4) / 0.4) * F.bleedingMediumWeightRange
+                : F.bleedingHeavyWeightMin +
+                  ((p.seed - 0.8) / 0.2) * F.bleedingHeavyWeightRange;
           p.gravity = F.debrisGravity * p.weight;
           p.drag =
             F.debrisDrag * (p.weight < 1 ? 0.55 : p.weight > 1.5 ? 1.2 : 1);

@@ -1,6 +1,6 @@
 {
   "name": "soul-harvester",
-  "version": "0.14.14",
+  "version": "0.15.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test": "vitest run",
+    "test:developer": "node scripts/developer-check.mjs",
     "test:browser": "node scripts/browser-check.mjs",
     "format": "prettier --write src scripts index.html package.json tsconfig.json README.md",
     "format:check": "prettier --check src scripts index.html package.json tsconfig.json README.md",

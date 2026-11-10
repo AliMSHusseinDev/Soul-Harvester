@@ -1,0 +1,269 @@
+#developer-panel {
+  position: fixed;
+  inset: 20px 20px 20px auto;
+  width: min(700px, calc(100vw - 40px));
+  z-index: 1000;
+  background: rgba(12, 23, 26, 0.98);
+  border: 1px solid #5a776d;
+  border-radius: 14px;
+  color: #e4eee6;
+  box-shadow: 0 20px 90px #000b;
+  font:
+    14px/1.5 Inter,
+    system-ui,
+    sans-serif;
+  overflow: auto;
+  overscroll-behavior: contain;
+  text-align: left;
+}
+#developer-panel[hidden],
+#developer-badge[hidden] {
+  display: none !important;
+}
+#developer-panel header {
+  padding: 22px;
+  background: #182d30;
+  border-bottom: 1px solid #415d55;
+}
+#developer-panel h2 {
+  margin: 4px 0;
+  font:
+    600 26px Inter,
+    sans-serif;
+  color: #eef5de;
+}
+#developer-panel h3 {
+  font:
+    600 21px Inter,
+    sans-serif;
+  margin: 0 0 16px;
+}
+#developer-panel h4 {
+  font:
+    600 15px Inter,
+    sans-serif;
+  margin: 20px 0 10px;
+}
+#developer-panel header > div:first-child {
+  letter-spacing: 2px;
+  color: #a9c689;
+  font-size: 11px;
+}
+#developer-panel header > span {
+  display: block;
+  margin-top: 12px;
+  font-size: 12px;
+  color: #cbdcaa;
+}
+#developer-panel nav {
+  padding: 12px 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  position: sticky;
+  top: 0;
+  background: #102426;
+  z-index: 2;
+  border-bottom: 1px solid #415d55;
+}
+#developer-panel button {
+  font:
+    500 12px Inter,
+    sans-serif;
+  background: #243c3c;
+  color: #e1e9dc;
+  border: 1px solid #526b60;
+  border-radius: 6px;
+  padding: 9px 12px;
+  margin: 3px;
+  cursor: pointer;
+  letter-spacing: 0;
+  text-transform: none;
+  min-height: 36px;
+}
+#developer-panel button:hover,
+#developer-panel button.selected {
+  background: #a9c88a;
+  color: #152325;
+  border-color: #d4edb4;
+}
+#developer-panel button:focus-visible,
+#developer-panel input:focus-visible,
+#developer-panel select:focus-visible {
+  outline: 2px solid #d2eaa5;
+  outline-offset: 3px;
+}
+#developer-panel .dev-content {
+  padding: 22px;
+}
+#developer-panel label {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  justify-content: space-between;
+  margin: 12px 0;
+  padding: 8px 0;
+  border-bottom: 1px solid #ffffff0d;
+  overflow-wrap: anywhere;
+}
+#developer-panel label > span {
+  flex: 1;
+  max-width: 75%;
+}
+#developer-panel input,
+#developer-panel select {
+  background: #09191d;
+  border: 1px solid #55736c;
+  border-radius: 5px;
+  color: #f4f2d5;
+  padding: 8px;
+  font:
+    13px Inter,
+    sans-serif;
+  min-width: 0;
+}
+#developer-panel input[type="number"] {
+  width: 112px;
+}
+#developer-panel input[type="color"] {
+  width: 72px;
+  height: 36px;
+  padding: 3px;
+}
+#developer-panel input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+}
+#developer-panel input[placeholder] {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 12px 0;
+}
+#developer-panel .dev-note {
+  color: #b8c9c4;
+  background: #172d30;
+  border-left: 2px solid #a8c486;
+  padding: 12px;
+  margin: 10px 0 18px;
+  font-size: 13px;
+}
+#developer-panel .dev-description {
+  display: block;
+  color: #91aaa4;
+  font-size: 11px;
+  margin-top: -6px;
+  margin-bottom: 12px;
+}
+#developer-panel .dev-palette {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(85px, 1fr));
+  gap: 8px;
+  margin: 16px 0;
+}
+#developer-panel .dev-palette button {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+#developer-panel img {
+  width: 54px;
+  height: 54px;
+  image-rendering: pixelated;
+  object-fit: cover;
+  border-radius: 3px;
+}
+#developer-badge {
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+  z-index: 1001;
+  background: #102426ed;
+  border: 1px solid #729574;
+  color: #d7edc1;
+  border-radius: 6px;
+  padding: 12px 16px;
+  font:
+    12px Inter,
+    sans-serif;
+  max-width: calc(100vw - 40px);
+  pointer-events: none;
+}
+body.developing #hud,
+body.developing #crosshair,
+body.developing #interact {
+  display: none !important;
+}
+@media (max-width: 600px) {
+  #developer-panel {
+    inset: 8px;
+    width: auto;
+  }
+  #developer-panel header,
+  #developer-panel .dev-content {
+    padding: 14px;
+  }
+  #developer-panel nav {
+    padding: 8px;
+  }
+  #developer-panel label {
+    gap: 8px;
+    font-size: 12px;
+  }
+  #developer-badge {
+    font-size: 10px;
+    bottom: 8px;
+    left: 8px;
+  }
+}
+
+#developer-hotbar {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 5px;
+  z-index: 999;
+  background: #122a2be8;
+  padding: 8px;
+  border: 1px solid #648271;
+  border-radius: 8px;
+  max-width: 90vw;
+  overflow: auto;
+}
+#developer-hotbar[hidden] {
+  display: none;
+}
+#developer-hotbar button {
+  background: #223b3c;
+  border: 1px solid #5e786d;
+  color: #dfebcd;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  font:
+    10px Inter,
+    sans-serif;
+  gap: 5px;
+  padding: 5px;
+  cursor: pointer;
+}
+#developer-hotbar img {
+  width: 34px;
+  height: 34px;
+  image-rendering: pixelated;
+}
+body.developing #developer-badge {
+  top: 18px;
+  bottom: auto;
+  max-width: calc(100vw - 60px);
+}
+
+#developer-hotbar button.selected {
+  background: #a9c88a;
+  color: #122426;
+  border-color: #e6f4c5;
+}

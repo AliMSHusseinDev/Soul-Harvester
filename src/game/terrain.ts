@@ -1,3 +1,4 @@
+import { sculptHeight } from "./developer-terrain";
 import { MAP_TUNING } from "./tuning";
 export const MAP = MAP_TUNING;
 export function isRiver(x: number, z: number) {
@@ -10,7 +11,7 @@ export function isRiver(x: number, z: number) {
 /** Quintic Hermite ramp: C2-continuous joins, flat forest and a raised keep. */
 export function landHeight(_x: number, z: number) {
   const t = Math.max(0, Math.min(1, (z + 24) / 38));
-  return 4 * t * t * t * (t * (t * 6 - 15) + 10);
+  return 4 * t * t * t * (t * (t * 6 - 15) + 10) + sculptHeight(_x, z);
 }
 export function groundHeight(x: number, z: number) {
   return isRiver(x, z) ? -9 : landHeight(x, z);
