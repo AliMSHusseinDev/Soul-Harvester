@@ -77,8 +77,10 @@ try {
   await page.locator("#enter").click();
   await wait(() => window.__soulHarvester().active);
   assert.equal((await state()).lootRender.procedural.mode, "procedural");
-  assert.equal((await state()).lootRender.procedural.textures, 0);
-  console.log("Texture-free procedural feedback active in the production game");
+  assert.equal((await state()).lootRender.procedural.textures, 2);
+  console.log(
+    "Shared-image reference-shaped feedback active in the production game",
+  );
   await page.evaluate(() => {
     const canvas = document.querySelector("#world"),
       gl = canvas.getContext("webgl2"),
@@ -265,7 +267,7 @@ try {
     report[key] = image.sample;
     if (key.startsWith("near-")) {
       assert.equal(image.sample.legacyFlashes, 0);
-      assert.equal(image.sample.render.textures, 0);
+      assert.equal(image.sample.render.textures, 2);
       const p = image.sample.visiblePixels;
       console.log(key, p);
       if (key === "near-normal")
@@ -317,7 +319,7 @@ try {
   );
   console.log(JSON.stringify(report, null, 2));
   console.log(
-    "PASS: procedural sparks, critical cores and red chunks visible on real normal, critical and lethal bullet damage; no particle textures.",
+    "PASS: procedural sparks, critical cores and red chunks visible on real normal, critical and lethal bullet damage; two shared blood images.",
   );
 } finally {
   await browser.close();

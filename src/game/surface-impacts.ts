@@ -1,3 +1,4 @@
+import { bloodAssets } from "./blood-assets";
 import * as THREE from "three";
 import { VFX } from "./tuning";
 import type { SurfaceHit } from "./world-raycast";
@@ -32,12 +33,13 @@ export class SurfaceImpacts {
     this.mesh = new THREE.InstancedMesh(
       g,
       new THREE.ShaderMaterial({
+        uniforms: { uBloodPaint: { value: bloodAssets().bleeding } },
         transparent: true,
         depthWrite: false,
         toneMapped: false,
         vertexShader: `attribute vec4 impactState;varying vec2 vUv;varying vec4 vState;void main(){vUv=uv;vState=impactState;gl_Position=projectionMatrix*modelViewMatrix*instanceMatrix*vec4(position,1.);}`,
         fragmentShader: `
-          varying vec2 vUv; varying vec4 vState;
+          uniform sampler2D uBloodPaint;varying vec2 vUv; varying vec4 vState;
           void main(){
             vec2 q=(floor(vUv*16.)+.5)/16.*2.-1.;
             float r=length(q),a=atan(q.y,q.x)+vState.y;
@@ -45,9 +47,9 @@ export class SurfaceImpacts {
             float core=1.-step(.38,r),rim=step(.38,r)*(1.-step(.63,r));
             float mask=max(core,max(crack*.65,rim*.25));
             if(vState.w>.5){
-              float noise=fract(sin(dot(floor(q*10.),vec2(127.1,311.7))+vState.y)*43758.5453);
-              float edge=.65+.13*sin(a*5.+vState.y)+.07*sin(a*9.-vState.y);
-              mask=(1.-smoothstep(edge-.12,edge,r))*(.45+.2*noise);
+              vec2 uv=(floor(vUv*48.)+.5)/48.;
+              vec4 paint=texture2D(uBloodPaint,uv);
+              mask=paint.a*(.48+.20*paint.r);
             }
             if(mask<.05)discard;
             vec3 base=mix(vec3(.004,.008,.006),vec3(.008,.004,.001),vState.z);

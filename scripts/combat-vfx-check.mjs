@@ -105,6 +105,7 @@ try {
         actor.visible = ![
           "death",
           "death-smoke",
+          "death-reference",
           "weighted-flight",
           "weighted-late",
           "death-left",
@@ -143,6 +144,7 @@ try {
         else if (
           event === "death" ||
           event === "death-smoke" ||
+          event === "death-reference" ||
           event === "weighted-flight" ||
           event === "weighted-late" ||
           event === "debris-fall" ||
@@ -204,11 +206,20 @@ try {
           white = 0,
           red = 0,
           cyan = 0,
-          burgundy = 0;
+          burgundy = 0,
+          uniformBody = 0,
+          brightRim = 0;
         for (let i = 0; i < pixels.length; i += 4) {
           const r = pixels[i],
             g = pixels[i + 1],
             b = pixels[i + 2];
+          if (
+            Math.abs(r - 125) <= 1 &&
+            Math.abs(g - 16) <= 1 &&
+            Math.abs(b - 26) <= 1
+          )
+            uniformBody++;
+          if (r > 145 && g < 60 && b < 90) brightRim++;
           if (r > 150 && g > 100 && b < g * 0.75) gold++;
           if (r > 230 && g > 230 && b > 220) white++;
           if (r > 65 && r > g * 1.6 && r > b * 1.3) red++;
@@ -217,7 +228,7 @@ try {
         }
         return {
           ...fx.diagnostics(),
-          pixels: { gold, white, red, cyan, burgundy },
+          pixels: { gold, white, red, cyan, burgundy, uniformBody, brightRim },
           memory: { ...renderer.info.memory },
         };
       },
@@ -272,6 +283,7 @@ try {
       ["finisher", 0.25],
       ["orb-flight", 0.08],
       ["death", 0.2],
+      ["death-reference", 0.055],
       ["weighted-flight", 0.12],
       ["weighted-late", 0.26],
       ["death-left", 0.2],
@@ -306,8 +318,24 @@ try {
         shotCaptures.set(`${height}-${event}`, capture);
       if (event.startsWith("remnant-"))
         console.log(event, result.pixels, result.remnants);
-      assert.equal(result.procedural.textures, 0);
+      assert.equal(result.procedural.textures, 2);
+      if (event === "death-reference") {
+        assert.equal(result.procedural.shapes.splashes, 1);
+        assert.ok(
+          result.pixels.red - result.pixels.uniformBody > 50,
+          "supplied contact image is visibly rendered",
+        );
+      }
       if (event === "remnant-flash") {
+        assert.ok(
+          result.pixels.uniformBody > 20,
+          "opaque death silhouette uses requested #7d101a",
+        );
+        assert.equal(
+          result.pixels.brightRim,
+          0,
+          "no lighter rim or crack colors on death silhouette",
+        );
         assert.ok(result.remnants.phases.every((p) => p.flash === 1));
         assert.ok(
           result.pixels.red > 15 && result.pixels.white === 0,
@@ -375,10 +403,13 @@ try {
   assert.ok(stress.peak.procedural.draws <= 3);
   assert.equal(stress.end.procedural.active, 0);
   assert.equal(stress.end.remnants.active, 0);
+  const bloodRequests = requests.filter((u) =>
+    /blood-(splatter|bleeding)\.png/.test(u),
+  );
   assert.equal(
-    requests.filter((u) => /vfx\/combat|\.png(?:\?|$)/.test(u)).length,
-    0,
-    "no image/atlas particle downloads",
+    new Set(bloodRequests).size,
+    2,
+    "two static user images, loaded once each",
   );
   assert.deepEqual(errors, []);
   await writeFile(
@@ -386,7 +417,7 @@ try {
     JSON.stringify({ report, stress }, null, 2),
   );
   console.log(
-    "PASS: texture-free shaders, 29 event scenarios at 720p/1080p, GPU colors, world occlusion, reduced mode, capacity and cleanup.",
+    "PASS: two shared reference images, 30 event scenarios at 720p/1080p, GPU colors, world occlusion, reduced mode, capacity and cleanup.",
   );
 } finally {
   await browser?.close();

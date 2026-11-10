@@ -1,0 +1,11 @@
+# Soul Harvester 0.16.1 — supplied blood art and uniform dark deaths
+
+[Play 0.16.1](https://alimshusseindev.github.io/Soul-Harvester/?v=0.16.1).
+
+The original RGBA files from the user's Splatter.zip are copied unchanged. Splatter.png supplies a brief, capped contact burst and organic sampled jets; Bleeding.png supplies dark moving fragments and the full ground paint silhouette. Shader sampling preserves crisp shapes while existing analytic motion, short lifetimes, smooth fades and per-kill direction/variation remain. At most one contact image is live at a time, replacing one of the existing four close-fleck slots; concurrent kills retain smaller flecks, so particle counts do not increase. Both images are shared GPU textures loaded once before combat readiness; no atlas or animated sheet is used. [Asset hashes and provenance](blood-reference-assets.json).
+
+Bleeding's fuller mask is rendered slightly larger, with conservative all-angle physics clearance and precise rotated resting-quad support to prevent cutting into paving. Paint retains the previous normal/footprint checks, lifetime and slot caps. Transparent particle draw ordering is explicit so the contact image appears over the remnant while world depth and the later weapon pass still occlude it. The enemy death silhouette now uses only #7d101a: all lighter outline/rim and crack colors are removed while contact-driven erosion and directional collapse remain.
+
+The previous additions were verified rather than assumed: direction-aware body response, per-kill erosion, critical accent, supported paint, surface fragments, vegetation pulses, loot direction bias and secondary storm budgets are exercised by render/world/unit/production-input checks. Secondary layers intentionally suppress under reduced effects and crowd saturation; subtle/short effects are not guaranteed to be visible on every frame.
+
+Validation: 119 unit tests, strict build/formatting, 30 VFX scenarios at 720p/1080p including GPU pixel assertions for uniform #7d101a and zero bright-rim pixels, two shared blood-image requests, world/ADS/ground/shadow regression, and actual combat. Existing death-smoke/editor removal remains. Audio is unchanged. Bounded tests do not establish every hardware/scene configuration or subjective satisfaction.

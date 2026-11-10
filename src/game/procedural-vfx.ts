@@ -1,3 +1,4 @@
+import { bloodAssets } from "./blood-assets";
 import { VFX } from "./tuning";
 import * as THREE from "three";
 import {
@@ -13,9 +14,14 @@ import {
 import { groundHeight } from "./terrain";
 import type { WorldVisibility } from "./world-visibility";
 
-/** Quantized procedural masks: no sampler, image, atlas, canvas or frame animation. */
+/** Procedural motion/masks with two shared static user blood images; no frame animation. */
 export function particleMaterial(cube = false, overlay = false) {
+  const assets = bloodAssets();
   const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uBloodSplatter: { value: assets.splatter },
+      uBloodBleeding: { value: assets.bleeding },
+    },
     transparent: true,
     depthTest: !overlay,
     depthWrite: false,
@@ -32,6 +38,7 @@ export function particleMaterial(cube = false, overlay = false) {
         gl_Position=projectionMatrix*modelViewMatrix*instanceMatrix*vec4(position,1.);
       }`,
     fragmentShader: `
+      uniform sampler2D uBloodSplatter;uniform sampler2D uBloodBleeding;
       varying vec2 vUv; varying vec4 vData; varying vec3 vColor; varying float vLight;
       float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
       float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
@@ -39,7 +46,7 @@ export function particleMaterial(cube = false, overlay = false) {
         float cells=vData.x>3.5 && vData.x<4.5 ? ${VFX.smokeCells.toFixed(1)} : ${VFX.maskCells.toFixed(1)};
         vec2 q=(floor(vUv*cells)+.5)/cells*2.-1.;
         float shape=vData.x, t=vData.z, seed=vData.w;
-        float alpha=1., highlight=.0;
+        float alpha=1., highlight=.0, bloodShade=1.;
         if(shape<.5){
           alpha=step(abs(q.x)+abs(q.y),1.65);
           highlight=step(.6,q.y)*.32;
@@ -79,23 +86,26 @@ export function particleMaterial(cube = false, overlay = false) {
           alpha=(1.-smoothstep(.022,.06,abs(r-edge)))*step(.15,sin(a*3.+seed*8.+t*2.));
           highlight=.4;
         }else if(shape>8.5 && shape<9.5){
-          // Broken pixel rays: a tapered staircase with detached square flecks.
-          float row=floor(vUv.y*12.);
-          float width=.2+.5*(1.-vUv.y)+hash(vec2(row,seed*17.))*.18;
-          float breaks=step(.18,hash(vec2(row,seed*31.)));
-          alpha=step(abs(q.x),width)*step(abs(q.y),.98)*breaks;
-          highlight=0.;
+          // Sample a long organic jet from the supplied burst; retain seeded per-particle variation.
+          vec2 uv=(floor(vUv*48.)+.5)/48.;
+          vec2 axis=normalize(vec2(.68+.08*sin(seed*19.),.73));
+          vec2 perpendicular=vec2(-axis.y,axis.x);
+          vec2 source=vec2(.50,.49)+axis*(uv.y*.63)+perpendicular*((uv.x-.5)*.30*(1.-uv.y*.35));
+          vec4 blood=texture2D(uBloodSplatter,clamp(source,vec2(.001),vec2(.999)));
+          alpha=blood.a;bloodShade=.5+.8*blood.r;highlight=0.;
         }
-        if(shape>9.5){
-          vec2 cell=floor(vUv*5.);
-          float stem=step(1.,cell.x)*step(cell.x,2.)*step(1.,cell.y)*step(cell.y,3.);
-          float corner=step(2.,cell.x)*step(cell.x,3.)*step(2.,cell.y)*step(cell.y,3.);
-          alpha=max(stem,corner);highlight=0.;
+        if(shape>9.5 && shape<10.5){
+          vec2 uv=(floor(vUv*24.)+.5)/24.;
+          vec2 source=vec2(.54,.55)+(uv-.5)*vec2(.48,.70);
+          if(seed>.5)source.x=1.-source.x;
+          vec4 blood=texture2D(uBloodBleeding,source);
+          alpha=blood.a;bloodShade=.5+.8*blood.r;highlight=0.;
         }
+        if(shape>10.5){vec4 blood=texture2D(uBloodSplatter,(floor(vUv*64.)+.5)/64.);alpha=blood.a;bloodShade=.7+.8*blood.r;highlight=0.;}
         if(vColor.r>vColor.g*2. && vColor.r>vColor.b*2.)highlight=0.;
         alpha*=vData.y;
         if(alpha<.015)discard;
-        gl_FragColor=vec4(mix(vColor,vec3(1.),highlight)*vLight,alpha);
+        gl_FragColor=vec4(mix(vColor,vec3(1.),highlight)*vLight*bloodShade,alpha);
         #include <colorspace_fragment>
       }`,
   });
@@ -161,6 +171,8 @@ export class ProceduralVFX {
       return { mesh, data, color, count: 0 };
     };
     this.world = batch(false, false);
+    // Contact blood must paint over the transparent death remnant, while world depth and the later weapon pass still occlude it.
+    this.world.mesh.renderOrder = 2;
     this.cubes = batch(true, false);
     this.overlay = batch(false, true);
   }
@@ -258,7 +270,7 @@ export class ProceduralVFX {
         p.shape === SHAPE.ribbon
           ? splatterStretch(p.stretch, p.drag, p.age, p.max)
           : p.stretch;
-      let size = p.size;
+      let size = p.shape === SHAPE.debris ? p.size * 1.1 : p.size;
       if (p.shape === SHAPE.ring || p.shape === SHAPE.arc)
         size *= 0.38 + 1.8 * (1 - Math.exp(-t * 5));
       else if (p.shape === SHAPE.smoke) size *= 0.7 + t * 2.7;
@@ -267,13 +279,15 @@ export class ProceduralVFX {
       else size *= 0.8 + 0.2 * (1 - t);
       // Cap overlay footprint and distant detail. Near-plane objects are never screen-filling.
       const cap =
-        p.shape === SHAPE.cube
-          ? 0.035
-          : p.shape === SHAPE.smoke
-            ? VFX.smokeHeightCap
-            : p.overlay
-              ? VFX.impactHeightCap
-              : 0.12;
+        p.shape === SHAPE.splash
+          ? 0.09
+          : p.shape === SHAPE.cube
+            ? 0.035
+            : p.shape === SHAPE.smoke
+              ? VFX.smokeHeightCap
+              : p.overlay
+                ? VFX.impactHeightCap
+                : 0.12;
       if (!p.ground) size = Math.min(size, (depth * height * cap) / focal);
       if (p.shape === SHAPE.ribbon)
         size = Math.min(
@@ -294,8 +308,9 @@ export class ProceduralVFX {
           splatterOpacity(t) *
           p.rangeOpacity *
           Math.min(1, Math.max(0, (p.expireAge - p.age) / 0.16));
+      if (p.shape === SHAPE.splash) alpha = splatterOpacity(t) * 0.55;
       if (p.ground) alpha *= 0.65;
-      // The five-cell L mask occupies +/-0.3 of the quad: keep its visible lower edge off the surface.
+      // Keep the entire rotated textured quad above the sampled support surface.
       const c = Math.cos(p.angle),
         s = Math.sin(p.angle),
         rightY = this.camera.matrixWorld.elements[1],
@@ -303,7 +318,7 @@ export class ProceduralVFX {
       const restingY =
         p.floorY +
         size *
-          0.3 *
+          0.5 *
           (Math.abs(rightY * c + upY * s) + Math.abs(-rightY * s + upY * c)) +
         0.012;
       this.dummy.position.set(
@@ -357,7 +372,8 @@ export class ProceduralVFX {
   diagnostics() {
     return {
       mode: "procedural",
-      textures: 0,
+      bloodStyle: "user-reference-textures",
+      textures: 2,
       capacity: PARTICLE_CAPACITY,
       active: this.simulation.active,
       delayed: this.simulation.items.filter((p) => p.life > 0 && p.age < 0)
@@ -380,6 +396,9 @@ export class ProceduralVFX {
         world: this.world.count,
         overlay: this.overlay.count,
         cubes: this.cubes.count,
+        splashes: this.simulation.items.filter(
+          (p) => p.life > 0 && p.shape === SHAPE.splash,
+        ).length,
         ribbons: this.simulation.items.filter(
           (p) => p.life > 0 && p.shape === SHAPE.ribbon,
         ).length,
