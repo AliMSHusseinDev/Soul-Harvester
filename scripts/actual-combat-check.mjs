@@ -49,8 +49,27 @@ async function fireAt(e, head) {
   await page.mouse.up();
 }
 try {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      "soul-harvester.developer.v1",
+      JSON.stringify({
+        version: 1,
+        tuning: { "effects.splatterLifeMin": 100 },
+        objects: [],
+        brushes: [],
+      }),
+    ),
+  );
   await page.goto(process.env.GAME_URL || "http://127.0.0.1:4181/");
   await wait(() => window.__soulHarvester?.().ready);
+  assert.equal(await page.locator("#developer-button").count(), 0);
+  assert.equal(
+    await page.evaluate(() =>
+      localStorage.getItem("soul-harvester.developer.v1"),
+    ),
+    null,
+  );
+  console.log("Developer UI absent and old saved overrides cleared");
   await page.locator("#loading").waitFor({ state: "detached" });
   const r = await page.locator("#enter").boundingBox();
   mx = r.x + r.width / 2;

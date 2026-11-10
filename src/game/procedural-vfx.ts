@@ -3,8 +3,7 @@ import * as THREE from "three";
 import {
   ParticleSimulation,
   debrisOpacity,
-  bloodSmokeOpacity,
-  smokeCenterHeight,
+  splatterOpacity,
   PARTICLE_CAPACITY,
   SHAPE,
   type ParticleEvent,
@@ -280,15 +279,14 @@ export class ProceduralVFX {
         size = Math.max(size, Math.min(p.size * 1.4, (depth * 2) / focal));
       let alpha =
         p.shape === SHAPE.smoke
-          ? p.color === VFX.lethalColor
-            ? bloodSmokeOpacity(t) * VFX.bloodSmokeCloudOpacityGain
-            : Math.min(1, t * 9) * Math.pow(1 - t, 0.9) * 0.46
+          ? Math.min(1, t * 9) * Math.pow(1 - t, 0.9) * 0.46
           : 1 - Math.pow(t, 3);
       if (p.shape === SHAPE.cube || p.shape === SHAPE.smoke)
         alpha *= Math.min(1, Math.max(0, (depth - 0.18) / 0.45));
       if (p.shape === SHAPE.debris) alpha = debrisOpacity(p.age, p.fadeAt);
       if (p.shape === SHAPE.ribbon)
-        alpha *=
+        alpha =
+          splatterOpacity(t) *
           p.rangeOpacity *
           Math.min(1, Math.max(0, (p.expireAge - p.age) / 0.16));
       if (p.ground) alpha *= 0.65;
@@ -307,15 +305,9 @@ export class ProceduralVFX {
         p.x,
         p.ground
           ? groundHeight(p.x, p.z) + 0.065
-          : p.shape === SHAPE.smoke && p.color === VFX.lethalColor
-            ? smokeCenterHeight(
-                p.y,
-                Number.isFinite(p.floorY) ? p.floorY : groundHeight(p.x, p.z),
-                size,
-              )
-            : p.shape === SHAPE.debris && p.settled
-              ? restingY
-              : p.y,
+          : p.shape === SHAPE.debris && p.settled
+            ? restingY
+            : p.y,
         p.z,
       );
       if (p.shape === SHAPE.cube)

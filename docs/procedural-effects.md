@@ -1,3 +1,5 @@
+> Current behavior is defined by [0.15.1](release-0.15.1.md): short zero-gravity Splatter, gravity-only Bleeding, and no death smoke. Older version sections below are historical implementation notes.
+
 # Procedural combat effects
 
 Version 0.14.7 emphasizes the enemy's body response from the newer 48.8-second reference recording. Combat particles remain geometry and shader functions: no particle PNG, canvas texture, sprite sheet, atlas or frame sequence is loaded. Enemy artwork, weapon/world surfaces and fonts retain their existing assets.

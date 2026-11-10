@@ -21,7 +21,7 @@ interface Flame {
 }
 export class World {
   readonly solids: Solid[] = [];
-  ballistics: WorldRaycast;
+  readonly ballistics: WorldRaycast;
   private wind = new Wind();
   reducedMotion = false;
   private treeRoots: { x: number; y: number; z: number }[] = [];

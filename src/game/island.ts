@@ -1,4 +1,3 @@
-import { sculptHeight } from "./developer-terrain";
 import * as THREE from "three";
 import { landHeight } from "./terrain";
 export const OCEAN_Y = -5.8;
@@ -9,7 +8,7 @@ const smooth = (a: number, b: number, x: number) => {
 };
 /** A complete height field: no deleted triangles, disconnected mountain sheets or open seams. */
 export function islandHeight(x: number, z: number) {
-  const base = landHeight(x, z) - sculptHeight(x, z),
+  const base = landHeight(x, z),
     ax = Math.abs(x);
   const ridges =
     smooth(34, 64, ax) *
@@ -33,7 +32,7 @@ export function islandHeight(x: number, z: number) {
   const depth =
     smooth(0, 3.5, half - Math.abs(z - center)) * (1 - smooth(38, 92, ax));
   y = y * (1 - depth) + -10.5 * depth;
-  return y + sculptHeight(x, z);
+  return y;
 }
 const axis = (min: number, max: number, fineMin: number, fineMax: number) => {
   const a: number[] = [];

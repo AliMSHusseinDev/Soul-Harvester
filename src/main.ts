@@ -1,6 +1,3 @@
-import { Developer } from "./game/developer";
-import { loadDeveloperProject } from "./game/developer-project";
-import { applyDeveloperWorld } from "./game/developer-world";
 import { criticalChance, isHeadshot } from "./game/combat-balance";
 import "@fontsource/pixelify-sans/latin-400.css";
 import "@fontsource/pixelify-sans/latin-600.css";
@@ -41,8 +38,12 @@ import { GunVFX } from "./game/gun-vfx";
 import { CinematicTime } from "./game/cinematic-time";
 import { ENEMY_TYPES } from "./game/waves";
 async function boot() {
-  const developerProject = loadDeveloperProject();
-  let developer: Developer | undefined;
+  // Retired local editor projects must never override production balance or maps.
+  try {
+    localStorage.removeItem("soul-harvester.developer.v1");
+  } catch {
+    /* Storage may be disabled. */
+  }
   const canvas = $<HTMLCanvasElement>("world");
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -86,13 +87,8 @@ async function boot() {
   const viewLight = new THREE.DirectionalLight(0xffe2bb, LIGHTING.viewKey);
   viewLight.position.set(-2, 3, 2);
   viewScene.add(viewLight);
-  const world = new World(scene);
-  applyDeveloperWorld(
-    world,
-    developerProject,
-    developerProject.brushes.length > 0,
-  );
-  const input = new Input(canvas),
+  const world = new World(scene),
+    input = new Input(canvas),
     player = new Player(input, world.solids),
     weapon = new Weapon(camera),
     battle = new Battle(world.solids),
@@ -177,14 +173,6 @@ async function boot() {
   const bellPoint = new THREE.Vector3(),
     bellSphere = new THREE.Sphere(world.bellPosition, 0.8);
   function setActive(value: boolean) {
-    if (developer?.enabled) {
-      active = false;
-      $("menu").classList.add("hidden");
-      $("hud").classList.add("hidden");
-      document.body.classList.add("developing");
-      return;
-    }
-    document.body.classList.remove("developing");
     active = value && !ui.dialogOpen && battle.phase !== "lost";
     clock.reset();
     player.stop();
@@ -247,15 +235,6 @@ async function boot() {
       document.body.classList.toggle("has-panel", ui.dialogOpen);
       setActive(input.locked);
     });
-  developer = new Developer(
-    world,
-    camera,
-    input,
-    effects,
-    renderer,
-    developerProject,
-    () => setActive(false),
-  );
   $("enter").onclick = enter;
   $("notes").onclick = () => ui.open("guide");
   $("close-guide").onclick = () => $<HTMLDialogElement>("guide").close();
@@ -314,7 +293,6 @@ async function boot() {
     }
   }
   input.onAction = (action) => {
-    if (developer?.enabled) return;
     if (action === "KeyR") {
       if (weapon.reload()) audio.reload();
     } else if (action === "KeyE") interact();
@@ -583,9 +561,7 @@ async function boot() {
       frames = 0;
       frameTime = 0;
     }
-    if (developer?.enabled) {
-      developer.step(dt);
-    } else if (active) {
+    if (active) {
       cinematic.update(rawDt);
       const alpha = clock.advance(dt * cinematic.scale, (step) => {
         if (!active) return;
@@ -728,7 +704,7 @@ async function boot() {
         camera.lookAt(0, 4, -39);
       }
     }
-    weapon.group.visible = active && !developer?.enabled;
+    weapon.group.visible = active;
     weapon.present(viewAlpha);
     $("hitmarker").classList.toggle("show", feedback.remaining > 0);
     $("hitmarker").classList.toggle("kill", feedback.kill);
@@ -787,7 +763,7 @@ async function boot() {
   Object.defineProperty(window, "__soulHarvester", {
     value: () => ({
       ready: true,
-      version: "0.15.0",
+      version: "0.15.1",
       timeScale: cinematic.scale,
       cinematicActive: cinematic.active,
       stamina: player.stamina,
@@ -799,7 +775,6 @@ async function boot() {
       simulationTime: time,
       lastShotAt,
       lastSprintExit,
-      developer: developer?.diagnostics,
       cameraHeight: camera.position.y - player.position.y,
       grounded: player.grounded,
       active,
@@ -836,7 +811,6 @@ async function boot() {
       baseHealth: battle.baseHealth,
       phase: battle.phase,
       wave: battle.wave,
-      waveLimit: WAVE_LIMIT,
       souls: battle.souls,
       coins: battle.coins,
       points: battle.points,

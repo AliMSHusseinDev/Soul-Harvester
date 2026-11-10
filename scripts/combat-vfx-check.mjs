@@ -256,52 +256,6 @@ try {
       },
     };
   });
-  const smokeMotion = await page.evaluate(() => {
-    const f = window.fixture;
-    f.show("death-smoke", 0.25, 1280, 720);
-    const sim = f.fx["procedural"].simulation;
-    for (const p of sim.items) if (p.shape !== 4) p.life = 0;
-    const smoke = sim.items.filter((p) => p.life > 0 && p.shape === 4);
-    // Move the single coherent cloud, then sweep their screen-cell boundaries.
-    for (const p of smoke) {
-      p.x = 0;
-      p.y = 0.05;
-      p.floorY = 0.5;
-      p.z = -35;
-    }
-    const positions = smoke.map((p) => [p.x, p.y, p.z]);
-    const counts = [],
-      clearances = [];
-    for (let i = 0; i < 40; i++) {
-      f.camera.position.set(-0.5 + i / 39, 1.8, -28);
-      f.camera.lookAt(0.1 * Math.sin(i * 0.1), 1.3, -35);
-      f.draw();
-      counts.push(f.fx.diagnostics().procedural.rendered);
-      const a = f.fx["procedural"]["world"].mesh.instanceMatrix.array;
-      clearances.push(a[13] - 0.5 * (Math.abs(a[1]) + Math.abs(a[5])) - 0.5);
-    }
-    return {
-      expected: smoke.length,
-      counts,
-      clearances,
-      unchanged:
-        JSON.stringify(positions) ===
-        JSON.stringify(smoke.map((p) => [p.x, p.y, p.z])),
-    };
-  });
-  assert.equal(smokeMotion.expected, 1);
-  assert.ok(
-    smokeMotion.clearances.every((c) => c > 0.02),
-    "smoke quad stays above raised ground across camera poses",
-  );
-  assert.ok(
-    smokeMotion.counts.every((n) => n === 1),
-    "camera motion never tile-culls smoke puffs",
-  );
-  assert.ok(
-    smokeMotion.unchanged,
-    "camera movement leaves world smoke positions unchanged",
-  );
   const report = [],
     shotCaptures = new Map();
   for (const [width, height] of [
@@ -314,18 +268,18 @@ try {
       ["critical", 0.07],
       ["critical-echo", 0.17],
       ["hit-smoke", 0.32],
-      ["death-smoke", 0.25],
+      ["death-smoke", 0.18],
       ["finisher", 0.25],
       ["orb-flight", 0.08],
       ["death", 0.2],
-      ["weighted-flight", 0.65],
-      ["weighted-late", 1.05],
+      ["weighted-flight", 0.12],
+      ["weighted-late", 0.26],
       ["death-left", 0.2],
       ["death-right", 0.2],
       ["debris-fall", 0.35],
       ["debris-bounce", 0.65],
-      ["debris-hold", 1.6],
-      ["debris-fade", 2.08],
+      ["debris-hold", 0.75],
+      ["debris-fade", 1.1],
       ["remnant-flash", 0.035],
       ["remnant-burgundy", 0.17],
       ["remnant-late", 0.3],
@@ -365,7 +319,10 @@ try {
           result.remnants.phases.every((p) => p.flash === 0 && p.height < 1),
         );
       if (event === "magic-death") assert.ok(result.pixels.cyan > 15);
-      if (event === "death") assert.equal(result.procedural.events.soul, 0);
+      if (event === "death") {
+        assert.equal(result.procedural.events.soul, 0);
+        assert.equal(result.procedural.smoke, 0);
+      }
       if (event.startsWith("remnant-")) {
         assert.equal(result.remnants.active, 1);
         assert.equal(result.procedural.rendered, 0);

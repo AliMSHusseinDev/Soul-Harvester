@@ -68,19 +68,15 @@ export function enemyParticleDensity(scale: number, healthRatio: number) {
       Math.log2(Math.max(1, healthRatio)) * F.enemyParticleDifficultyWeight,
   );
 }
-export function bloodSmokeOpacity(t: number) {
-  if (t <= 0 || t >= 1) return 0;
-  const smooth = (v: number) => {
-    const x = Math.max(0, Math.min(1, v));
-    return Math.max(0, Math.min(1, x * x * x * (x * (x * 6 - 15) + 10)));
+/** C2-continuous short impulse envelope: no long-lived stationary red rays. */
+export function splatterOpacity(t: number) {
+  const smooth = (x: number) => {
+    x = Math.max(0, Math.min(1, x));
+    return x * x * x * (x * (x * 6 - 15) + 10);
   };
-  return 0.46 * smooth(t / 0.14) * (1 - smooth((t - 0.55) / 0.45));
-}
-// Smooth maximum always clears the bounding sphere and has no hard clamp corner.
-export function smokeCenterHeight(y: number, floor: number, size: number) {
-  const bottom = floor + size * Math.SQRT1_2 + 0.025;
-  const d = y - bottom;
-  return (y + bottom + Math.sqrt(d * d + 0.0025)) * 0.5;
+  if (t <= 0) return 1;
+  if (t >= 1) return 0;
+  return Math.max(0, Math.min(1, 1 - smooth((t - 0.12) / 0.88)));
 }
 export function bleedingRange(scale = 1) {
   return (
@@ -366,9 +362,8 @@ export class ParticleSimulation {
       bz = -dy * tx;
     let active = this.active;
     for (let i = 0; i < count; i++) {
-      // The legacy eight smoke slots define the blood-profile partition only.
-      // Admit one coherent cloud without changing Splatter/Bleeding counts.
-      if (death && i > baseCount - 8 && i < baseCount) continue;
+      // Retire all eight historical death-smoke slots without inflating either blood layer.
+      if (death && i >= baseCount - 8 && i < baseCount) continue;
       let p: Particle | undefined;
       // Circular scan, bounded by the fixed pool; reserve capacity for finishing/ability feedback.
       if (priority > 0 || active < PARTICLE_CAPACITY - F.reservedSlots)
@@ -575,7 +570,6 @@ export class ParticleSimulation {
         p.gravity = 0;
         p.drag = F.deathDrag;
         p.vy = (this.random() - 0.25) * 9 * scale;
-        if (p.shape === SHAPE.ribbon && i % 2 === 0) p.trail = 1;
         if (p.shape === SHAPE.ribbon) {
           const theta = a + phase + 0.22 * Math.sin(a * lobes + twist),
             speed = radial * (1 + 0.15 * Math.sin(theta * lobes + twist));
@@ -594,31 +588,15 @@ export class ParticleSimulation {
             p.z = p.anchorZ = impact.z;
           }
           p.stretch *= 0.82 + this.random() * 0.36;
-          p.weight =
-            p.seed < 0.35
-              ? F.splatterLightWeightMin +
-                (p.seed / 0.35) * F.splatterLightWeightRange
-              : p.seed < 0.8
-                ? F.splatterMediumWeightMin +
-                  ((p.seed - 0.35) / 0.45) * F.splatterMediumWeightRange
-                : F.splatterHeavyWeightMin +
-                  ((p.seed - 0.8) / 0.2) * F.splatterHeavyWeightRange;
-          p.gravity = p.weight * F.splatterWeightGravity;
-          p.drag =
-            p.weight < 0.4
-              ? F.splatterLightDrag +
-                ((p.seed * 0.618 + serial * 0.37) % 1) *
-                  F.splatterLightDragRange
-              : 0.2 + ((p.seed * 0.618 + serial * 0.37) % 1) * 1.4;
-          p.collision = true;
+          p.weight = 0;
+          p.gravity = 0;
+          p.drag = F.splatterDrag;
+          p.collision = false;
           p.bounceLimit = 0;
           p.rangeLimit = splatterRange(scale);
-          p.life = p.max *=
-            p.weight < 0.4
-              ? F.splatterLightLifeGain
-              : p.weight < 1
-                ? F.splatterMediumLifeGain
-                : 1;
+          p.life = p.max =
+            F.splatterLifeMin + this.random() * F.splatterLifeRange;
+          p.trail = 0;
           p.vx *= F.splatterLaunchGain;
           p.vy *= F.splatterLaunchGain;
           p.vz *= F.splatterLaunchGain;
@@ -655,13 +633,10 @@ export class ParticleSimulation {
           p.vy = (2 + this.random() * 2) * scale * F.bleedingLaunchGain;
           p.weight =
             p.seed < 0.4
-              ? F.bleedingLightWeightMin +
-                (p.seed / 0.4) * F.bleedingLightWeightRange
+              ? 0.55 + p.seed * 0.625
               : p.seed < 0.8
-                ? F.bleedingMediumWeightMin +
-                  ((p.seed - 0.4) / 0.4) * F.bleedingMediumWeightRange
-                : F.bleedingHeavyWeightMin +
-                  ((p.seed - 0.8) / 0.2) * F.bleedingHeavyWeightRange;
+                ? 1.05 + (p.seed - 0.4) * 0.75
+                : 1.7 + (p.seed - 0.8) * 2;
           p.gravity = F.debrisGravity * p.weight;
           p.drag =
             F.debrisDrag * (p.weight < 1 ? 0.55 : p.weight > 1.5 ? 1.2 : 1);
@@ -676,43 +651,8 @@ export class ParticleSimulation {
           p.bounceLimit =
             this.random() < F.debrisBounceChance ? 1 + (i % 2) : 0;
         }
-        if (i >= baseCount - 8 && i < baseCount) {
-          p.shape = SHAPE.smoke;
-          p.weight = 0;
-          p.rangeLimit = Infinity;
-          p.collision = false;
-          p.trail = 0;
-          p.size =
-            (0.36 + this.random() * 0.2) *
-            scale *
-            F.bloodSmokeCloudSizeGain *
-            (1 +
-              F.bloodSmokeDifficultySizeGain *
-                (Math.max(1, Math.min(F.enemyParticleCountCap, density)) - 1));
-          p.x = impact?.x ?? x;
-          p.y = impact?.y ?? y;
-          p.z = impact?.z ?? z;
-          p.color = F.lethalColor;
-          p.age = -F.lethalSmokeDelay;
-          p.life = p.max =
-            (0.65 + this.random() * 0.35) *
-            F.bloodSmokeLifeGain *
-            (1 +
-              Math.min(
-                F.bloodSmokeLifeBonusCap,
-                Math.max(0, scale - 1) * F.bloodSmokeSizeLifeGain +
-                  (Math.max(1, Math.min(F.enemyParticleCountCap, density)) -
-                    1) *
-                    F.bloodSmokeDifficultyLifeGain,
-              ));
-          p.vx *= 0.2;
-          p.vz *= 0.2;
-          p.vy = 0.3 + this.random() * 0.45;
-          p.gravity = 0;
-          p.drag = 3;
-          p.spin = (this.random() - 0.5) * 0.5;
-        }
       }
+
       if (event === "soul") {
         p.shape =
           i % 4 === 0 ? SHAPE.wisp : i % 2 === 0 ? SHAPE.streak : SHAPE.chip;
@@ -874,35 +814,6 @@ export class ParticleSimulation {
       p.vx *= e;
       p.vz *= e;
       p.vy = p.vy * e - p.gravity * k;
-      if (p.shape === SHAPE.smoke && p.color === F.lethalColor) {
-        // Analytic curl integrals: continuous wind without frame-dependent noise or allocations.
-        const a = p.age - activeDt,
-          b = p.age,
-          phase = p.seed * Math.PI * 2;
-        p.x +=
-          F.bloodSmokeWindSpeed * activeDt +
-          (F.bloodSmokeCurlSpeed *
-            (Math.cos(a * 2 + phase) - Math.cos(b * 2 + phase))) /
-            2;
-        p.z +=
-          (F.bloodSmokeCurlSpeed *
-            (Math.sin(b * 1.6 + phase) - Math.sin(a * 1.6 + phase))) /
-          1.6;
-        p.y += F.bloodSmokeRiseSpeed * activeDt;
-        // Query actual support over the cloud's conservative full-life footprint.
-        const radius = p.size * 3.4 * Math.SQRT1_2;
-        let supportTop = floor(p.x, p.z);
-        for (let j = 0; j < 5; j++) {
-          const px = p.x + (j === 0 ? 0 : j & 1 ? radius : -radius);
-          const pz = p.z + (j === 0 ? 0 : j & 2 ? radius : -radius);
-          supportTop = Math.max(
-            supportTop,
-            floor(px, pz),
-            this.surfaceFloor?.(px, pz, p.y + radius + 0.3) ?? -Infinity,
-          );
-        }
-        p.floorY = supportTop;
-      }
 
       if (Number.isFinite(p.rangeLimit)) {
         let rx = p.x - p.anchorX,
