@@ -74,3 +74,9 @@ Smoke samples terrain/actual support at the center and four corners of its conse
 ## 0.14.13 Shorter smoke
 
 `bloodSmokeLifeGain`=0.56 halves 0.14.12 lifetime: ordinary clouds last 0.364–0.56s after the unchanged 0.1s delay. Existing type/size lifetime bonus stays capped at 20% over this new base; size scaling, difficulty bonus, quintic fade, single-cloud count, wind and terrain clearance remain unchanged.
+
+## 0.14.14 Splatter with the 0.14.5 baseline
+
+The Splatter launch/count gains return to 1 (`splatterLaunchGain`, `splatterAmountGain`, `splatterAdditionalAmountGain`), matching the 0.14.5 base fan and primary count (29 on ordinary deaths before type bonuses). `splatterRangeGain`=1 uses the conservative travel envelope of that original fan as a hard bound for the newer, longer-lived weighted trajectories; 0.14.5 itself did not impose that cap. `splatterSizeGain`=1.2826 is 10% above 0.14.13's 1.166, independent of apparent weight.
+
+Weight tiers, light drag/lifetime, impact origin/shot direction and seeded fan variation remain. Size/difficulty count bonuses and current Bleeding/single-cloud smoke settings remain unchanged.

@@ -289,7 +289,7 @@ it("increases only splatter birth sizes by ten percent over the previous version
     a = new ParticleSimulation(),
     b = new ParticleSimulation();
   try {
-    VFX.splatterSizeGain = 1.06;
+    VFX.splatterSizeGain = 1.166;
     a.emit("death", 0, 2, 0);
     VFX.splatterSizeGain = gain;
     b.emit("death", 0, 2, 0);
@@ -343,12 +343,12 @@ it("rests shards above raised map surfaces without cancelling mixed bounce behav
   ).toBe(true);
 });
 
-it("reduces splatter launch 25% and applies the current ray count and range", () => {
+it("restores 0.14.5 launch and ray count while preserving weighted impact motion", () => {
   const original = VFX.splatterLaunchGain,
     a = new ParticleSimulation(),
     b = new ParticleSimulation();
   try {
-    VFX.splatterLaunchGain = 1.5;
+    VFX.splatterLaunchGain = 1;
     a.emit("death", 0, 4, 0);
     VFX.splatterLaunchGain = original;
     b.emit("death", 0, 4, 0);
@@ -356,12 +356,12 @@ it("reduces splatter launch 25% and applies the current ray count and range", ()
     VFX.splatterLaunchGain = original;
   }
   const rays = b.items.filter((p) => p.life > 0 && p.shape === SHAPE.ribbon);
-  expect(rays).toHaveLength(37);
+  expect(rays).toHaveLength(29);
   for (let i = 0; i < a.items.length; i++)
     if (a.items[i].shape === SHAPE.ribbon && a.items[i].life > 0) {
       expect(b.items[i].size).toBe(a.items[i].size);
       for (const k of ["vx", "vy", "vz"] as const)
-        expect(b.items[i][k]).toBeCloseTo(a.items[i][k] * 0.75, 10);
+        expect(b.items[i][k]).toBeCloseTo(a.items[i][k], 10);
     }
   expect(
     rays.some((p) => p.weight < 0.4) && rays.some((p) => p.weight > 1),
@@ -403,7 +403,7 @@ it("lets some light rays approach the cap while others stop short and never brig
   } finally {
     VFX.splatterRangeGain = gain;
   }
-  expect(splatterRange() / baseline).toBeCloseTo(1.02, 10);
+  expect(splatterRange() / baseline).toBeCloseTo(1, 10);
   for (let i = 0; i < 180; i++) {
     p.step(1 / 120, () => 0);
     rays.forEach((r, j) => {
