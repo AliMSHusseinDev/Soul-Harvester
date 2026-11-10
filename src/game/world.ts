@@ -24,6 +24,10 @@ export class World {
   readonly ballistics: WorldRaycast;
   private wind = new Wind();
   reducedMotion = false;
+  deathRipple(x: number, z: number, scale: number) {
+    if (!this.reducedMotion && !this.reducedEffects)
+      this.wind.kick(x, z, scale);
+  }
   private treeRoots: { x: number; y: number; z: number }[] = [];
   readonly flames: Flame[] = [];
   readonly bell = new THREE.Group();

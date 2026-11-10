@@ -15,7 +15,10 @@ export type ParticleEvent =
   | "heal"
   | "orb"
   | "soul"
-  | "surface";
+  | "surface"
+  | "death-flecks"
+  | "death-ground"
+  | "finisher";
 export const PARTICLE_SIZE_GAIN = F.sizeGain;
 export const PARTICLE_CAPACITY = F.capacity;
 export const SHAPE = {
@@ -246,6 +249,9 @@ export class ParticleSimulation {
     orb: 0,
     soul: 0,
     surface: 0,
+    "death-flecks": 0,
+    "death-ground": 0,
+    finisher: 0,
   };
   private random() {
     this.randomState =
@@ -282,33 +288,39 @@ export class ParticleSimulation {
         event === "orb",
       priority = large || death ? 2 : small ? 0 : 1,
       total =
-        event === "surface"
-          ? F.surfaceCount
-          : event === "trail"
-            ? 1
-            : event === "soul"
-              ? F.soulCount
-              : event === "pickup"
-                ? 7
-                : event === "spawn"
-                  ? 10
-                  : event === "orb"
-                    ? 8
-                    : event === "cast"
-                      ? 14
-                      : event === "hurt"
-                        ? 12
-                        : large
-                          ? event === "level"
-                            ? F.levelCount
-                            : F.abilityCount
-                          : death
-                            ? finishing
-                              ? F.finisherCount
-                              : F.deathCount
-                            : critical
-                              ? F.criticalCount
-                              : F.hitCount,
+        event === "finisher"
+          ? 1
+          : event === "death-flecks"
+            ? 4
+            : event === "death-ground"
+              ? 6
+              : event === "surface"
+                ? F.surfaceCount
+                : event === "trail"
+                  ? 1
+                  : event === "soul"
+                    ? F.soulCount
+                    : event === "pickup"
+                      ? 7
+                      : event === "spawn"
+                        ? 10
+                        : event === "orb"
+                          ? 8
+                          : event === "cast"
+                            ? 14
+                            : event === "hurt"
+                              ? 12
+                              : large
+                                ? event === "level"
+                                  ? F.levelCount
+                                  : F.abilityCount
+                                : death
+                                  ? finishing
+                                    ? F.finisherCount
+                                    : F.deathCount
+                                  : critical
+                                    ? F.criticalCount
+                                    : F.hitCount,
       baseCount = Math.max(
         1,
         Math.ceil(total * (reduced ? F.reducedDensity : 1)),
@@ -765,6 +777,40 @@ export class ParticleSimulation {
         p.stretch = p.shape === SHAPE.streak ? 2.4 : 1;
         p.overlay = false;
         p.trail = 0;
+      }
+      if (
+        event === "death-flecks" ||
+        event === "death-ground" ||
+        event === "finisher"
+      ) {
+        p.overlay = false;
+        p.trail = 0;
+        p.gravity = event === "death-ground" ? 8 : 0;
+        p.collision = false;
+        p.shape = event === "finisher" ? SHAPE.ribbon : SHAPE.chip;
+        p.color =
+          color ?? (event === "death-ground" ? 0x5a6650 : F.splatterColor);
+        p.size =
+          (event === "finisher"
+            ? 0.025
+            : event === "death-flecks"
+              ? 0.022
+              : 0.018) * Math.min(1.5, scale);
+        p.life = p.max =
+          event === "finisher"
+            ? 0.09
+            : event === "death-flecks"
+              ? 0.12 + 0.06 * this.random()
+              : 0.18 + 0.1 * this.random();
+        p.stretch = event === "finisher" ? 3 : 1;
+        p.vx = (Math.cos(a) * 1.2 + nx * 0.4) * scale;
+        p.vz = (Math.sin(a) * 1.2 + nz * 0.4) * scale;
+        p.vy =
+          event === "death-ground"
+            ? 1.1 + this.random() * 0.8
+            : (this.random() - 0.5) * 1.4;
+        p.drag = 4;
+        p.bounceLimit = 0;
       }
       if (large && i >= 2 && i <= 5 && !reduced) {
         p.shape = i % 2 === 0 ? SHAPE.arc : SHAPE.ring;

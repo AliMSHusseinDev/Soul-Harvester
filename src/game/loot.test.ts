@@ -149,3 +149,28 @@ it("acquires a large nearby pile as a stream and grants every item exactly once"
   ).toBe(600);
   expect(loot.drops.some((d) => d.active)).toBe(false);
 });
+
+it("biases release by shot direction without increasing reward counts or launch energy", () => {
+  const a = new Loot(new Navigation([])),
+    b = new Loot(new Navigation([]));
+  const reward = { gold: 4, xp: 12 };
+  a.release(0, -35, reward);
+  b.release(0, -35, reward, { x: 1, z: 0 });
+  const left = a.drops.filter((d) => d.active),
+    right = b.drops.filter((d) => d.active);
+  expect(right).toHaveLength(left.length);
+  left.forEach((d, i) => {
+    expect(Math.hypot(d.vx, d.vz)).toBeCloseTo(
+      Math.hypot(right[i].vx, right[i].vz),
+      10,
+    );
+    expect(right[i].value).toBe(d.value);
+  });
+  expect(right.map((d) => d.vx)).not.toEqual(left.map((d) => d.vx));
+  const collected = [];
+  for (let i = 0; i < 600; i++)
+    collected.push(
+      ...b.update(1 / 60, { x: 1, z: -35, y: groundHeight(1, -35) }, 3),
+    );
+  expect(collected.map((d) => d.kind).sort()).toEqual(["gold", "xp"]);
+});

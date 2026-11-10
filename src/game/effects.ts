@@ -28,6 +28,8 @@ export class Effects {
   }
   private remnants: EnemyRemnants;
   private scars: SurfaceImpacts;
+  deathSurfaceQuery?: (ray: THREE.Ray, range: number) => SurfaceHit | null;
+  private deathBudget = 3;
   private orbClock = { value: 0 };
   private orbs: {
     mesh: THREE.Mesh;
@@ -219,6 +221,7 @@ export class Effects {
   }
   setSurfaceFloor(query: (x: number, z: number, ceiling: number) => number) {
     this.procedural.simulation.surfaceFloor = query;
+    this.remnants.surfaceFloor = query;
   }
   cast(point: THREE.Vector3, orb: boolean) {
     this.stats.casts++;
@@ -270,7 +273,7 @@ export class Effects {
     impact?: SplatterImpact,
   ) {
     const scale = ENEMY_TYPES[kind].scale;
-    this.remnants.spawn(x, z, kind);
+    this.remnants.spawn(x, z, kind, incomingX, incomingZ, impact);
     this.stats.deaths++;
     this.procedural.emit(
       "death",
@@ -287,6 +290,81 @@ export class Effects {
       impact,
       enemyParticleDensity(scale, ENEMY_TYPES[kind].hp / ENEMY_TYPES[0].hp),
     );
+    // Token bucket bounds secondary work under chain kills; primary blood always remains.
+    if (
+      !this.reduced &&
+      this.deathBudget >= 1 &&
+      this.procedural.simulation.active < 800
+    ) {
+      this.deathBudget--;
+      const fx = impact?.x ?? x,
+        fy = impact?.y ?? groundHeight(x, z) + 0.85 * scale,
+        fz = impact?.z ?? z;
+      this.procedural.emit(
+        "death-flecks",
+        fx,
+        fy,
+        fz,
+        scale,
+        false,
+        undefined,
+        incomingX,
+        incomingZ,
+      );
+      if (critical)
+        this.procedural.emit(
+          "finisher",
+          fx,
+          fy,
+          fz,
+          scale,
+          false,
+          0xe35a61,
+          incomingX,
+          incomingZ,
+        );
+      this.ray.set(
+        new THREE.Vector3(x, groundHeight(x, z) + 1.1 * scale, z),
+        new THREE.Vector3(0, -1, 0),
+      );
+      const ground = this.deathSurfaceQuery?.(this.ray, 4 * scale);
+      if (ground && ground.normal.y > 0.55) {
+        const radius = 0.4 * Math.min(scale, 1.5),
+          query = this.procedural.simulation.surfaceFloor;
+        let planar = true;
+        if (query)
+          for (let i = 0; i < 4; i++) {
+            const dx = i & 1 ? radius : -radius,
+              dz = i & 2 ? radius : -radius;
+            const predicted =
+              ground.point.y -
+              (ground.normal.x * dx + ground.normal.z * dz) / ground.normal.y;
+            if (
+              Math.abs(
+                query(x + dx, z + dz, ground.point.y + 0.4) - predicted,
+              ) > 0.07
+            )
+              planar = false;
+          }
+        if (planar)
+          this.scars.emitBlood(ground, scale, Math.atan2(incomingX, incomingZ));
+        const color =
+          ground.surface === "stone"
+            ? 0x919b91
+            : ground.surface === "wood"
+              ? 0x92714d
+              : 0x5c7848;
+        this.procedural.emit(
+          "death-ground",
+          x,
+          ground.point.y + 0.04,
+          z,
+          Math.min(1.5, scale),
+          false,
+          color,
+        );
+      }
+    }
     if (magic)
       this.procedural.emit(
         "soul",
@@ -348,6 +426,7 @@ export class Effects {
     );
   }
   step(dt: number, time: number) {
+    this.deathBudget = Math.min(3, this.deathBudget + dt * 10);
     this.orbClock.value += dt;
     this.healing += Math.max(0, this.battle.health - this.lastHealth);
     this.lastHealth = this.battle.health;
@@ -541,11 +620,13 @@ export class Effects {
       screen: this.screen.diagnostics(),
       remnants: this.remnants.diagnostics(),
       surfaces: this.scars.diagnostics(),
+      deathBudget: this.deathBudget,
       numbers: this.numbers.diagnostics(),
       totals: { ...this.stats },
     };
   }
   reset() {
+    this.deathBudget = 3;
     this.lastHealth = this.battle.health;
     this.healing = this.healCooldown = 0;
     this.orbClock.value = 0;

@@ -783,7 +783,10 @@ export class Battle {
         incomingX: impact?.incomingX ?? (e.x - from.x) / d,
         incomingZ: impact?.incomingZ ?? (e.z - from.z) / d,
       });
-      this.loot.release(e.x, e.z, this.rewards.roll(e.kind, e.wave));
+      this.loot.release(e.x, e.z, this.rewards.roll(e.kind, e.wave), {
+        x: impact?.incomingX ?? (e.x - from.x) / d,
+        z: impact?.incomingZ ?? (e.z - from.z) / d,
+      });
       return true;
     }
     return false;

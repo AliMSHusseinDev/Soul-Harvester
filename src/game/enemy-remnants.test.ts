@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { remnantPose } from "./enemy-remnants";
+import { remnantPose, remnantReaction } from "./enemy-remnants";
 it("starts flash, collapses above the feet and dissolves into a blood remnant", () => {
   expect(remnantPose(0)).toMatchObject({
     flash: 1,
@@ -23,5 +23,18 @@ it("starts flash, collapses above the feet and dissolves into a blood remnant", 
     expect(p.opacity).toBeLessThanOrEqual(lastOpacity + 1e-9);
     lastHeight = p.height;
     lastOpacity = p.opacity;
+  }
+});
+
+it("bounds directional collapse and varies head/side reactions without moving before impact", () => {
+  expect(remnantReaction(0, 1, 1, false, 0.5)).toEqual({ push: 0, lean: 0 });
+  const a = remnantReaction(0.12, 1, 1, false, 0.5),
+    b = remnantReaction(0.12, 1, -1, false, 0.5);
+  expect(a.lean).toBeCloseTo(-b.lean);
+  expect(remnantReaction(0.12, 1, 1, true, 0.5).lean).toBeGreaterThan(a.lean);
+  for (let age = 0; age <= 0.5; age += 0.01) {
+    const p = remnantReaction(age, 1.45, 1, true, 0.99);
+    expect(p.push).toBeLessThanOrEqual(0.174 + 1e-9);
+    expect(Math.abs(p.lean)).toBeLessThan(0.185);
   }
 });

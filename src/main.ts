@@ -165,6 +165,7 @@ async function boot() {
   const direction = new THREE.Vector3(),
     center = new THREE.Vector2(),
     raycaster = new THREE.Raycaster();
+  effects.deathSurfaceQuery = (ray, range) => world.ballistics.hit(ray, range);
   effects.setSurfaceFloor((x, z, ceiling) =>
     world.ballistics.supportHeight(x, z, ceiling, groundHeight(x, z)),
   );
@@ -467,6 +468,7 @@ async function boot() {
                 },
           );
       } else if (event.kind === "kill") {
+        world.deathRipple(event.x, event.z, ENEMY_TYPES[event.value].scale);
         effects.death(
           event.x,
           event.z,
@@ -763,7 +765,7 @@ async function boot() {
   Object.defineProperty(window, "__soulHarvester", {
     value: () => ({
       ready: true,
-      version: "0.15.2",
+      version: "0.16.0",
       timeScale: cinematic.scale,
       cinematicActive: cinematic.active,
       stamina: player.stamina,

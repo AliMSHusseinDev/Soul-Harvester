@@ -356,3 +356,29 @@ it("gives heavy bleeding less rebound energy and smooths its final fade", () => 
   expect(debrisOpacity(hold + VFX.debrisFade, hold)).toBe(0);
   expect(debrisOpacity(hold + VFX.debrisFade - eps, hold)).toBeLessThan(1e-8);
 });
+
+it("keeps secondary death accents short, smoke-free and inside the fixed pool", () => {
+  for (const [event, count] of [
+    ["death-flecks", 4],
+    ["death-ground", 6],
+    ["finisher", 1],
+  ] as const) {
+    const p = new ParticleSimulation();
+    p.emit(event, 0, 1, 0);
+    const parts = p.items.filter((p) => p.life > 0);
+    expect(parts).toHaveLength(count);
+    expect(
+      parts.every(
+        (p) =>
+          p.shape !== SHAPE.smoke &&
+          !p.overlay &&
+          p.trail === 0 &&
+          p.max <= 0.3,
+      ),
+    ).toBe(true);
+    if (event !== "death-ground")
+      expect(parts.every((p) => p.gravity === 0)).toBe(true);
+    for (let i = 0; i < 30; i++) p.step(1 / 60, () => 0);
+    expect(p.active).toBe(0);
+  }
+});

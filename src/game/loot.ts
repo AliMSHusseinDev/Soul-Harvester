@@ -49,7 +49,7 @@ export class Loot {
   private magnetBudget = 0;
   private previousPlayer: Point | null = null;
   constructor(private navigation: Navigation) {}
-  release(x: number, z: number, reward: Reward) {
+  release(x: number, z: number, reward: Reward, shot?: Point) {
     const startAngle = this.random() * Math.PI * 2;
     for (const [i, kind] of (["xp", "gold"] as const).entries()) {
       const value = reward[kind];
@@ -61,6 +61,16 @@ export class Loot {
         );
       const angle = startAngle + i * 2.39996 + this.random() * 0.3,
         speed = F.launchSpeed * (0.75 + this.random() * 0.5);
+      let vx = Math.cos(angle) * speed,
+        vz = Math.sin(angle) * speed;
+      if (shot && Number.isFinite(shot.x) && Number.isFinite(shot.z)) {
+        const len = Math.hypot(shot.x, shot.z) || 1;
+        vx += (shot.x / len) * 1.4;
+        vz += (shot.z / len) * 1.4;
+        const normalize = speed / Math.max(0.001, Math.hypot(vx, vz));
+        vx *= normalize;
+        vz *= normalize;
+      }
       Object.assign(d, {
         active: true,
         kind,
@@ -68,9 +78,9 @@ export class Loot {
         x,
         z,
         y: groundHeight(x, z) + F.releaseHeight,
-        vx: Math.cos(angle) * speed,
+        vx,
         vy: F.launchUp + this.random() * 0.5,
-        vz: Math.sin(angle) * speed,
+        vz,
         age: 0,
         magnet: false,
         magnetAge: 0,

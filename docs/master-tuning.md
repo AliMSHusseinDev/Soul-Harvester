@@ -48,3 +48,7 @@ The current death profiles are **Splatter** (`VFX.splatterColor`, #b32020) and *
 Both layers retain shot-contact origin, shot direction and seeded per-kill fan variation. Size/difficulty count bonuses are bounded at 30%. Fixed pools, priority reserves, screen caps and depth protection for ADS remain. Old weighted-Splatter and bloody-smoke controls are retired. Developer Mode and local overrides are removed; production tuning lives in source again.
 
 Version 0.15.2 derives Splatter render length from exponential drag and normalized release age. Bleeding restitution uses weight and a bounded 0.26–0.42 range; bounce halves spin, and final opacity uses a quintic envelope. Timing, count and no-smoke settings retain 0.15.1 values.
+
+## 0.16.0 Secondary death presentation
+
+Core blood settings stay unchanged. New secondaries use the existing fixed pool: four close flecks, six surface-colored ground flecks, one critical slash. `Effects.deathBudget` admits at most three immediate secondary sets, replenishes ten per second, skips secondaries above 800 active particles and honors reduced effects. Ground blood uses 24 slots maximum within the existing scar pool and a 1.1s lifetime. Shader silhouette/erosion follows shot contact; reaction offsets and vegetation pulses are bounded. Loot direction changes preserve launch speed and reward amounts. Sound remains unchanged.

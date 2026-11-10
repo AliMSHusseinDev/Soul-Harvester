@@ -66,6 +66,7 @@ try {
       fx = new Effects(scene, battle, camera),
       weapon = new Weapon(camera);
     await fx.ready;
+    fx.deathSurfaceQuery = (ray, range) => world.ballistics.hit(ray, range);
     fx.setSurfaceFloor((x, z, ceiling) =>
       world.ballistics.supportHeight(x, z, ceiling, islandSurfaceHeight(x, z)),
     );
@@ -105,6 +106,37 @@ try {
       return p;
     };
     window.fixture = {
+      deathLayers() {
+        fx.reset();
+        world.deathRipple(0, -35, 1);
+        fx.death(0, -35, 0, true, 1, 0, false, {
+          x: 0,
+          y: 1.2,
+          z: -35,
+          dx: 1,
+          dy: 0,
+          dz: 0,
+          nx: -1,
+          ny: 0,
+          nz: 0,
+        });
+        fx.step(0.06, 0.06);
+        world.update(0.1, camera.position);
+        draw();
+        const first = fx.diagnostics();
+        for (let i = 0; i < 50; i++) fx.death(0, -35, 0, false, 1, 0);
+        const storm = fx.diagnostics();
+        fx.step(3, 3);
+        draw();
+        const end = fx.diagnostics();
+        fx.reduced = true;
+        fx.reset();
+        fx.death(0, -35, 0, true, 1, 0);
+        const reduced = fx.diagnostics();
+        fx.reset();
+        fx.reduced = false;
+        return { first, storm, end, reduced };
+      },
       draw,
       ads(width, height) {
         fx.reset();
@@ -334,6 +366,21 @@ try {
     "persistent scar reaches the framebuffer after dust clears",
   );
   await page.screenshot({ path: "artifacts/world-stone-scar.png" });
+  report.deathLayers = await page.evaluate(() => window.fixture.deathLayers());
+  assert.ok(
+    report.deathLayers.first.surfaces.active > 0,
+    "death leaves a supported blood mark",
+  );
+  assert.equal(report.deathLayers.first.procedural.events.finisher, 1);
+  assert.equal(report.deathLayers.first.procedural.events["death-ground"], 1);
+  assert.ok(
+    report.deathLayers.storm.procedural.events["death-flecks"] <= 3,
+    "chain-kill secondary token budget",
+  );
+  assert.equal(report.deathLayers.end.surfaces.active, 0);
+  assert.equal(report.deathLayers.reduced.procedural.events["death-flecks"], 0);
+  assert.equal(report.deathLayers.reduced.surfaces.active, 0);
+  await page.screenshot({ path: "artifacts/world-death-cleanup.png" });
   report.breeze = await page.evaluate(() => window.fixture.breeze());
   assert.ok(report.breeze.changed > 100);
   assert.equal(report.breeze.reduced, 0);
