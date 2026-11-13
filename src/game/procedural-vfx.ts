@@ -79,35 +79,32 @@ export function particleMaterial(cube = false, overlay = false) {
           float edge=.73+.045*sin(a*13.+t*7.+seed*20.);
           alpha=(1.-smoothstep(.022,.06,abs(r-edge)))*step(.15,sin(a*3.+seed*8.+t*2.));
           highlight=.4;
-        }else if(shape>8.5 && shape<9.5){
-          // Each instance is one organic jet or one drop, never an image of an entire burst.
-          vec2 v=(floor(vUv*vec2(18.,32.))+.5)/vec2(18.,32.);
+        }
+        // Blood v2 has its own masks; the historical ribbon/L-chip masks are retired.
+        if(shape>11.5){
+          bool jet=shape<12.5 || (shape>13.5 && shape<14.5);
+          vec2 v=(floor(vUv*vec2(20.,32.))+.5)/vec2(20.,32.);
           vec2 d=v*2.-1.;
-          if(organic>.5){
-            float center=.28*sin(v.y*4.2+seed*2.)+.18*smoothstep(.6,1.,v.y);
-            float width=(.18+.26*(1.-v.y))*(.82+.18*sin(v.y*15.+seed*13.))*max(.08,sqrt(1.-v.y)*1.5);
-            alpha=step(abs(d.x-center),width)*step(abs(d.y),.96);
+          if(jet){
+            float bend=.48*sin(v.y*4.4+seed*2.)-.22*sin(seed*2.);
+            float width=mix(.48,.025,v.y)*(1.+.16*sin(v.y*19.+seed*20.));
+            float stem=step(abs(d.x-bend),width)*step(abs(d.y),.96);
+            vec2 bulb=vec2((d.x-bend)/.48,(d.y+.58)/.36);
+            alpha=max(stem,step(dot(bulb,bulb),1.));
           }else{
-            float bulb=step(dot(vec2(d.x/.65,(d.y+.28)/.60),vec2(d.x/.65,(d.y+.28)/.60)),1.);
-            float tail=step(abs(d.x),.30*(1.-d.y))*step(-.25,d.y)*step(d.y,.95);
-            alpha=max(bulb,tail);
+            vec2 bulb=vec2(d.x/.83,(d.y+.24)/.70);
+            float body=step(dot(bulb,bulb),1.);
+            float tail=step(abs(d.x-.12*sin(v.y*3.+seed*5.)),.48*(1.-d.y))*step(-.15,d.y)*step(d.y,.97);
+            alpha=max(body,tail);
           }
-          shade=.82+.18*step(d.x+d.y*.15,.2);highlight=0.;
+          shade=.84+.16*step(d.x+d.y*.3,.2);highlight=0.;
         }
-        if(shape>9.5 && shape<10.5){
-          vec2 v=(floor(vUv*vec2(12.,16.))+.5)/vec2(12.,16.);vec2 d=v*2.-1.;
-          float cx=organic>.5?.26*sin(v.y*4.8+seed*1.8):0.;
-          vec2 body=vec2((d.x+.08)/.67,(d.y+.28)/.61);
-          float bulb=step(dot(body,body),1.);
-          float tail=step(abs(d.x-cx),(.26+organic*.05)*(1.-d.y))*step(-.3,d.y)*step(d.y,.94);
-          alpha=max(bulb,tail);shade=.78+.22*step(d.x*.5+d.y,.25);highlight=0.;
-        }
-        if(shape>10.5){
-          // Continuous low-frequency density and alpha: no pixel/opacity quantization for mist.
-          vec2 v=vUv*2.-1.;vec2 curl=v+vec2(.10*sin(v.y*3.+seed*9.+t*.7),.08*cos(v.x*4.-t*.6));
-          float density=exp(-dot(curl,curl)*2.5);
+        if(shape>10.5 && shape<11.5){
+          vec2 v=vUv*2.-1.;
+          vec2 curl=v+vec2(.13*sin(v.y*3.+seed*9.+t*.7),.10*cos(v.x*4.-t*.6));
           float n=noise(v*2.2+vec2(seed*13.+t*.5,t*.7));
-          alpha=density*(.65+.25*n)*(1.-smoothstep(.65,1.05,length(v)));highlight=0.;
+          alpha=exp(-dot(curl,curl)*1.7)*(.8+.2*n)*(1.-smoothstep(.55,1.,length(v)));
+          highlight=0.;
         }
         if(vColor.r>vColor.g*2. && vColor.r>vColor.b*2.)highlight=0.;
         alpha*=vData.y;
@@ -226,6 +223,10 @@ export class ProceduralVFX {
     const focal = height / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
     for (let i = 0; i < this.simulation.items.length; i++) {
       const p = this.simulation.items[i];
+      const blood =
+        p.shape === SHAPE.ribbon ||
+        p.shape === SHAPE.debris ||
+        p.shape === SHAPE.bloodMist;
       if (p.life <= 0 || p.age < 0) continue;
       this.view.set(p.x, p.y, p.z).applyMatrix4(this.camera.matrixWorldInverse);
       const depth = p.ground
@@ -250,10 +251,10 @@ export class ProceduralVFX {
         if (
           !p.presented ||
           p.age < 0.04 ||
-          p.shape === SHAPE.bloodMist ||
+          blood ||
           ((i + this.frame) & 3) === 0
         ) {
-          if (p.shape === SHAPE.bloodMist) this.anchor.set(p.x, p.y, p.z);
+          if (blood) this.anchor.set(p.x, p.y, p.z);
           else this.anchor.set(p.anchorX, p.anchorY, p.anchorZ);
           p.visible = !this.visibility.occluded(
             this.camera.position,
@@ -262,10 +263,7 @@ export class ProceduralVFX {
         }
         if (!p.visible) continue;
       }
-      if (
-        p.shape === SHAPE.cube ||
-        (p.overlay && p.shape !== SHAPE.bloodMist)
-      ) {
+      if (p.shape === SHAPE.cube || (p.overlay && !blood)) {
         const cx = Math.floor(
             ((this.view.x * focal) / depth / (height * this.camera.aspect) +
               0.5) *
@@ -405,7 +403,17 @@ export class ProceduralVFX {
       b.mesh.setMatrixAt(at, this.dummy.matrix);
       this.color.setHex(p.color);
       b.color.setXYZ(at, this.color.r, this.color.g, this.color.b);
-      b.data.setXYZW(at, p.shape, alpha, t, p.seed + (p.organic ? 2 : 0));
+      const mask =
+        p.shape === SHAPE.ribbon
+          ? p.organic
+            ? 12
+            : 13
+          : p.shape === SHAPE.debris
+            ? p.organic
+              ? 14
+              : 15
+            : p.shape;
+      b.data.setXYZW(at, mask, alpha, t, p.seed);
       p.presented = true;
       this.rendered++;
     }
@@ -418,6 +426,7 @@ export class ProceduralVFX {
   diagnostics() {
     return {
       mode: "procedural",
+      bloodRenderer: "organic-liquid-v2",
       textures: 0,
       capacity: PARTICLE_CAPACITY,
       active: this.simulation.active,

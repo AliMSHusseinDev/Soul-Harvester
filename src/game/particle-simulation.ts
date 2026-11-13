@@ -306,11 +306,7 @@ export class ParticleSimulation {
         event === "nova" || event === "level" || event === "explosion",
       death = event === "death",
       bloodHit = event === "bullet-blood",
-      mistCount = bloodHit
-        ? reduced
-          ? 1
-          : 1 + Number((serial * 0.61803398875) % 1 > 0.7)
-        : 0,
+      mistCount = bloodHit ? 1 : 0,
       critical = event === "critical" || (death && finishing),
       small =
         event === "trail" ||
@@ -641,7 +637,7 @@ export class ParticleSimulation {
         p.color = F.splatterColor;
         p.size =
           (p.shape === SHAPE.ribbon
-            ? 0.04 + this.random() * 0.025
+            ? 0.12 + this.random() * 0.045
             : 0.025 + this.random() * 0.035) * scale;
         p.stretch = p.shape === SHAPE.ribbon ? 5 + this.random() * 4 : 1;
         p.life = p.max = F.deathLifeMin + this.random() * F.deathLifeRange;
@@ -682,7 +678,7 @@ export class ParticleSimulation {
         if (p.shape === SHAPE.debris) {
           p.color = F.bleedingColor;
           p.collision = true;
-          p.size = (0.07 + this.random() * 0.03) * scale;
+          p.size = (0.115 + this.random() * 0.04) * scale;
           p.stretch = 1;
           const theta = a + phase + 0.2 * Math.sin(a * lobes + twist),
             speed = radial * F.debrisSpread,
@@ -877,7 +873,7 @@ export class ParticleSimulation {
         p.organic = false;
         p.color = mist ? F.bulletMistColor : F.splatterColor;
         p.size =
-          (mist ? 0.65 + this.random() * 0.2 : 0.025 + this.random() * 0.015) *
+          (mist ? 0.9 + this.random() * 0.2 : 0.025 + this.random() * 0.015) *
           Math.min(1.25, scale);
         p.vx =
           ux * forward + (tx * Math.cos(angle) + bx * Math.sin(angle)) * radial;
@@ -896,7 +892,7 @@ export class ParticleSimulation {
         p.spin = mist
           ? (this.random() - 0.5) * 0.18
           : (this.random() - 0.5) * 3;
-        p.stretch = mist ? (mistCount === 1 ? 1 : 0.7) : 1.45;
+        p.stretch = mist ? 1 : 1.45;
         p.fadeAt = mist ? Infinity : p.max - F.debrisFade;
       }
       if (large && i >= 2 && i <= 5 && !reduced) {
@@ -936,15 +932,17 @@ export class ParticleSimulation {
         p.vz *= F.scatterGain;
       }
       if (death && p.shape === SHAPE.ribbon) {
+        p.overlay = true;
         p.organic = organicAt(
           rayIndex++,
           Math.max(0, rayBase) + rayExtra,
           F.splatterOrganicFraction,
           serial,
         );
-        p.stretch = p.organic ? 3.8 + p.seed * 1.4 : 1.6 + p.seed * 0.9;
+        p.stretch = p.organic ? 3.0 + p.seed * 1.1 : 1.5 + p.seed * 0.6;
       }
       if (death && p.shape === SHAPE.debris) {
+        p.overlay = true;
         p.organic = organicAt(
           bleedingIndex++,
           gravityBase + gravityExtra,
