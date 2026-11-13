@@ -302,14 +302,9 @@ export class ProceduralVFX {
           size,
           (depth * height * VFX.flakeLengthCap) / (focal * stretch),
         );
-      // Keep the individual drop/jet silhouette readable at combat distances.
-      // A world-size ceiling prevents distant blood turning into giant quads.
-      if (p.shape === SHAPE.ribbon || p.shape === SHAPE.debris)
-        size = Math.max(
-          size,
-          Math.min(p.size * 3, (depth * VFX.bloodMinPixels) / focal),
-        );
-      else if (p.shape !== SHAPE.smoke)
+      // World particles keep their authored size and shrink naturally with perspective.
+      // Only screen-overlay feedback receives a readability floor.
+      if (p.overlay && !blood && p.shape !== SHAPE.smoke)
         size = Math.max(size, Math.min(p.size * 1.4, (depth * 2) / focal));
       let alpha =
         p.shape === SHAPE.smoke

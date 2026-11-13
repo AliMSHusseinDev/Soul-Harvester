@@ -362,7 +362,6 @@ export const VFX = {
   splatterSizeRange: 0.04,
   bleedingSizeMin: 0.09,
   bleedingSizeRange: 0.04,
-  bloodMinPixels: 8,
   lethalColor: 0x7d101a,
   debrisSpread: 0.2,
   debrisGravity: 24,
