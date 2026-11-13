@@ -975,6 +975,8 @@ export class ParticleSimulation {
       p.life = Math.max(0, Math.min(p.max, p.expireAge) - p.age);
       if (
         p.overlay &&
+        p.shape !== SHAPE.ribbon &&
+        p.shape !== SHAPE.debris &&
         !p.presented &&
         p.age < (p.shape === SHAPE.bloodMist ? 0.45 : p.max + 0.18)
       )
