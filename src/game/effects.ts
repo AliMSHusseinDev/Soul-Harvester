@@ -177,24 +177,58 @@ export class Effects {
     y: number,
     z: number,
     critical = false,
-    _bullet = true,
+    bullet = true,
     scale = 1,
-    _incoming?: { x: number; y: number; z: number },
+    incoming?: { x: number; y: number; z: number },
     normal?: { x: number; y: number; z: number },
+    lethal = false,
   ) {
     this.stats.impacts++;
-    this.procedural.emit(
-      critical ? "critical" : "hit",
-      x,
-      y,
-      z,
-      scale,
-      this.reduced,
-      undefined,
-      normal?.x ?? 0,
-      normal?.z ?? 0,
-    );
+    if (!lethal)
+      this.procedural.emit(
+        critical ? "critical" : "hit",
+        x,
+        y,
+        z,
+        scale,
+        this.reduced,
+        undefined,
+        normal?.x ?? 0,
+        normal?.z ?? 0,
+        false,
+        0,
+        undefined,
+        1,
+        bullet,
+      );
+    if (bullet) {
+      this.point.set(
+        incoming?.x ?? -(normal?.x ?? 0),
+        incoming?.y ?? -(normal?.y ?? 0),
+        incoming?.z ?? -(normal?.z ?? 0),
+      );
+      if (
+        !Number.isFinite(this.point.lengthSq()) ||
+        this.point.lengthSq() < 0.000001
+      )
+        this.camera.getWorldDirection(this.point);
+      this.point.normalize();
+      this.procedural.emit(
+        "bullet-blood",
+        x,
+        y,
+        z,
+        scale,
+        this.reduced,
+        undefined,
+        this.point.x,
+        this.point.z,
+        false,
+        this.point.y,
+      );
+    }
   }
+
   surfaceImpact(hit: SurfaceHit) {
     this.scars.emit(hit);
     const color =

@@ -5,6 +5,7 @@ import {
   debrisOpacity,
   splatterOpacity,
   splatterStretch,
+  bulletMistOpacity,
   PARTICLE_CAPACITY,
   SHAPE,
   type ParticleEvent,
@@ -38,8 +39,8 @@ export function particleMaterial(cube = false, overlay = false) {
       void main(){
         float cells=vData.x>3.5 && vData.x<4.5 ? ${VFX.smokeCells.toFixed(1)} : ${VFX.maskCells.toFixed(1)};
         vec2 q=(floor(vUv*cells)+.5)/cells*2.-1.;
-        float shape=vData.x, t=vData.z, seed=vData.w;
-        float alpha=1., highlight=.0;
+        float shape=vData.x, t=vData.z, seed=fract(vData.w), organic=step(1.5,vData.w);
+        float alpha=1., highlight=.0, shade=1.;
         if(shape<.5){
           alpha=step(abs(q.x)+abs(q.y),1.65);
           highlight=step(.6,q.y)*.32;
@@ -79,23 +80,39 @@ export function particleMaterial(cube = false, overlay = false) {
           alpha=(1.-smoothstep(.022,.06,abs(r-edge)))*step(.15,sin(a*3.+seed*8.+t*2.));
           highlight=.4;
         }else if(shape>8.5 && shape<9.5){
-          // Broken pixel rays: a tapered staircase with detached square flecks.
-          float row=floor(vUv.y*12.);
-          float width=.2+.5*(1.-vUv.y)+hash(vec2(row,seed*17.))*.18;
-          float breaks=step(.18,hash(vec2(row,seed*31.)));
-          alpha=step(abs(q.x),width)*step(abs(q.y),.98)*breaks;
-          highlight=0.;
+          // Each instance is one organic jet or one drop, never an image of an entire burst.
+          vec2 v=(floor(vUv*vec2(18.,32.))+.5)/vec2(18.,32.);
+          vec2 d=v*2.-1.;
+          if(organic>.5){
+            float center=.28*sin(v.y*4.2+seed*2.)+.18*smoothstep(.6,1.,v.y);
+            float width=(.18+.26*(1.-v.y))*(.82+.18*sin(v.y*15.+seed*13.))*max(.08,sqrt(1.-v.y)*1.5);
+            alpha=step(abs(d.x-center),width)*step(abs(d.y),.96);
+          }else{
+            float bulb=step(dot(vec2(d.x/.65,(d.y+.28)/.60),vec2(d.x/.65,(d.y+.28)/.60)),1.);
+            float tail=step(abs(d.x),.30*(1.-d.y))*step(-.25,d.y)*step(d.y,.95);
+            alpha=max(bulb,tail);
+          }
+          shade=.82+.18*step(d.x+d.y*.15,.2);highlight=0.;
         }
-        if(shape>9.5){
-          vec2 cell=floor(vUv*5.);
-          float stem=step(1.,cell.x)*step(cell.x,2.)*step(1.,cell.y)*step(cell.y,3.);
-          float corner=step(2.,cell.x)*step(cell.x,3.)*step(2.,cell.y)*step(cell.y,3.);
-          alpha=max(stem,corner);highlight=0.;
+        if(shape>9.5 && shape<10.5){
+          vec2 v=(floor(vUv*vec2(12.,16.))+.5)/vec2(12.,16.);vec2 d=v*2.-1.;
+          float cx=organic>.5?.26*sin(v.y*4.8+seed*1.8):0.;
+          vec2 body=vec2((d.x+.08)/.67,(d.y+.28)/.61);
+          float bulb=step(dot(body,body),1.);
+          float tail=step(abs(d.x-cx),(.26+organic*.05)*(1.-d.y))*step(-.3,d.y)*step(d.y,.94);
+          alpha=max(bulb,tail);shade=.78+.22*step(d.x*.5+d.y,.25);highlight=0.;
+        }
+        if(shape>10.5){
+          // Continuous low-frequency density and alpha: no pixel/opacity quantization for mist.
+          vec2 v=vUv*2.-1.;vec2 curl=v+vec2(.10*sin(v.y*3.+seed*9.+t*.7),.08*cos(v.x*4.-t*.6));
+          float density=exp(-dot(curl,curl)*2.5);
+          float n=noise(v*2.2+vec2(seed*13.+t*.5,t*.7));
+          alpha=density*(.65+.25*n)*(1.-smoothstep(.65,1.05,length(v)));highlight=0.;
         }
         if(vColor.r>vColor.g*2. && vColor.r>vColor.b*2.)highlight=0.;
         alpha*=vData.y;
-        if(alpha<.015)discard;
-        gl_FragColor=vec4(mix(vColor,vec3(1.),highlight)*vLight,alpha);
+        if(alpha<(shape>10.5?.001:.015))discard;
+        gl_FragColor=vec4(mix(vColor,vec3(1.),highlight)*vLight*shade,alpha);
         #include <colorspace_fragment>
       }`,
   });
@@ -178,6 +195,7 @@ export class ProceduralVFX {
     ny = 0,
     impact?: SplatterImpact,
     density = 1,
+    suppressHitSmoke = false,
   ) {
     this.simulation.emit(
       event,
@@ -193,6 +211,7 @@ export class ProceduralVFX {
       ny,
       impact,
       density,
+      suppressHitSmoke,
     );
   }
   step(dt: number) {
@@ -214,7 +233,11 @@ export class ProceduralVFX {
           : -this.view.z,
         t = Math.min(
           1,
-          (p.overlay && !p.presented ? Math.min(0.025, p.age) : p.age) / p.max,
+          (!p.presented && p.shape === SHAPE.bloodMist
+            ? Math.min(p.max * 0.16, p.age)
+            : p.overlay && !p.presented
+              ? Math.min(0.025, p.age)
+              : p.age) / p.max,
         );
       if (
         depth < 0.18 ||
@@ -224,8 +247,14 @@ export class ProceduralVFX {
       )
         continue;
       if (p.overlay) {
-        if (!p.presented || p.age < 0.04 || ((i + this.frame) & 3) === 0) {
-          this.anchor.set(p.anchorX, p.anchorY, p.anchorZ);
+        if (
+          !p.presented ||
+          p.age < 0.04 ||
+          p.shape === SHAPE.bloodMist ||
+          ((i + this.frame) & 3) === 0
+        ) {
+          if (p.shape === SHAPE.bloodMist) this.anchor.set(p.x, p.y, p.z);
+          else this.anchor.set(p.anchorX, p.anchorY, p.anchorZ);
           p.visible = !this.visibility.occluded(
             this.camera.position,
             this.anchor,
@@ -233,7 +262,11 @@ export class ProceduralVFX {
         }
         if (!p.visible) continue;
       }
-      if (p.shape === SHAPE.cube || p.shape === SHAPE.ribbon || p.overlay) {
+      if (
+        p.shape === SHAPE.cube ||
+        p.shape === SHAPE.ribbon ||
+        (p.overlay && p.shape !== SHAPE.bloodMist)
+      ) {
         const cx = Math.floor(
             ((this.view.x * focal) / depth / (height * this.camera.aspect) +
               0.5) *
@@ -259,7 +292,10 @@ export class ProceduralVFX {
           ? splatterStretch(p.stretch, p.drag, p.age, p.max)
           : p.stretch;
       let size = p.size;
-      if (p.shape === SHAPE.ring || p.shape === SHAPE.arc)
+      if (p.shape === SHAPE.bloodMist) {
+        const e = t * t * t * (t * (6 * t - 15) + 10);
+        size *= 0.75 + 1.25 * e;
+      } else if (p.shape === SHAPE.ring || p.shape === SHAPE.arc)
         size *= 0.38 + 1.8 * (1 - Math.exp(-t * 5));
       else if (p.shape === SHAPE.smoke) size *= 0.7 + t * 2.7;
       else if (p.shape === SHAPE.star)
@@ -280,14 +316,24 @@ export class ProceduralVFX {
           size,
           (depth * height * VFX.flakeLengthCap) / (focal * stretch),
         );
-      if (p.shape !== SHAPE.smoke)
+      if (p.shape !== SHAPE.smoke && p.shape !== SHAPE.bloodMist)
         size = Math.max(size, Math.min(p.size * 1.4, (depth * 2) / focal));
       let alpha =
         p.shape === SHAPE.smoke
           ? Math.min(1, t * 9) * Math.pow(1 - t, 0.9) * 0.46
           : 1 - Math.pow(t, 3);
-      if (p.shape === SHAPE.cube || p.shape === SHAPE.smoke)
+      if (
+        p.shape === SHAPE.cube ||
+        p.shape === SHAPE.smoke ||
+        p.shape === SHAPE.bloodMist
+      )
         alpha *= Math.min(1, Math.max(0, (depth - 0.18) / 0.45));
+      if (p.shape === SHAPE.bloodMist)
+        alpha =
+          bulletMistOpacity(t) *
+          0.42 *
+          p.stretch *
+          Math.min(1, Math.max(0, (depth - 0.18) / 0.45));
       if (p.shape === SHAPE.debris) alpha = debrisOpacity(p.age, p.fadeAt);
       if (p.shape === SHAPE.ribbon)
         alpha =
@@ -303,8 +349,9 @@ export class ProceduralVFX {
       const restingY =
         p.floorY +
         size *
-          0.3 *
-          (Math.abs(rightY * c + upY * s) + Math.abs(-rightY * s + upY * c)) +
+          0.5 *
+          (Math.abs(rightY * c + upY * s) +
+            p.stretch * Math.abs(-rightY * s + upY * c)) +
         0.012;
       this.dummy.position.set(
         p.x,
@@ -328,13 +375,16 @@ export class ProceduralVFX {
             .set(p.vx, p.vy, p.vz)
             .transformDirection(this.camera.matrixWorldInverse);
           this.dummy.rotateZ(Math.atan2(-this.along.x, this.along.y));
+          if (p.shape === SHAPE.ribbon && !p.organic)
+            this.dummy.rotateZ(Math.PI);
         } else this.dummy.rotateZ(p.angle);
       }
       this.dummy.scale.set(
         size,
         p.shape === SHAPE.streak ||
           p.shape === SHAPE.wisp ||
-          p.shape === SHAPE.ribbon
+          p.shape === SHAPE.ribbon ||
+          p.shape === SHAPE.debris
           ? size * stretch
           : size,
         p.shape === SHAPE.cube ? size : 0.1,
@@ -344,7 +394,7 @@ export class ProceduralVFX {
       b.mesh.setMatrixAt(at, this.dummy.matrix);
       this.color.setHex(p.color);
       b.color.setXYZ(at, this.color.r, this.color.g, this.color.b);
-      b.data.setXYZW(at, p.shape, alpha, t, p.seed);
+      b.data.setXYZW(at, p.shape, alpha, t, p.seed + (p.organic ? 2 : 0));
       p.presented = true;
       this.rendered++;
     }
@@ -365,6 +415,23 @@ export class ProceduralVFX {
       smoke: this.simulation.items.filter(
         (p) => p.life > 0 && p.shape === SHAPE.smoke,
       ).length,
+      bloodMists: this.simulation.items.filter(
+        (p) => p.life > 0 && p.shape === SHAPE.bloodMist,
+      ).length,
+      bloodMix: {
+        splatterOrganic: this.simulation.items.filter(
+          (p) => p.life > 0 && p.shape === SHAPE.ribbon && p.organic,
+        ).length,
+        splatterDrops: this.simulation.items.filter(
+          (p) => p.life > 0 && p.shape === SHAPE.ribbon && !p.organic,
+        ).length,
+        bleedingOrganic: this.simulation.items.filter(
+          (p) => p.life > 0 && p.shape === SHAPE.debris && p.organic,
+        ).length,
+        bleedingDrops: this.simulation.items.filter(
+          (p) => p.life > 0 && p.shape === SHAPE.debris && !p.organic,
+        ).length,
+      },
       wisps: this.simulation.items.filter(
         (p) => p.life > 0 && p.shape === SHAPE.wisp,
       ).length,

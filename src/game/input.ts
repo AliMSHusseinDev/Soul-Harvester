@@ -27,6 +27,7 @@ export class Input {
             "KeyA",
             "KeyS",
             "KeyD",
+            "KeyC",
             "ArrowUp",
             "ArrowDown",
           ].includes(e.code)

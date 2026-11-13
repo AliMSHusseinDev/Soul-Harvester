@@ -18,7 +18,8 @@ export type ParticleEvent =
   | "surface"
   | "death-flecks"
   | "death-ground"
-  | "finisher";
+  | "finisher"
+  | "bullet-blood";
 export const PARTICLE_SIZE_GAIN = F.sizeGain;
 export const PARTICLE_CAPACITY = F.capacity;
 export const SHAPE = {
@@ -33,6 +34,7 @@ export const SHAPE = {
   arc: 8,
   ribbon: 9,
   debris: 10,
+  bloodMist: 11,
 } as const;
 export interface SplatterImpact {
   x: number;
@@ -115,7 +117,28 @@ export function bleedingRange(scale = 1) {
     scale
   );
 }
+/** Evenly distributed, rotated integer quota: exact rounded ratios per complete burst. */
+export function organicAt(
+  index: number,
+  total: number,
+  fraction: number,
+  serial: number,
+) {
+  if (total <= 0) return false;
+  const quota = Math.round(total * Math.max(0, Math.min(1, fraction)));
+  const rank =
+    (index + Math.floor(((serial * 0.61803398875) % 1) * total)) % total;
+  return (
+    Math.floor(((rank + 1) * quota) / total) >
+    Math.floor((rank * quota) / total)
+  );
+}
+export function bulletMistOpacity(t: number) {
+  if (t <= 0 || t >= 1) return 0;
+  return smootherstep(t / 0.12) * (1 - smootherstep((t - 0.25) / 0.75));
+}
 export interface Particle {
+  organic: boolean;
   rangeOpacity: number;
   weight: number;
   rangeLimit: number;
@@ -185,6 +208,7 @@ export class ParticleSimulation {
   readonly items: Particle[] = Array.from(
     { length: PARTICLE_CAPACITY },
     () => ({
+      organic: false,
       rangeOpacity: 1,
       weight: 0,
       rangeLimit: Infinity,
@@ -252,6 +276,7 @@ export class ParticleSimulation {
     "death-flecks": 0,
     "death-ground": 0,
     finisher: 0,
+    "bullet-blood": 0,
   };
   private random() {
     this.randomState =
@@ -272,6 +297,7 @@ export class ParticleSimulation {
     ny = 0,
     impact?: SplatterImpact,
     density = 1,
+    suppressHitSmoke = false,
   ) {
     this.events[event]++;
     const serial = ++this.serial;
@@ -279,6 +305,12 @@ export class ParticleSimulation {
     const large =
         event === "nova" || event === "level" || event === "explosion",
       death = event === "death",
+      bloodHit = event === "bullet-blood",
+      mistCount = bloodHit
+        ? reduced
+          ? 1
+          : 1 + Number((serial * 0.61803398875) % 1 > 0.7)
+        : 0,
       critical = event === "critical" || (death && finishing),
       small =
         event === "trail" ||
@@ -287,8 +319,9 @@ export class ParticleSimulation {
         event === "heal" ||
         event === "orb",
       priority = large || death ? 2 : small ? 0 : 1,
-      total =
-        event === "finisher"
+      total = bloodHit
+        ? mistCount + (reduced ? 3 : F.bulletDropCount)
+        : event === "finisher"
           ? 1
           : event === "death-flecks"
             ? 4
@@ -323,7 +356,7 @@ export class ParticleSimulation {
                                     : F.hitCount,
       baseCount = Math.max(
         1,
-        Math.ceil(total * (reduced ? F.reducedDensity : 1)),
+        Math.ceil(total * (reduced && !bloodHit ? F.reducedDensity : 1)),
       ),
       gravityBase = death
         ? Math.max(
@@ -395,10 +428,18 @@ export class ParticleSimulation {
       bx = dy * tz,
       by = dz * tx - dx * tz,
       bz = -dy * tx;
-    let active = this.active;
+    let active = this.active,
+      rayIndex = 0,
+      bleedingIndex = 0;
     for (let i = 0; i < count; i++) {
       // Retire all eight historical death-smoke slots without inflating either blood layer.
       if (death && i >= baseCount - 8 && i < baseCount) continue;
+      if (
+        suppressHitSmoke &&
+        (event === "hit" || event === "critical") &&
+        i >= count - (critical ? 4 : 2)
+      )
+        continue;
       let p: Particle | undefined;
       // Circular scan, bounded by the fixed pool; reserve capacity for finishing/ability feedback.
       if (priority > 0 || active < PARTICLE_CAPACITY - F.reservedSlots)
@@ -432,6 +473,7 @@ export class ParticleSimulation {
               ? 0.38 + this.random() * 0.48
               : 0.18 + this.random() * 0.25;
       Object.assign(p, {
+        organic: false,
         rangeOpacity: 1,
         weight: 0,
         rangeLimit: Infinity,
@@ -541,6 +583,7 @@ export class ParticleSimulation {
         event !== "soul" &&
         event !== "surface" &&
         !death &&
+        !bloodHit &&
         i < 2
       ) {
         p.shape = i === 0 ? SHAPE.star : SHAPE.ring;
@@ -812,6 +855,50 @@ export class ParticleSimulation {
         p.drag = 4;
         p.bounceLimit = 0;
       }
+      if (bloodHit) {
+        const n = Math.hypot(nx, ny, nz) || 1,
+          ux = nx / n,
+          uy = ny / n,
+          uz = nz / n;
+        const h = Math.hypot(ux, uz),
+          tx = h > 0.001 ? -uz / h : 1,
+          tz = h > 0.001 ? ux / h : 0;
+        const bx = uy * tz,
+          by = uz * tx - ux * tz,
+          bz = -uy * tx;
+        const mist = i < mistCount,
+          angle = a + serial * 0.37,
+          spread = mist ? 0.25 : 0.85;
+        const radial = spread * Math.sqrt(this.random()),
+          forward = mist ? 0.9 + this.random() * 0.7 : 4 + this.random() * 2.5;
+        p.shape = mist ? SHAPE.bloodMist : SHAPE.debris;
+        p.overlay = mist;
+        p.ground = false;
+        p.organic = false;
+        p.color = mist ? F.bulletMistColor : F.splatterColor;
+        p.size =
+          (mist ? 0.19 + this.random() * 0.07 : 0.025 + this.random() * 0.015) *
+          Math.min(1.25, scale);
+        p.vx =
+          ux * forward + (tx * Math.cos(angle) + bx * Math.sin(angle)) * radial;
+        p.vy = uy * forward + by * Math.sin(angle) * radial;
+        p.vz =
+          uz * forward + (tz * Math.cos(angle) + bz * Math.sin(angle)) * radial;
+        p.life = p.max = mist
+          ? F.bulletMistLifeMin + this.random() * F.bulletMistLifeRange
+          : 0.42 + this.random() * 0.12;
+        p.weight = mist ? 0 : 0.7 + this.random() * 0.8;
+        p.gravity = mist ? 0 : 24 * p.weight;
+        p.drag = mist ? 3.2 : 1.4;
+        p.collision = !mist;
+        p.bounceLimit = 0;
+        p.trail = 0;
+        p.spin = mist
+          ? (this.random() - 0.5) * 0.18
+          : (this.random() - 0.5) * 3;
+        p.stretch = mist ? (mistCount === 1 ? 1 : 0.7) : 1.45;
+        p.fadeAt = mist ? Infinity : p.max - F.debrisFade;
+      }
       if (large && i >= 2 && i <= 5 && !reduced) {
         p.shape = i % 2 === 0 ? SHAPE.arc : SHAPE.ring;
         p.ground = true;
@@ -848,6 +935,25 @@ export class ParticleSimulation {
         p.vy *= F.scatterGain;
         p.vz *= F.scatterGain;
       }
+      if (death && p.shape === SHAPE.ribbon) {
+        p.organic = organicAt(
+          rayIndex++,
+          Math.max(0, rayBase) + rayExtra,
+          F.splatterOrganicFraction,
+          serial,
+        );
+        p.stretch = p.organic ? 3.8 + p.seed * 1.4 : 1.6 + p.seed * 0.9;
+      }
+      if (death && p.shape === SHAPE.debris) {
+        p.organic = organicAt(
+          bleedingIndex++,
+          gravityBase + gravityExtra,
+          F.bleedingOrganicFraction,
+          serial,
+        );
+        p.stretch = p.organic ? 1.35 : 1.1;
+      }
+      if (event === "finisher") p.organic = true;
       if (p.color === F.splatterColor) p.size *= F.splatterSizeGain;
       p.size *= PARTICLE_SIZE_GAIN;
       this.emitted++;
@@ -869,7 +975,11 @@ export class ParticleSimulation {
       if (p.age < 0) continue;
       const activeDt = previousAge < 0 ? Math.min(dt, p.age) : dt;
       p.life = Math.max(0, Math.min(p.max, p.expireAge) - p.age);
-      if (p.overlay && !p.presented && p.age < p.max + 0.18)
+      if (
+        p.overlay &&
+        !p.presented &&
+        p.age < (p.shape === SHAPE.bloodMist ? 0.45 : p.max + 0.18)
+      )
         p.life = Math.max(0.0001, p.life);
       if (p.life <= 0) continue;
       // Same closed-form motion in all axes, without allocating vectors or intermediate objects.
@@ -951,7 +1061,7 @@ export class ParticleSimulation {
       }
       const clearance =
         p.shape === SHAPE.debris
-          ? Math.max(0.035, p.size * 0.45 + 0.012)
+          ? Math.max(0.035, p.size * 0.7 * Math.hypot(1, p.stretch) + 0.015)
           : 0.035;
       const ground = support + clearance;
       if (p.collision && p.y < ground) {
@@ -1028,6 +1138,7 @@ export class ParticleSimulation {
       }
       if (!child) break;
       Object.assign(child, {
+        organic: false,
         rangeOpacity: t.rangeOpacity,
         weight: 0,
         rangeLimit: t.rangeLimit,

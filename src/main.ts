@@ -444,7 +444,7 @@ async function boot() {
           headshot: event.headshot,
           killed: event.killed,
         });
-        if (!event.killed)
+        if (!event.killed || event.bullet === true)
           effects.impact(
             event.x,
             event.y ?? groundHeight(event.x, event.z) + 0.9,
@@ -466,6 +466,7 @@ async function boot() {
                   y: event.normalY ?? 0,
                   z: event.normalZ ?? 1,
                 },
+            !!event.killed,
           );
       } else if (event.kind === "kill") {
         world.deathRipple(event.x, event.z, ENEMY_TYPES[event.value].scale);
@@ -666,13 +667,19 @@ async function boot() {
       camera.rotation.x += kick + hurtKick;
       camera.rotation.z += hurtKick * hurtSide * 0.8;
       enemies.update(time, input.yaw, alpha);
+      const sprintView = player.handling.sprintPose && player.speed > 0.5;
       const fov =
         effectiveAim && weapon.id !== "blade"
           ? VIEW.aimFov
-          : player.handling.sprintPose
+          : sprintView
             ? VIEW.sprintFov
             : VIEW.hipFov;
-      camera.fov = damp(camera.fov, fov, VIEW.fovResponse, dt);
+      camera.fov = damp(
+        camera.fov,
+        fov,
+        sprintView ? VIEW.sprintFovResponse : VIEW.fovResponse,
+        dt,
+      );
       camera.updateProjectionMatrix();
       $("stamina").style.width = `${player.stamina * 100}%`;
       let label = "";
@@ -765,7 +772,7 @@ async function boot() {
   Object.defineProperty(window, "__soulHarvester", {
     value: () => ({
       ready: true,
-      version: "0.16.2",
+      version: "0.17.0",
       timeScale: cinematic.scale,
       cinematicActive: cinematic.active,
       stamina: player.stamina,

@@ -53,10 +53,7 @@ export class Player {
     }
     const jump = this.input.keys.has("Space");
     const requested = this.input.jumpQueued || (jump && !this.jumpHeld);
-    this.crouching =
-      !requested &&
-      this.grounded &&
-      (this.input.keys.has("KeyC") || this.input.keys.has("ControlLeft"));
+    this.crouching = !requested && this.grounded && this.input.keys.has("KeyC");
     const sprintWanted =
       this.endurance.available &&
       z < 0 &&

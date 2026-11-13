@@ -369,7 +369,7 @@ try {
       window.fixture.show("critical", 0.02, 1280, 720, true),
     );
   assert.ok(low.procedural.active < full.procedural.active);
-  assert.equal(low.procedural.shapes.overlay, 2);
+  assert.equal(low.procedural.shapes.overlay, 3);
   const stress = await page.evaluate(() => window.fixture.stress());
   assert.ok(stress.peak.procedural.active <= 1536);
   assert.ok(stress.peak.procedural.draws <= 3);

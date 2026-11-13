@@ -32,12 +32,15 @@ export class SurfaceImpacts {
     this.mesh = new THREE.InstancedMesh(
       g,
       new THREE.ShaderMaterial({
+        uniforms: {
+          uBloodColor: { value: new THREE.Color(VFX.bleedingColor) },
+        },
         transparent: true,
         depthWrite: false,
         toneMapped: false,
         vertexShader: `attribute vec4 impactState;varying vec2 vUv;varying vec4 vState;void main(){vUv=uv;vState=impactState;gl_Position=projectionMatrix*modelViewMatrix*instanceMatrix*vec4(position,1.);}`,
         fragmentShader: `
-          varying vec2 vUv; varying vec4 vState;
+          uniform vec3 uBloodColor;varying vec2 vUv; varying vec4 vState;
           void main(){
             vec2 q=(floor(vUv*16.)+.5)/16.*2.-1.;
             float r=length(q),a=atan(q.y,q.x)+vState.y;
@@ -52,7 +55,7 @@ export class SurfaceImpacts {
             if(mask<.05)discard;
             vec3 base=mix(vec3(.004,.008,.006),vec3(.008,.004,.001),vState.z);
             vec3 edge=mix(vec3(.12,.14,.11),vec3(.14,.08,.025),vState.z);
-            gl_FragColor=vec4(vState.w>.5?vec3(.25,.014,.018):mix(base,edge,rim*.5),mask*vState.x*.85);
+            gl_FragColor=vec4(vState.w>.5?uBloodColor:mix(base,edge,rim*.5),mask*vState.x*.85);
             #include <colorspace_fragment>
           }`,
       }),
