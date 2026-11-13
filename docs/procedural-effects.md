@@ -1,5 +1,3 @@
-> Current art uses [0.16.1](release-0.16.1.md): two shared user-supplied blood PNGs with procedural motion, and a uniform dark death silhouette. Older texture-free descriptions below are historical.
-
 > Current behavior is defined by [0.15.1](release-0.15.1.md): short zero-gravity Splatter, gravity-only Bleeding, and no death smoke. Older version sections below are historical implementation notes.
 
 # Procedural combat effects

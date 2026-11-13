@@ -52,7 +52,3 @@ Version 0.15.2 derives Splatter render length from exponential drag and normaliz
 ## 0.16.0 Secondary death presentation
 
 Core blood settings stay unchanged. New secondaries use the existing fixed pool: four close flecks, six surface-colored ground flecks, one critical slash. `Effects.deathBudget` admits at most three immediate secondary sets, replenishes ten per second, skips secondaries above 800 active particles and honors reduced effects. Ground blood uses 24 slots maximum within the existing scar pool and a 1.1s lifetime. Shader silhouette/erosion follows shot contact; reaction offsets and vegetation pulses are bounded. Loot direction changes preserve launch speed and reward amounts. Sound remains unchanged.
-
-## 0.16.1 Blood shapes
-
-Static user `Splatter.png` defines the brief contact burst and sampled organic jets. `Bleeding.png` defines moving dark fragments and ground paint. Existing counts, lifetimes, gravity rules and secondary token budget remain. Full-quad Bleeding uses conservative `.8 * size + .012` physics clearance, and rendered resting quads use the exact camera/rotation-aware half-extents. Dying enemy color is uniformly `lethalColor` (#7d101a), without rim/crack highlights.

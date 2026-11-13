@@ -1,4 +1,3 @@
-import { bloodAssets } from "./blood-assets";
 import { enemyParticleDensity } from "./particle-simulation";
 import type { SplatterImpact } from "./particle-simulation";
 import { coinGeometry, crystalGeometry } from "./loot-geometry";
@@ -149,7 +148,7 @@ export class Effects {
     this.numbers = new DamageNumbers(camera, this.visibility);
   }
   get ready() {
-    return bloodAssets().ready;
+    return Promise.resolve();
   }
   burst(point: THREE.Vector3, color = 0xaaf5d2, count = 18, speed = 3) {
     this.procedural.emit(

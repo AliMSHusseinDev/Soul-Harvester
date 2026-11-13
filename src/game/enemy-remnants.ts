@@ -119,7 +119,10 @@ export class EnemyRemnants {
       float grain=fract(sin(dot(cell,vec2(127.1,311.7))+vImpact.z*19.7)*43758.5453);
       float front=clamp(length((cell/vec2(32.,40.)-vImpact.xy)*vec2(.8,1.)),0.,1.);
       if(vRemnant.z>mix(grain,front,.6))discard;
-      diffuseColor.rgb=uRemnantColor;
+      float neighbor=min(min(texture2D(map,vMapUv+vec2(1./32.,0.)).a,texture2D(map,vMapUv-vec2(1./32.,0.)).a),min(texture2D(map,vMapUv+vec2(0.,1./40.)).a,texture2D(map,vMapUv-vec2(0.,1./40.)).a));
+      float rim=(1.-step(.2,neighbor))*vRemnant.x;
+      float crack=(1.-step(.055,abs(sin(dot(cell,vec2(.71,-.93))+vImpact.z*6.))))*vRemnant.x*.25;
+      diffuseColor.rgb=mix(uRemnantColor,vec3(.70,.08,.09),max(rim*.65,crack));
       diffuseColor.a*=vRemnant.y;`,
           );
       };

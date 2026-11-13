@@ -382,7 +382,7 @@ try {
   const impact = await page.evaluate(() => window.__polish.v.diagnostics());
   // Verify the original yellow sheet reaches the framebuffer without legacy bursts.
   assert.equal(impact.procedural.mode, "procedural");
-  assert.equal(impact.procedural.textures, 2);
+  assert.equal(impact.procedural.textures, 0);
   assert.ok(impact.procedural.events.hit > 0);
   assert.ok(impact.procedural.rendered > 0);
   assert.ok(

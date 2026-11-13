@@ -33,7 +33,6 @@ export const SHAPE = {
   arc: 8,
   ribbon: 9,
   debris: 10,
-  splash: 11,
 } as const;
 export interface SplatterImpact {
   x: number;
@@ -812,17 +811,6 @@ export class ParticleSimulation {
             : (this.random() - 0.5) * 1.4;
         p.drag = 4;
         p.bounceLimit = 0;
-        if (
-          event === "death-flecks" &&
-          i === 0 &&
-          !this.items.some((p) => p.life > 0 && p.shape === SHAPE.splash)
-        ) {
-          p.shape = SHAPE.splash;
-          p.size = 1.2 * Math.min(1.5, scale);
-          p.life = p.max = 0.16;
-          p.vx = p.vy = p.vz = p.spin = 0;
-          p.stretch = 1;
-        }
       }
       if (large && i >= 2 && i <= 5 && !reduced) {
         p.shape = i % 2 === 0 ? SHAPE.arc : SHAPE.ring;
@@ -963,7 +951,7 @@ export class ParticleSimulation {
       }
       const clearance =
         p.shape === SHAPE.debris
-          ? Math.max(0.035, p.size * 0.8 + 0.012)
+          ? Math.max(0.035, p.size * 0.45 + 0.012)
           : 0.035;
       const ground = support + clearance;
       if (p.collision && p.y < ground) {

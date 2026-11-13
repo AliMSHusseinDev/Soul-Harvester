@@ -254,7 +254,7 @@ it("keeps gravity only on bleeding with mixed damped bounce and supported ground
   for (let i = 0; i < 180; i++) {
     p.step(1 / 120, () => 0);
     for (const c of chunks.filter((c) => c.life > 0)) {
-      expect(c.y).toBeGreaterThanOrEqual(0.12 + c.size * 0.8 + 0.012 - 1e-8);
+      expect(c.y).toBeGreaterThanOrEqual(0.12 + c.size * 0.45 + 0.012 - 1e-8);
       bounced ||= c.bounces > 0;
       settled ||= c.settled;
       expect(c.bounces).toBeLessThanOrEqual(c.bounceLimit);
@@ -381,17 +381,4 @@ it("keeps secondary death accents short, smoke-free and inside the fixed pool", 
     for (let i = 0; i < 30; i++) p.step(1 / 60, () => 0);
     expect(p.active).toBe(0);
   }
-});
-
-it("limits the supplied contact burst to one live image during chain kills", () => {
-  const p = new ParticleSimulation();
-  for (let i = 0; i < 20; i++) p.emit("death-flecks", 0, 1, 0);
-  expect(
-    p.items.filter((p) => p.life > 0 && p.shape === SHAPE.splash),
-  ).toHaveLength(1);
-  p.step(0.17, () => 0);
-  p.emit("death-flecks", 0, 1, 0);
-  expect(
-    p.items.filter((p) => p.life > 0 && p.shape === SHAPE.splash),
-  ).toHaveLength(1);
 });
