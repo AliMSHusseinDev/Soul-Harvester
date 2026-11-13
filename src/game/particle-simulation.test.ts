@@ -194,7 +194,7 @@ it("uses zero-gravity short splatter impulses without stationary red trails", ()
     b = new ParticleSimulation();
   for (const p of [a, b]) p.emit("death", 0, 1, 0);
   const rays = a.items.filter((p) => p.life > 0 && p.shape === SHAPE.ribbon);
-  expect(rays).toHaveLength(29);
+  expect(rays).toHaveLength(24);
   expect(
     rays.every(
       (p) =>
@@ -241,7 +241,7 @@ it("keeps gravity only on bleeding with mixed damped bounce and supported ground
   p.surfaceFloor = () => 0.12;
   p.emit("death", 0, 0.9, 0);
   const chunks = p.items.filter((p) => p.life > 0 && p.shape === SHAPE.debris);
-  expect(chunks).toHaveLength(29);
+  expect(chunks).toHaveLength(22);
   expect(
     chunks.every((p) => p.gravity > 0 && p.collision && p.max <= 1.43 + 1e-10),
   ).toBe(true);
@@ -265,9 +265,9 @@ it("keeps gravity only on bleeding with mixed damped bounce and supported ground
 });
 it("bounds blood count budgets and motion across bursts, terrain and reduced density", () => {
   for (const [finishing, reduced, count] of [
-    [false, false, 29],
-    [true, false, 32],
-    [false, true, 12],
+    [false, false, 22],
+    [true, false, 25],
+    [false, true, 9],
   ] as const) {
     const p = new ParticleSimulation();
     p.emit("death", 0, 1, 0, 1, reduced, undefined, 0, 1, finishing);
@@ -306,7 +306,7 @@ it("maintains wide shot-fan variation and modest stronger-enemy count scaling", 
   q.emit("death", 0, 1, 0, 1, false, undefined, 0, 1, false, 0, undefined, 1.3);
   expect(
     q.items.filter((p) => p.life > 0 && p.shape === SHAPE.debris),
-  ).toHaveLength(37);
+  ).toHaveLength(29);
 });
 
 it("contracts splatter streaks monotonically with analytic drag and normalized release", () => {

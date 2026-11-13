@@ -19,7 +19,8 @@ export type ParticleEvent =
   | "death-flecks"
   | "death-ground"
   | "finisher"
-  | "bullet-blood";
+  | "bullet-blood"
+  | "melee-blood";
 export const PARTICLE_SIZE_GAIN = F.sizeGain;
 export const PARTICLE_CAPACITY = F.capacity;
 export const SHAPE = {
@@ -73,16 +74,19 @@ export function bleedingRestitution(weight: number) {
     Math.min(0.42, F.debrisRestitution / (0.9 + 0.12 * Math.max(0, weight))),
   );
 }
-/** Conservative reference envelope of the preceding shot-fan profile, before new launch gain. */
+/** Travel envelope derived from the same launch speed, drag and lifetime as the burst. */
 export function splatterRange(scale = 1) {
   return (
     (((F.deathSpeedMin + F.deathSpeedRange) *
       F.scatterGain *
       1.15 *
       (Math.sqrt(1 + 0.42 * 0.42) + 0.14) *
-      -Math.expm1(-F.deathDrag * (F.deathLifeMin + F.deathLifeRange))) /
-      F.deathDrag) *
+      -Math.expm1(
+        -F.splatterDrag * (F.splatterLifeMin + F.splatterLifeRange),
+      )) /
+      F.splatterDrag) *
     F.splatterRangeGain *
+    F.splatterLaunchGain *
     scale
   );
 }
@@ -113,6 +117,7 @@ export function bleedingRange(scale = 1) {
       -Math.expm1(-F.debrisDrag * F.bleedingRangeReferenceLife)) /
       F.debrisDrag) *
     F.bleedingRangeGain *
+    F.bleedingLaunchGain *
     scale
   );
 }
@@ -256,6 +261,7 @@ export class ParticleSimulation {
     "death-ground": 0,
     finisher: 0,
     "bullet-blood": 0,
+    "melee-blood": 0,
   };
   private random() {
     this.randomState =
@@ -284,7 +290,8 @@ export class ParticleSimulation {
     const large =
         event === "nova" || event === "level" || event === "explosion",
       death = event === "death",
-      bloodHit = event === "bullet-blood",
+      meleeHit = event === "melee-blood",
+      bloodHit = event === "bullet-blood" || meleeHit,
       critical = event === "critical" || (death && finishing),
       small =
         event === "trail" ||
@@ -293,43 +300,48 @@ export class ParticleSimulation {
         event === "heal" ||
         event === "orb",
       priority = large || death ? 2 : small ? 0 : 1,
-      total = bloodHit
-        ? reduced
-          ? 3
-          : F.bulletDropCount
-        : event === "finisher"
-          ? 1
-          : event === "death-flecks"
-            ? 4
-            : event === "death-ground"
-              ? 6
-              : event === "surface"
-                ? F.surfaceCount
-                : event === "trail"
-                  ? 1
-                  : event === "soul"
-                    ? F.soulCount
-                    : event === "pickup"
-                      ? 7
-                      : event === "spawn"
-                        ? 10
-                        : event === "orb"
-                          ? 8
-                          : event === "cast"
-                            ? 14
-                            : event === "hurt"
-                              ? 12
-                              : large
-                                ? event === "level"
-                                  ? F.levelCount
-                                  : F.abilityCount
-                                : death
-                                  ? finishing
-                                    ? F.finisherCount
-                                    : F.deathCount
-                                  : critical
-                                    ? F.criticalCount
-                                    : F.hitCount,
+      total = meleeHit
+        ? Math.ceil(
+            (F.meleeNeedleCount + F.meleeDropCount) *
+              (reduced ? F.reducedDensity : 1),
+          )
+        : bloodHit
+          ? reduced
+            ? 3
+            : F.bulletDropCount
+          : event === "finisher"
+            ? 1
+            : event === "death-flecks"
+              ? 4
+              : event === "death-ground"
+                ? 6
+                : event === "surface"
+                  ? F.surfaceCount
+                  : event === "trail"
+                    ? 1
+                    : event === "soul"
+                      ? F.soulCount
+                      : event === "pickup"
+                        ? 7
+                        : event === "spawn"
+                          ? 10
+                          : event === "orb"
+                            ? 8
+                            : event === "cast"
+                              ? 14
+                              : event === "hurt"
+                                ? 12
+                                : large
+                                  ? event === "level"
+                                    ? F.levelCount
+                                    : F.abilityCount
+                                  : death
+                                    ? finishing
+                                      ? F.finisherCount
+                                      : F.deathCount
+                                    : critical
+                                      ? F.criticalCount
+                                      : F.hitCount,
       baseCount = Math.max(
         1,
         Math.ceil(total * (reduced && !bloodHit ? F.reducedDensity : 1)),
@@ -361,7 +373,11 @@ export class ParticleSimulation {
             F.splatterAdditionalAmountGain *
             Math.max(1, Math.min(F.enemyParticleCountCap, density)),
         ) - Math.max(0, rayBase),
-      count = baseCount + gravityExtra + rayExtra,
+      gravitySlots =
+        gravityBase + gravityExtra + (death && finishing && !reduced ? 2 : 0),
+      count = death
+        ? gravitySlots + Math.max(0, rayBase + rayExtra)
+        : baseCount,
       palette = color
         ? [color]
         : death || event === "hurt"
@@ -406,8 +422,6 @@ export class ParticleSimulation {
       bz = -dy * tx;
     let active = this.active;
     for (let i = 0; i < count; i++) {
-      // Retire all eight historical death-smoke slots without inflating either blood layer.
-      if (death && i >= baseCount - 8 && i < baseCount) continue;
       if (
         suppressHitSmoke &&
         (event === "hit" || event === "critical") &&
@@ -603,19 +617,12 @@ export class ParticleSimulation {
         p.spin = (this.random() - 0.5) * 0.5;
       }
       if (death) {
-        p.shape =
-          i >= baseCount
-            ? i < baseCount + gravityExtra
-              ? SHAPE.debris
-              : SHAPE.ribbon
-            : i % 3 === 0
-              ? SHAPE.debris
-              : SHAPE.ribbon;
+        p.shape = i < gravitySlots ? SHAPE.debris : SHAPE.ribbon;
         p.collision = false;
         p.color = F.splatterColor;
         p.size =
           (p.shape === SHAPE.ribbon
-            ? 0.12 + this.random() * 0.045
+            ? F.splatterSizeMin + this.random() * F.splatterSizeRange
             : 0.025 + this.random() * 0.035) * scale;
         p.stretch = p.shape === SHAPE.ribbon ? 5 + this.random() * 4 : 1;
         p.life = p.max = F.deathLifeMin + this.random() * F.deathLifeRange;
@@ -656,7 +663,8 @@ export class ParticleSimulation {
         if (p.shape === SHAPE.debris) {
           p.color = F.bleedingColor;
           p.collision = true;
-          p.size = (0.115 + this.random() * 0.04) * scale;
+          p.size =
+            (F.bleedingSizeMin + this.random() * F.bleedingSizeRange) * scale;
           p.stretch = 1;
           const theta = a + phase + 0.2 * Math.sin(a * lobes + twist),
             speed = radial * F.debrisSpread,
@@ -831,39 +839,51 @@ export class ParticleSimulation {
       }
       if (bloodHit) {
         const n = Math.hypot(nx, ny, nz) || 1,
-          ux = nx / n,
-          uy = ny / n,
-          uz = nz / n;
+          ux = (meleeHit ? -nx : nx) / n,
+          uy = (meleeHit ? -ny : ny) / n,
+          uz = (meleeHit ? -nz : nz) / n;
         const h = Math.hypot(ux, uz),
           tx = h > 0.001 ? -uz / h : 1,
           tz = h > 0.001 ? ux / h : 0;
         const bx = uy * tz,
           by = uz * tx - ux * tz,
           bz = -uy * tx;
+        const needle =
+          meleeHit &&
+          i <
+            Math.round(
+              (baseCount * F.meleeNeedleCount) /
+                (F.meleeNeedleCount + F.meleeDropCount),
+            );
         const angle = a + serial * 0.37;
-        const radial = 0.85 * Math.sqrt(this.random()),
-          forward = 4 + this.random() * 2.5;
-        p.shape = SHAPE.debris;
+        const radial = (meleeHit ? 2.4 : 0.85) * Math.sqrt(this.random()),
+          forward = meleeHit
+            ? F.meleeBloodSpeed * (0.75 + this.random() * 0.5)
+            : 4 + this.random() * 2.5;
+        p.shape = needle ? SHAPE.ribbon : SHAPE.debris;
         p.overlay = false;
         p.ground = false;
         p.organic = false;
-        p.color = F.bleedingColor;
+        p.color = needle ? F.splatterColor : F.bleedingColor;
         p.size = (0.04 + this.random() * 0.02) * Math.min(1.25, scale);
         p.vx =
           ux * forward + (tx * Math.cos(angle) + bx * Math.sin(angle)) * radial;
         p.vy = uy * forward + by * Math.sin(angle) * radial;
         p.vz =
           uz * forward + (tz * Math.cos(angle) + bz * Math.sin(angle)) * radial;
-        p.life = p.max = 0.42 + this.random() * 0.12;
+        p.life = p.max = needle
+          ? F.meleeBloodLife
+          : 0.42 + this.random() * 0.12;
         p.weight = 0.7 + this.random() * 0.8;
-        p.gravity = 24 * p.weight;
-        p.drag = 1.4;
-        p.collision = true;
+        p.gravity = needle ? 0 : F.debrisGravity * p.weight;
+        p.drag = needle ? F.splatterDrag : 1.4;
+        p.collision = !needle;
         p.bounceLimit = this.random() < F.debrisBounceChance ? 1 : 0;
         p.trail = 0;
         p.spin = p.angle = 0;
-        p.stretch = 0.85 + p.seed * 0.18;
-        p.fadeAt = p.max - F.debrisFade;
+        p.stretch = needle ? 5 + p.seed * 2 : 0.85 + p.seed * 0.18;
+        p.rangeLimit = needle ? 1.6 : bleedingRange(scale);
+        p.fadeAt = needle ? Infinity : p.max - F.debrisFade;
       }
 
       if (large && i >= 2 && i <= 5 && !reduced) {

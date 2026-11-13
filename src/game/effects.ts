@@ -182,6 +182,7 @@ export class Effects {
     incoming?: { x: number; y: number; z: number },
     normal?: { x: number; y: number; z: number },
     lethal = false,
+    melee = false,
   ) {
     this.stats.impacts++;
     if (!lethal)
@@ -190,7 +191,7 @@ export class Effects {
         x,
         y,
         z,
-        scale * (bullet ? 0.65 : 1),
+        scale * (melee ? 0.4 : bullet ? 0.65 : 1),
         this.reduced,
         undefined,
         normal?.x ?? 0,
@@ -201,7 +202,7 @@ export class Effects {
         1,
         true,
       );
-    if (bullet) {
+    if (bullet || (melee && !lethal)) {
       this.point.set(
         incoming?.x ?? -(normal?.x ?? 0),
         incoming?.y ?? -(normal?.y ?? 0),
@@ -214,7 +215,7 @@ export class Effects {
         this.camera.getWorldDirection(this.point);
       this.point.normalize();
       this.procedural.emit(
-        "bullet-blood",
+        melee ? "melee-blood" : "bullet-blood",
         x,
         y,
         z,

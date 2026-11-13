@@ -446,7 +446,7 @@ async function boot() {
           headshot: event.headshot,
           killed: event.killed,
         });
-        if (!event.killed || event.bullet === true)
+        if (!event.killed || event.bullet === true || event.melee === true)
           effects.impact(
             event.x,
             event.y ?? groundHeight(event.x, event.z) + 0.9,
@@ -469,6 +469,7 @@ async function boot() {
                   z: event.normalZ ?? 1,
                 },
             !!event.killed,
+            event.melee === true,
           );
       } else if (event.kind === "kill") {
         world.deathRipple(event.x, event.z, ENEMY_TYPES[event.value].scale);
@@ -780,7 +781,7 @@ async function boot() {
   Object.defineProperty(window, "__soulHarvester", {
     value: () => ({
       ready: true,
-      version: "0.17.4",
+      version: "0.17.5",
       timeScale: cinematic.scale,
       cinematicActive: cinematic.active,
       stamina: player.stamina,

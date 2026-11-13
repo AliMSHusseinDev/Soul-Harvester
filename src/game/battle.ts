@@ -95,6 +95,7 @@ export type BattleEvent = {
   y?: number;
   critical?: boolean;
   bullet?: boolean;
+  melee?: boolean;
   magic?: boolean;
   headshot?: boolean;
   killed?: boolean;
@@ -251,6 +252,7 @@ export class Battle {
     details?: {
       critical?: boolean;
       bullet?: boolean;
+      melee?: boolean;
       magic?: boolean;
       headshot?: boolean;
       killed?: boolean;
@@ -723,6 +725,7 @@ export class Battle {
       y: number;
       critical?: boolean;
       bullet?: boolean;
+      melee?: boolean;
       magic?: boolean;
       headshot?: boolean;
       incomingX?: number;
@@ -757,6 +760,7 @@ export class Battle {
         magic: impact?.magic,
         critical: impact?.critical,
         bullet: impact?.bullet,
+        melee: impact?.melee,
         headshot: impact?.headshot,
         killed: e.hp <= 0,
         enemyKind: e.kind,
@@ -808,6 +812,20 @@ export class Battle {
           WEAPON_TUNING.blade.damage * this.damageMultiplier,
           player,
           A.meleeKnockback + this.skills.cunning * A.cunningKnockback,
+          {
+            x:
+              e.x - (dx / Math.max(d, 0.01)) * 0.35 * ENEMY_TYPES[e.kind].scale,
+            z:
+              e.z - (dz / Math.max(d, 0.01)) * 0.35 * ENEMY_TYPES[e.kind].scale,
+            y: groundHeight(e.x, e.z) + 0.9 * ENEMY_TYPES[e.kind].scale,
+            melee: true,
+            incomingX: dx / Math.max(d, 0.01),
+            incomingY: 0,
+            incomingZ: dz / Math.max(d, 0.01),
+            normalX: -dx / Math.max(d, 0.01),
+            normalY: 0,
+            normalZ: -dz / Math.max(d, 0.01),
+          },
         );
     }
     return true;
