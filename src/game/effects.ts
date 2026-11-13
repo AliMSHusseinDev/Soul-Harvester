@@ -190,7 +190,7 @@ export class Effects {
         x,
         y,
         z,
-        scale,
+        scale * (bullet ? 0.65 : 1),
         this.reduced,
         undefined,
         normal?.x ?? 0,

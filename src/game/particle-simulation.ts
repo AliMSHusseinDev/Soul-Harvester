@@ -877,7 +877,7 @@ export class ParticleSimulation {
         p.organic = false;
         p.color = mist ? F.bulletMistColor : F.splatterColor;
         p.size =
-          (mist ? 0.19 + this.random() * 0.07 : 0.025 + this.random() * 0.015) *
+          (mist ? 0.65 + this.random() * 0.2 : 0.025 + this.random() * 0.015) *
           Math.min(1.25, scale);
         p.vx =
           ux * forward + (tx * Math.cos(angle) + bx * Math.sin(angle)) * radial;

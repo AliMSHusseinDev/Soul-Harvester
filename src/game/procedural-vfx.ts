@@ -264,7 +264,6 @@ export class ProceduralVFX {
       }
       if (
         p.shape === SHAPE.cube ||
-        p.shape === SHAPE.ribbon ||
         (p.overlay && p.shape !== SHAPE.bloodMist)
       ) {
         const cx = Math.floor(
@@ -316,7 +315,19 @@ export class ProceduralVFX {
           size,
           (depth * height * VFX.flakeLengthCap) / (focal * stretch),
         );
-      if (p.shape !== SHAPE.smoke && p.shape !== SHAPE.bloodMist)
+      // Keep the individual drop/jet silhouette readable at combat distances.
+      // A world-size ceiling prevents distant blood turning into giant quads.
+      if (p.shape === SHAPE.ribbon || p.shape === SHAPE.debris)
+        size = Math.max(
+          size,
+          Math.min(p.size * 3, (depth * VFX.bloodMinPixels) / focal),
+        );
+      else if (p.shape === SHAPE.bloodMist)
+        size = Math.max(
+          size,
+          Math.min(p.size * 2, (depth * VFX.bloodMistMinPixels) / focal),
+        );
+      else if (p.shape !== SHAPE.smoke)
         size = Math.max(size, Math.min(p.size * 1.4, (depth * 2) / focal));
       let alpha =
         p.shape === SHAPE.smoke
@@ -331,7 +342,7 @@ export class ProceduralVFX {
       if (p.shape === SHAPE.bloodMist)
         alpha =
           bulletMistOpacity(t) *
-          0.42 *
+          VFX.bloodMistOpacity *
           p.stretch *
           Math.min(1, Math.max(0, (depth - 0.18) / 0.45));
       if (p.shape === SHAPE.debris) alpha = debrisOpacity(p.age, p.fadeAt);
@@ -341,7 +352,7 @@ export class ProceduralVFX {
           p.rangeOpacity *
           Math.min(1, Math.max(0, (p.expireAge - p.age) / 0.16));
       if (p.ground) alpha *= 0.65;
-      // The five-cell L mask occupies +/-0.3 of the quad: keep its visible lower edge off the surface.
+      // Keep the complete rotated drop silhouette above its support surface.
       const c = Math.cos(p.angle),
         s = Math.sin(p.angle),
         rightY = this.camera.matrixWorld.elements[1],
@@ -357,8 +368,8 @@ export class ProceduralVFX {
         p.x,
         p.ground
           ? groundHeight(p.x, p.z) + 0.065
-          : p.shape === SHAPE.debris && p.settled
-            ? restingY
+          : p.shape === SHAPE.debris && Number.isFinite(p.floorY)
+            ? Math.max(p.y, restingY)
             : p.y,
         p.z,
       );

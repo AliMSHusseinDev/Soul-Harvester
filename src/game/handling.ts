@@ -24,7 +24,7 @@ export class Handling {
   sprintOut = 0;
   weaponPose: "Hip" | "Sprint" | "SprintAirborne" | "SprintOut" = "Hip";
   private shotLock = 0;
-  constructor(public sprintOutTime = 0.225) {}
+  constructor(public sprintOutTime = ACCURACY_TUNING.rifle.sprintOut) {}
   update(dt: number, intent: MovementIntent) {
     this.shotLock = Math.max(0, this.shotLock - dt);
     const wasSprinting = this.sprintPose;
@@ -102,9 +102,13 @@ export class HipAccuracy {
       speed * config.movement +
       (grounded ? 0 : config.airborne) +
       this.shotBloom;
-    this.angle = sprintOut
-      ? Math.max(this.angle, target + config.sprintBloom)
-      : damp(this.angle, target, VIEW.accuracyResponse, dt);
+    // Exiting sprint must recover existing spread, never add a fresh bloom.
+    this.angle = damp(
+      this.angle,
+      target,
+      sprintOut ? 8 : VIEW.accuracyResponse,
+      dt,
+    );
   }
   fired(config: AccuracyConfig) {
     this.shotBloom = Math.min(config.maxShot, this.shotBloom + config.shot);

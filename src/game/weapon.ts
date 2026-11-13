@@ -1,4 +1,4 @@
-import { WEAPON_TUNING } from "./tuning";
+import { VIEW, WEAPON_TUNING } from "./tuning";
 import * as THREE from "three";
 import { damp, aimPose, springStep } from "./math";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
@@ -491,7 +491,12 @@ export class Weapon {
       14,
       dt,
     );
-    this.running = damp(this.running, sprinting ? 1 : 0, 15, dt);
+    this.running = damp(
+      this.running,
+      sprinting ? 1 : 0,
+      sprinting ? VIEW.sprintPoseEnterResponse : VIEW.sprintPoseExitResponse,
+      dt,
+    );
     const rp = this.reloading ? 1 - this.reloadTime / this.reloadDuration : 0,
       reload = Math.sin(rp * Math.PI),
       melee = Math.sin((this.meleeTime / 0.38) * Math.PI),

@@ -14,14 +14,14 @@ const idle: MovementIntent = {
   verticalSpeed: 0,
   moving: false,
 };
-it("blocks fire and ADS through the full .225 second sprint-out and buffers a fire intent", () => {
+it("blocks fire and ADS through the full configured sprint-out and buffers a fire intent", () => {
   const h = new Handling();
   h.update(1 / 60, { ...idle, sprint: true, moving: true });
   expect(h.sprinting).toBe(true);
   expect(h.ready).toBe(false);
   h.update(1 / 60, { ...idle, sprint: true, fire: true });
   expect(h.state).toBe("SprintOut");
-  h.update(0.224, { ...idle, fire: true });
+  h.update(ACCURACY.rifle.sprintOut - 0.001, { ...idle, fire: true });
   expect(h.ready).toBe(false);
   h.update(0.001, { ...idle, fire: true });
   expect(h.ready).toBe(true);

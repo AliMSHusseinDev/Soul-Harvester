@@ -107,6 +107,7 @@ async function boot() {
   const movementVelocity = new THREE.Vector3();
   let effectiveAim = false;
   let meleeQueued = false;
+  let smoothGap = VIEW.crosshairMinGap;
   let lastGap = -1,
     lastSprintExit = -1,
     lastShotAt = -1;
@@ -216,6 +217,7 @@ async function boot() {
     effectiveAim = false;
     meleeQueued = false;
     lastGap = lastSprintExit = lastShotAt = -1;
+    smoothGap = VIEW.crosshairMinGap;
   }
   async function enter() {
     if (battle.phase === "lost") reset();
@@ -677,7 +679,11 @@ async function boot() {
       camera.fov = damp(
         camera.fov,
         fov,
-        sprintView ? VIEW.sprintFovResponse : VIEW.fovResponse,
+        effectiveAim
+          ? VIEW.fovResponse
+          : sprintView
+            ? VIEW.sprintFovResponse
+            : VIEW.sprintOutFovResponse,
         dt,
       );
       camera.updateProjectionMatrix();
@@ -719,7 +725,7 @@ async function boot() {
     $("hitmarker").classList.toggle("kill", feedback.kill);
     crosshair.classList.toggle("sprinting", player.handling.sprintPose);
     crosshair.classList.toggle("aiming", effectiveAim && weapon.id !== "blade");
-    const gap = Math.min(
+    const targetGap = Math.min(
       VIEW.crosshairMaxGap,
       Math.max(
         VIEW.crosshairMinGap,
@@ -727,6 +733,8 @@ async function boot() {
         player.handling.sprintPose ? VIEW.sprintMinGap : 0,
       ),
     );
+    smoothGap = damp(smoothGap, targetGap, targetGap > smoothGap ? 14 : 8, dt);
+    const gap = Math.round(smoothGap * 10) / 10;
     if (gap !== lastGap) {
       crosshair.style.setProperty("--gap", `${gap}px`);
       lastGap = gap;
@@ -772,7 +780,7 @@ async function boot() {
   Object.defineProperty(window, "__soulHarvester", {
     value: () => ({
       ready: true,
-      version: "0.17.0",
+      version: "0.17.1",
       timeScale: cinematic.scale,
       cinematicActive: cinematic.active,
       stamina: player.stamina,
