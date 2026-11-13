@@ -87,12 +87,19 @@ export function particleMaterial(cube = false, overlay = false) {
             float width=mix(.18,.025,v.y);
             alpha=step(abs(d.x),width)*step(abs(d.y),.96);
           }else{
-            vec2 bulb=vec2(d.x/.84,(d.y+.22)/.69);
-            float body=step(dot(bulb,bulb),1.);
-            float tip=step(abs(d.x),.42*(1.-d.y))*step(-.2,d.y)*step(d.y,.85);
-            alpha=max(body,tip);
+            // Compact stepped clots, never teardrops: broad base and uneven shoulders.
+            vec2 c=(floor(vUv*12.)+.5)/12.*2.-1.;
+            float variant=floor(seed*4.);
+            float lean=(variant-1.5)*.055;
+            vec2 body=vec2((c.x-lean)/.82,(c.y+.22)/.78);
+            vec2 shoulder=vec2((c.x+.23-lean)/.48,(c.y-.04)/.60);
+            vec2 lobe=vec2((c.x-.39)/.42,(c.y+.48)/.47);
+            alpha=max(step(dot(body,body),1.),max(step(dot(shoulder,shoulder),1.),step(dot(lobe,lobe),1.)));
+            float light=step(-.53,c.x)*step(c.x,.27)*step(.03,c.y)*step(c.y,.49);
+            float shadow=step(c.y,-.50);
+            shade=.88+.18*light-.20*shadow;highlight=0.;
           }
-          shade=.84+.16*step(d.x+d.y*.3,.2);highlight=0.;
+          if(shape<13.5)shade=.84+.16*step(d.x+d.y*.3,.2);highlight=0.;
         }
         if(vColor.r>vColor.g*2. && vColor.r>vColor.b*2.)highlight=0.;
         alpha*=vData.y;
@@ -269,8 +276,11 @@ export class ProceduralVFX {
       const stretch =
         p.shape === SHAPE.ribbon
           ? splatterStretch(p.stretch, p.drag, p.age, p.max)
-          : p.stretch;
+          : p.shape === SHAPE.debris && p.settled
+            ? p.stretch * 0.65
+            : p.stretch;
       let size = p.size;
+      if (p.shape === SHAPE.debris && p.settled) size *= 1.15;
       if (p.shape === SHAPE.ring || p.shape === SHAPE.arc)
         size *= 0.38 + 1.8 * (1 - Math.exp(-t * 5));
       else if (p.shape === SHAPE.smoke) size *= 0.7 + t * 2.7;
@@ -324,14 +334,16 @@ export class ProceduralVFX {
         size *
           0.5 *
           (Math.abs(rightY * c + upY * s) +
-            p.stretch * Math.abs(-rightY * s + upY * c)) +
+            stretch * Math.abs(-rightY * s + upY * c)) +
         0.012;
       this.dummy.position.set(
         p.x,
         p.ground
           ? groundHeight(p.x, p.z) + 0.065
           : p.shape === SHAPE.debris && Number.isFinite(p.floorY)
-            ? Math.max(p.y, restingY)
+            ? p.settled
+              ? restingY
+              : Math.max(p.y, restingY)
             : p.y,
         p.z,
       );
@@ -380,7 +392,7 @@ export class ProceduralVFX {
   diagnostics() {
     return {
       mode: "procedural",
-      bloodRenderer: "needle-drops-v3",
+      bloodRenderer: "needle-clots-v4",
       textures: 0,
       capacity: PARTICLE_CAPACITY,
       active: this.simulation.active,

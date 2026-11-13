@@ -862,7 +862,7 @@ export class ParticleSimulation {
         p.bounceLimit = this.random() < F.debrisBounceChance ? 1 : 0;
         p.trail = 0;
         p.spin = p.angle = 0;
-        p.stretch = 1.15;
+        p.stretch = 0.85 + p.seed * 0.18;
         p.fadeAt = p.max - F.debrisFade;
       }
 
@@ -911,7 +911,7 @@ export class ParticleSimulation {
         p.overlay = false;
         p.organic = false;
         p.spin = p.angle = 0;
-        p.stretch = 1.15;
+        p.stretch = 0.85 + p.seed * 0.18;
       }
       if (event === "finisher") p.organic = true;
       if (p.color === F.splatterColor) p.size *= F.splatterSizeGain;
