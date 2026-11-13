@@ -38,8 +38,8 @@ it("retains a distinct airborne sprint pose and blocks firing until full sprint-
   h.update(0.2, { ...i, grounded: false, verticalSpeed: -3 });
   expect(h.weaponPose).toBe("SprintAirborne");
   h.update(0.01, { ...i, grounded: false, fire: true });
-  expect(h.sprintOut).toBe(0.225);
-  h.update(0.224, { ...i, fire: true });
+  expect(h.sprintOut).toBe(h.sprintOutTime);
+  h.update(h.sprintOutTime - 0.001, { ...i, fire: true });
   expect(h.ready).toBe(false);
   h.update(0.001, { ...i, fire: true });
   expect(h.ready).toBe(true);
