@@ -5,7 +5,6 @@ import {
   debrisOpacity,
   splatterOpacity,
   splatterStretch,
-  bulletMistOpacity,
   PARTICLE_CAPACITY,
   SHAPE,
   type ParticleEvent,
@@ -80,31 +79,20 @@ export function particleMaterial(cube = false, overlay = false) {
           alpha=(1.-smoothstep(.022,.06,abs(r-edge)))*step(.15,sin(a*3.+seed*8.+t*2.));
           highlight=.4;
         }
-        // Blood v2 has its own masks; the historical ribbon/L-chip masks are retired.
+        // Straight pixel needles and upright compact drops; no curved jet masks.
         if(shape>11.5){
-          bool jet=shape<12.5 || (shape>13.5 && shape<14.5);
           vec2 v=(floor(vUv*vec2(20.,32.))+.5)/vec2(20.,32.);
           vec2 d=v*2.-1.;
-          if(jet){
-            float bend=.48*sin(v.y*4.4+seed*2.)-.22*sin(seed*2.);
-            float width=mix(.48,.025,v.y)*(1.+.16*sin(v.y*19.+seed*20.));
-            float stem=step(abs(d.x-bend),width)*step(abs(d.y),.96);
-            vec2 bulb=vec2((d.x-bend)/.48,(d.y+.58)/.36);
-            alpha=max(stem,step(dot(bulb,bulb),1.));
+          if(shape<13.5){
+            float width=mix(.18,.025,v.y);
+            alpha=step(abs(d.x),width)*step(abs(d.y),.96);
           }else{
-            vec2 bulb=vec2(d.x/.83,(d.y+.24)/.70);
+            vec2 bulb=vec2(d.x/.84,(d.y+.22)/.69);
             float body=step(dot(bulb,bulb),1.);
-            float tail=step(abs(d.x-.12*sin(v.y*3.+seed*5.)),.48*(1.-d.y))*step(-.15,d.y)*step(d.y,.97);
-            alpha=max(body,tail);
+            float tip=step(abs(d.x),.42*(1.-d.y))*step(-.2,d.y)*step(d.y,.85);
+            alpha=max(body,tip);
           }
           shade=.84+.16*step(d.x+d.y*.3,.2);highlight=0.;
-        }
-        if(shape>10.5 && shape<11.5){
-          vec2 v=vUv*2.-1.;
-          vec2 curl=v+vec2(.13*sin(v.y*3.+seed*9.+t*.7),.10*cos(v.x*4.-t*.6));
-          float n=noise(v*2.2+vec2(seed*13.+t*.5,t*.7));
-          alpha=exp(-dot(curl,curl)*1.7)*(.8+.2*n)*(1.-smoothstep(.55,1.,length(v)));
-          highlight=0.;
         }
         if(vColor.r>vColor.g*2. && vColor.r>vColor.b*2.)highlight=0.;
         alpha*=vData.y;
@@ -223,10 +211,7 @@ export class ProceduralVFX {
     const focal = height / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
     for (let i = 0; i < this.simulation.items.length; i++) {
       const p = this.simulation.items[i];
-      const blood =
-        p.shape === SHAPE.ribbon ||
-        p.shape === SHAPE.debris ||
-        p.shape === SHAPE.bloodMist;
+      const blood = p.shape === SHAPE.ribbon || p.shape === SHAPE.debris;
       if (p.life <= 0 || p.age < 0) continue;
       this.view.set(p.x, p.y, p.z).applyMatrix4(this.camera.matrixWorldInverse);
       const depth = p.ground
@@ -234,12 +219,9 @@ export class ProceduralVFX {
           : -this.view.z,
         t = Math.min(
           1,
-          (!p.presented && p.shape === SHAPE.bloodMist
-            ? Math.min(p.max * 0.16, p.age)
-            : p.overlay && !p.presented
-              ? Math.min(0.025, p.age)
-              : p.age) / p.max,
+          (p.overlay && !p.presented ? Math.min(0.025, p.age) : p.age) / p.max,
         );
+
       if (
         depth < 0.18 ||
         depth > 140 ||
@@ -289,10 +271,7 @@ export class ProceduralVFX {
           ? splatterStretch(p.stretch, p.drag, p.age, p.max)
           : p.stretch;
       let size = p.size;
-      if (p.shape === SHAPE.bloodMist) {
-        const e = t * t * t * (t * (6 * t - 15) + 10);
-        size *= 0.75 + 1.25 * e;
-      } else if (p.shape === SHAPE.ring || p.shape === SHAPE.arc)
+      if (p.shape === SHAPE.ring || p.shape === SHAPE.arc)
         size *= 0.38 + 1.8 * (1 - Math.exp(-t * 5));
       else if (p.shape === SHAPE.smoke) size *= 0.7 + t * 2.7;
       else if (p.shape === SHAPE.star)
@@ -320,29 +299,14 @@ export class ProceduralVFX {
           size,
           Math.min(p.size * 3, (depth * VFX.bloodMinPixels) / focal),
         );
-      else if (p.shape === SHAPE.bloodMist)
-        size = Math.max(
-          size,
-          Math.min(p.size * 2, (depth * VFX.bloodMistMinPixels) / focal),
-        );
       else if (p.shape !== SHAPE.smoke)
         size = Math.max(size, Math.min(p.size * 1.4, (depth * 2) / focal));
       let alpha =
         p.shape === SHAPE.smoke
           ? Math.min(1, t * 9) * Math.pow(1 - t, 0.9) * 0.46
           : 1 - Math.pow(t, 3);
-      if (
-        p.shape === SHAPE.cube ||
-        p.shape === SHAPE.smoke ||
-        p.shape === SHAPE.bloodMist
-      )
+      if (p.shape === SHAPE.cube || p.shape === SHAPE.smoke)
         alpha *= Math.min(1, Math.max(0, (depth - 0.18) / 0.45));
-      if (p.shape === SHAPE.bloodMist)
-        alpha =
-          bulletMistOpacity(t) *
-          VFX.bloodMistOpacity *
-          p.stretch *
-          Math.min(1, Math.max(0, (depth - 0.18) / 0.45));
       if (p.shape === SHAPE.debris) alpha = debrisOpacity(p.age, p.fadeAt);
       if (p.shape === SHAPE.ribbon)
         alpha =
@@ -384,8 +348,6 @@ export class ProceduralVFX {
             .set(p.vx, p.vy, p.vz)
             .transformDirection(this.camera.matrixWorldInverse);
           this.dummy.rotateZ(Math.atan2(-this.along.x, this.along.y));
-          if (p.shape === SHAPE.ribbon && !p.organic)
-            this.dummy.rotateZ(Math.PI);
         } else this.dummy.rotateZ(p.angle);
       }
       this.dummy.scale.set(
@@ -404,15 +366,7 @@ export class ProceduralVFX {
       this.color.setHex(p.color);
       b.color.setXYZ(at, this.color.r, this.color.g, this.color.b);
       const mask =
-        p.shape === SHAPE.ribbon
-          ? p.organic
-            ? 12
-            : 13
-          : p.shape === SHAPE.debris
-            ? p.organic
-              ? 14
-              : 15
-            : p.shape;
+        p.shape === SHAPE.ribbon ? 12 : p.shape === SHAPE.debris ? 15 : p.shape;
       b.data.setXYZW(at, mask, alpha, t, p.seed);
       p.presented = true;
       this.rendered++;
@@ -426,7 +380,7 @@ export class ProceduralVFX {
   diagnostics() {
     return {
       mode: "procedural",
-      bloodRenderer: "organic-liquid-v2",
+      bloodRenderer: "needle-drops-v3",
       textures: 0,
       capacity: PARTICLE_CAPACITY,
       active: this.simulation.active,
@@ -435,21 +389,12 @@ export class ProceduralVFX {
       smoke: this.simulation.items.filter(
         (p) => p.life > 0 && p.shape === SHAPE.smoke,
       ).length,
-      bloodMists: this.simulation.items.filter(
-        (p) => p.life > 0 && p.shape === SHAPE.bloodMist,
-      ).length,
-      bloodMix: {
-        splatterOrganic: this.simulation.items.filter(
-          (p) => p.life > 0 && p.shape === SHAPE.ribbon && p.organic,
+      bloodShapes: {
+        needles: this.simulation.items.filter(
+          (p) => p.life > 0 && p.shape === SHAPE.ribbon,
         ).length,
-        splatterDrops: this.simulation.items.filter(
-          (p) => p.life > 0 && p.shape === SHAPE.ribbon && !p.organic,
-        ).length,
-        bleedingOrganic: this.simulation.items.filter(
-          (p) => p.life > 0 && p.shape === SHAPE.debris && p.organic,
-        ).length,
-        bleedingDrops: this.simulation.items.filter(
-          (p) => p.life > 0 && p.shape === SHAPE.debris && !p.organic,
+        drops: this.simulation.items.filter(
+          (p) => p.life > 0 && p.shape === SHAPE.debris,
         ).length,
       },
       wisps: this.simulation.items.filter(

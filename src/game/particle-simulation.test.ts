@@ -221,7 +221,7 @@ it("uses zero-gravity short splatter impulses without stationary red trails", ()
   }
   for (let i = 0; i < 20; i++) a.step(1 / 60, () => 0);
   expect(
-    a.items.filter((p) => p.life > 0 && p.color === 0xb01c1c),
+    a.items.filter((p) => p.life > 0 && p.color === 0xd92b2b),
   ).toHaveLength(0);
 });
 it("fades splatter monotonically to exact zero with smooth endpoints", () => {

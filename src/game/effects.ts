@@ -184,7 +184,7 @@ export class Effects {
     lethal = false,
   ) {
     this.stats.impacts++;
-    if (!lethal && !bullet)
+    if (!lethal)
       this.procedural.emit(
         critical ? "critical" : "hit",
         x,
@@ -199,7 +199,7 @@ export class Effects {
         0,
         undefined,
         1,
-        bullet,
+        true,
       );
     if (bullet) {
       this.point.set(
